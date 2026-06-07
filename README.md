@@ -38,7 +38,8 @@ No modifications are made to the telephone.
                                  │  + SD card module           │
                                  │  + MAX98357A I2S DAC        │
                                  │  + L293D H-bridge (ringer)  │
-                                 │  + Boost converter (50V)    │
+                                 │  + 12V adapter → buck (5V)  │
+                                 │    + XL6009 boost (50V)     │
                                  │  + Optocoupler (line sense) │
                                  │  + 3 control buttons        │
                                  └─────────────────────────────┘
@@ -48,7 +49,7 @@ No modifications are made to the telephone.
 
 See [`docs/hardware/`](docs/hardware/) for:
 - [**Schematic**](docs/hardware/schematic.md) — full circuit with ASCII diagrams
-- [**Bill of Materials**](docs/hardware/bom.md) — ~£20 in components
+- [**Bill of Materials**](docs/hardware/bom.md) — ~£25 in components
 - [**Wiring Guide**](docs/hardware/wiring-guide.md) — step-by-step build + test
 
 ## SD Card Setup

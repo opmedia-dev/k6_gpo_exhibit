@@ -2,182 +2,295 @@
 
 ## Before You Start
 
-1. **Identify your phone model.** The GPO 232 has no internal bell; the 332
-   does.  This affects how you connect the blue (bell) wire.
-2. **Check the cord wires.** If the phone has been restored, wire colours may
-   differ.  Use a multimeter to identify:
+1. **Identify your phone model.**
+   - GPO 232 — no internal bell (needs external Bellset No. 26)
+   - GPO 332 — internal bell + 2 µF capacitor
+2. **Check the cord wires.** Wire colours may vary on restored phones.
+   Use a multimeter:
    - **Line pair:** two wires that show ~150-200 Ω when the handset is lifted
-     (hook switch closed).
-   - **Bell wire:** the third wire, which shows high impedance to both line
-     wires when on-hook (connected through a 2 µF capacitor in the 332).
-3. **Do not modify the phone.**  All connections are made to the free ends of
-   the 3-core cord.
-4. **The ESP32 board lives in a separate box**, connected to the phone via an
-   extended multi-core cable.
+   - **Bell wire:** the third wire, high impedance to both line wires when on-hook
+3. **Do not modify the phone.** All connections are to the free cord ends only.
+4. **The ESP32 board lives in a separate enclosure**, connected to the phone
+   via an extended multi-core cable.
 
-## Step-by-Step Wiring
+---
 
-### Phone Cord → Terminal Block
+## Parts You Need
 
-Strip ~5 mm of insulation from each wire of the 3-core cord and connect to
-the board's 3-way screw terminal:
+| # | Part | Notes |
+|---|------|-------|
+| 1 | ESP32 DevKit V1 | Main controller |
+| 2 | 12 V DC adapter (≥ 1 A) | Barrel jack, wall-wart type |
+| 3 | LM2596 buck converter module | Adjustable, set to 5 V output |
+| 4 | XL6009 boost converter module | Adjustable, set to 50 V output |
+| 5 | PC817 optocoupler | Hook/dial detection |
+| 6 | L293D H-bridge (DIP-16) | Bell ring generator |
+| 7 | MAX98357A I2S DAC module | Audio output |
+| 8 | Micro-SD card breakout module | SPI interface |
+| 9 | 600 Ω : 600 Ω audio transformer | 1:1, telephone line coupling |
+| 10 | 470 Ω resistor (1 W) | R1 — line current limit |
+| 11 | 220 Ω resistor (¼ W) | R2 — optocoupler LED limit |
+| 12 | 10 kΩ resistor (¼ W) | R3 — pull-down on GPIO 34 |
+| 13 | 3× momentary push buttons | RING / CANCEL / RESET |
+| 14 | 3-way screw terminal block | Phone cord connection |
+| 15 | Prototype PCB / stripboard | 80 × 60 mm minimum |
+| 16 | Hook-up wire, solder | Assembly |
 
-```
-Terminal 1  ←  Red wire   (Line A)
-Terminal 2  ←  White wire (Line B)
-Terminal 3  ←  Blue wire  (Bell)
-```
+---
 
-### Terminal Block → Circuit Board
+## Step 1: Set Up the Power Supplies
 
-Follow the schematic in [`schematic.md`](schematic.md).  Summary:
+> **Do this first, before connecting any other components.**
 
-```
-Terminal 1 (Line A) ──── R1 (470 Ω) ──── +12V supply
-                    └─── R2 (220 Ω) ──── Optocoupler anode
-                    └─── Audio transformer secondary pin 1
-
-Terminal 2 (Line B) ──── Optocoupler cathode (via phone return)
-                    └─── Audio transformer secondary pin 2
-                    └─── H-bridge OUT2 (for ringing)
-                    └─── GND reference for line circuit
-
-Terminal 3 (Bell)   ──── H-bridge OUT1 (for ringing)
-```
-
-### ESP32 Connections
-
-| ESP32 Pin | Connect To |
-|-----------|-----------|
-| GPIO 34 | Optocoupler emitter (+ 10 kΩ pull-down to GND) |
-| GPIO 26 | MAX98357A BCLK |
-| GPIO 25 | MAX98357A LRC |
-| GPIO 22 | MAX98357A DIN |
-| GPIO 5 | SD card module CS |
-| GPIO 23 | SD card module MOSI |
-| GPIO 19 | SD card module MISO |
-| GPIO 18 | SD card module SCK |
-| GPIO 4 | L293D Enable pin (EN1,2) |
-| GPIO 16 | L293D Input 1 (IN1) |
-| GPIO 17 | L293D Input 2 (IN2) |
-| GPIO 32 | RING button (other terminal to GND) |
-| GPIO 33 | CANCEL button (other terminal to GND) |
-| GPIO 27 | RESET button (other terminal to GND) |
-| GND | Common ground for all modules |
-| 5V / VIN | L293D VCC1 + MAX98357A VIN |
-
-### MAX98357A I2S DAC
-
-| MAX98357A Pin | Connection |
-|--------------|-----------|
-| VIN | 5 V |
-| GND | GND |
-| BCLK | GPIO 26 |
-| LRC | GPIO 25 |
-| DIN | GPIO 22 |
-| L+ | Audio transformer primary pin 1 |
-| L- | Audio transformer primary pin 2 |
-
-### SD Card Module
-
-| SD Module Pin | Connection |
-|--------------|-----------|
-| VCC | 3.3 V |
-| GND | GND |
-| CS | GPIO 5 |
-| MOSI | GPIO 23 |
-| MISO | GPIO 19 |
-| SCK | GPIO 18 |
-
-### L293D Wiring
-
-| L293D Pin | Connection |
-|-----------|-----------|
-| 1 (EN1,2) | GPIO 4 |
-| 2 (IN1) | GPIO 16 |
-| 3 (OUT1) | Terminal 3 (Bell wire) |
-| 4, 5 (GND) | GND |
-| 6 (OUT2) | Terminal 2 (Line B) |
-| 7 (IN2) | GPIO 17 |
-| 8 (VS) | +50 V from boost converter |
-| 16 (VSS) | +5 V (logic) |
-
-### Control Panel Buttons
-
-Wire each button between the ESP32 GPIO pin and GND.  No external resistors
-are needed — the firmware enables internal pull-ups.
+### 1a. Buck converter (12 V → 5 V)
 
 ```
-GPIO 32 ──── [RING button]   ──── GND
-GPIO 33 ──── [CANCEL button] ──── GND
-GPIO 27 ──── [RESET button]  ──── GND
+    12 V adapter (+) ──────► [LM2596 module IN+]
+    12 V adapter (-) ──────► [LM2596 module IN-]
+
+    Adjust trimpot until output reads 5.0 V on multimeter.
+
+    [LM2596 module OUT+] = +5 V rail
+    [LM2596 module OUT-] = GND rail
 ```
 
-### Boost Converter Modules
+### 1b. Boost converter (12 V → 50 V)
 
-**50 V ring supply:**
-- Input: 5 V from USB
-- Output: Adjust trimpot to 50 V DC (measure with multimeter)
-- Connect output to L293D pin 8 (VS)
-- Connect GND to common ground
+```
+    12 V adapter (+) ──────► [XL6009 module IN+]
+    12 V adapter (-) ──────► [XL6009 module IN-]
 
-**12 V line supply:**
-- Input: 5 V from USB (or use an external 12 V adapter directly)
-- Output: ~12 V DC
-- Connect to R1 (470 Ω) which feeds Line A
+    Adjust trimpot until output reads 50.0 V on multimeter.
+    ⚠ CAUTION: 50 V can give a nasty tingle. Don't touch the output terminals.
 
-## SD Card Preparation
+    [XL6009 module OUT+] = +50 V rail (for bell only)
+    [XL6009 module OUT-] = GND
+```
+
+---
+
+## Step 2: Wire the ESP32 DevKit
+
+Connect power to the ESP32:
+
+```
+    +5 V rail ──────► ESP32 VIN pin
+    GND rail ───────► ESP32 GND pin
+```
+
+> **Note:** Do not connect both USB and 12 V at the same time unless you
+> add a diode on VIN to prevent back-feeding.
+
+---
+
+## Step 3: Wire the Phone Cord Terminal Block
+
+Strip ~5 mm from each wire of the 3-core cord:
+
+```
+    Terminal 1  ◄──  Red wire    (Line A)
+    Terminal 2  ◄──  White wire  (Line B)
+    Terminal 3  ◄──  Blue wire   (Bell)
+```
+
+---
+
+## Step 4: Wire the Hook / Dial Detection Circuit
+
+```
+    +12 V ─── [R1 470 Ω 1W] ─── Junction A
+    Junction A ─── Terminal 1 (Red / Line A)
+    Junction A ─── [R2 220 Ω] ─── PC817 pin 1 (Anode)
+    Terminal 2 (White / Line B) ─── PC817 pin 2 (Cathode)
+
+    PC817 pin 4 (Collector) ─── +3.3 V (ESP32 3V3 pin)
+    PC817 pin 3 (Emitter) ─── GPIO 34
+    PC817 pin 3 (Emitter) ─── [R3 10 kΩ] ─── GND
+```
+
+**PC817 pinout:**
+
+```
+    ┌──────────┐
+    │  1  Anode │──  from R2
+    │  2 Cathode│──  to Terminal 2
+    │  3 Emitter│──  to GPIO 34 + R3
+    │  4 Collctr│──  to +3.3V
+    └──────────┘
+```
+
+---
+
+## Step 5: Wire the Ring Generator (L293D H-Bridge)
+
+```
+    L293D pin 1  (EN1,2)  ──── GPIO 4
+    L293D pin 2  (IN1)    ──── GPIO 16
+    L293D pin 7  (IN2)    ──── GPIO 17
+    L293D pin 8  (VS)     ──── +50 V (from XL6009 boost converter)
+    L293D pin 16 (VSS)    ──── +5 V
+    L293D pin 3  (OUT1)   ──── Terminal 3 (Blue / Bell wire)
+    L293D pin 6  (OUT2)   ──── Terminal 2 (White / Line B)
+    L293D pins 4,5,12,13  ──── GND
+```
+
+**L293D pinout (DIP-16) — top view:**
+
+```
+          ┌────────┐
+   EN1,2  │ 1   16 │  VSS (+5V)
+     IN1  │ 2   15 │  EN3,4 (n/c)
+    OUT1  │ 3   14 │  IN4 (n/c)
+     GND  │ 4   13 │  GND
+     GND  │ 5   12 │  GND
+    OUT2  │ 6   11 │  OUT4 (n/c)
+     IN2  │ 7   10 │  IN3 (n/c)
+  VS(50V) │ 8    9 │  GND
+          └────────┘
+```
+
+---
+
+## Step 6: Wire the Audio Output (MAX98357A + Transformer)
+
+```
+    GPIO 26 ──── MAX98357A BCLK
+    GPIO 25 ──── MAX98357A LRC
+    GPIO 22 ──── MAX98357A DIN
+    +5 V    ──── MAX98357A VIN
+    GND     ──── MAX98357A GND
+
+    MAX98357A L+ ──── Audio transformer PRIMARY pin 1
+    MAX98357A L- ──── Audio transformer PRIMARY pin 2
+
+    Audio transformer SECONDARY pin 1 ──── Terminal 1 (Red / Line A)
+    Audio transformer SECONDARY pin 2 ──── Terminal 2 (White / Line B)
+```
+
+> If audio is too loud or distorted, add a **10 Ω resistor** in series
+> between MAX98357A L+ and the transformer primary.
+
+---
+
+## Step 7: Wire the SD Card Module
+
+```
+    GPIO 5  ──── SD module CS
+    GPIO 23 ──── SD module MOSI (DI)
+    GPIO 19 ──── SD module MISO (DO)
+    GPIO 18 ──── SD module SCK (CLK)
+    +3.3 V  ──── SD module VCC
+    GND     ──── SD module GND
+```
+
+> Most SD card modules have an on-board 3.3 V regulator, so you can
+> safely connect VCC to 3.3 V or 5 V depending on the module.  Check
+> your module's documentation.
+
+---
+
+## Step 8: Wire the Control Panel Buttons
+
+Three momentary push buttons, each wired between the GPIO pin and GND.
+No external resistors — the ESP32 enables internal pull-ups.
+
+```
+    GPIO 32 ──── [RING button]   ──── GND
+    GPIO 33 ──── [CANCEL button] ──── GND
+    GPIO 27 ──── [RESET button]  ──── GND
+```
+
+Mount these buttons on the lid or front panel of the enclosure.
+
+---
+
+## Step 9: Prepare the SD Card
 
 1. Format a micro-SD card as **FAT32**
-2. Create the directory structure:
-   ```
-   /system/dialtone.mp3
-   /system/busy.mp3
-   /system/not_recognised.mp3
-   /history/001.mp3
-   /history/002.mp3
-   /numbers/999.mp3
-   /numbers/100.mp3
-   ```
-3. Insert the card into the SD module before powering on
+2. Create directories and add MP3 files:
+
+```
+    /system/
+        dialtone.mp3             ← Continuous dial tone (will loop)
+        busy.mp3                 ← Busy/error tone (will loop)
+        not_recognised.mp3       ← "The number you have dialled..."
+    /history/
+        001.mp3                  ← History tracks (random pick on answer)
+        002.mp3
+        003.mp3
+    /numbers/
+        999.mp3                  ← Plays when user dials 999
+        100.mp3                  ← Plays when user dials 100
+        08001111.mp3             ← Plays when user dials 08001111
+```
+
+3. Insert into the SD card module **before** powering on
+
+---
 
 ## Testing Procedure
 
-1. **Power up without the phone connected.**  Verify 12 V and 50 V rails
-   with a multimeter.  Confirm the ESP32 boots and prints to serial.
-   Check `[audio] SD card ready` appears in the serial output.
+### Test 1: Power
 
-2. **Connect the phone cord.**  With the handset on the cradle (on-hook),
-   verify GPIO 34 reads LOW.  Send `S` via serial to check status.
+1. Connect the 12 V adapter.  **Do not connect the phone yet.**
+2. Verify with a multimeter:
+   - Buck converter output = **5 V** (±0.2 V)
+   - Boost converter output = **50 V** (±2 V)
+3. Confirm the ESP32 boots — serial monitor (115200 baud) should show:
+   ```
+   K6 GPO Exhibit — ESP32 Phone Interface
+   [audio] SD card ready
+   [phone] controller ready
+   ```
 
-3. **Lift the handset.**  The serial monitor should print
-   `[phone] → DIAL_TONE`.  You should hear the dial tone MP3 playing
-   in the earpiece.
+### Test 2: SD Card
 
-4. **Dial a digit.**  Turn the rotary dial to digit 5 (for example).
-   The serial monitor should print `[phone] digit: 5`.  After the
-   inter-digit timeout, the matching MP3 plays (or "not recognised").
+1. Send `S` via serial.  Check output shows `sd=OK`.
+2. If `sd=FAIL`, check SPI wiring and card format.
 
-5. **Ring the bell.**  Replace the handset.  Send `R` via serial or
-   press the RING button.  The bell should ring.  Lift the handset —
-   a random history track should play.
+### Test 3: Hook Detection
 
-6. **Test buttons.**
-   - Press CANCEL during ringing → ringing stops
-   - Press RESET → ESP32 reboots
+1. Connect the phone's 3-core cord to the terminal block.
+2. With handset **on the cradle**, send `S` — should show `hook=ON_HOOK`.
+3. **Lift the handset** — serial should print:
+   ```
+   [app] hook: OFF_HOOK
+   [phone] → DIAL_TONE
+   ```
+   You should hear the dial tone in the earpiece.
 
-7. **Auto-ring.**  Wait for the timer (default 5-30 min, adjustable in
-   `config.h`) or send `A` via serial to toggle.
+### Test 4: Rotary Dialling
+
+1. With handset lifted, dial digit **5**.
+2. Serial should print `[phone] digit: 5`.
+3. Wait 3 seconds — if `/numbers/5.mp3` exists it plays, otherwise
+   you'll hear "number not recognised".
+
+### Test 5: Bell Ringing
+
+1. Replace the handset (on-hook).
+2. Send `R` via serial **or** press the RING button.
+3. The bell should ring with the UK cadence (ring-ring, pause).
+4. Lift the handset — ringing stops, a random history track plays.
+
+### Test 6: Control Buttons
+
+1. Press **CANCEL** during ringing → ringing should stop.
+2. Press **RESET** → ESP32 reboots (serial shows boot messages again).
+
+---
 
 ## Troubleshooting
 
-| Symptom | Check |
-|---------|-------|
-| No hook detection | Measure voltage across R2 with handset lifted. Should be ~1-2 V. Check optocoupler orientation. |
-| Dial pulses not counted | Ensure R1/R2 values give enough current (~15-25 mA off-hook). Adjust `LINE_THRESHOLD_ON/OFF` in `config.h`. |
-| Bell doesn't ring | Verify 50 V DC on boost converter output. Check L293D wiring. GPO 232 needs an external bellset. |
-| No audio in earpiece | Check MAX98357A wiring. Verify I2S pins. Check transformer connections. Try serial command `V9` for max volume. |
-| SD card not detected | Check SPI wiring. Ensure card is FAT32. Try a different card. Check `[audio] SD card init failed` in serial output. |
-| No MP3 playback | Verify file paths on SD card match expected layout (`/system/`, `/history/`, `/numbers/`). Check file is valid MP3. |
-| Buttons don't respond | Check wiring to GND. Verify GPIO pin numbers match `config.h`. |
-| ESP32 resets during ringing | The boost converter may cause voltage dips. Add a larger capacitor (470 µF) on the 5 V rail. |
+| Symptom | What to check |
+|---------|--------------|
+| ESP32 doesn't boot | Check 5 V rail with multimeter. Ensure VIN, not 3.3V pin, is connected. |
+| No hook detection | Measure voltage across R2 with handset lifted — should be ~1-2 V. Check optocoupler pin orientation. |
+| Dial pulses not counted | Check R1/R2 values give ~15-25 mA off-hook. Adjust `LINE_THRESHOLD_ON/OFF` in `config.h`. |
+| Bell doesn't ring | Verify 50 V on boost output. Check all 4 GND pins on L293D. GPO 232 needs an external bellset. |
+| No audio / no sound | Check MAX98357A wiring (BCLK, LRC, DIN). Try `V9` serial command for max volume. Check transformer orientation. |
+| Audio distorted | Add 10 Ω series resistor on transformer primary. Reduce volume with `V3` or similar. |
+| SD card not detected | Check SPI wiring (CS, MOSI, MISO, SCK). Ensure card is FAT32 formatted. Try a different card. |
+| MP3 doesn't play | Check file paths match exactly (`/system/`, `/history/`, `/numbers/`). Ensure valid MP3 encoding. |
+| Buttons don't work | Check wiring to GND. Verify correct GPIO numbers. Use `S` command to see current state. |
+| ESP32 resets during ring | 50 V boost may cause voltage dips. Add 470 µF capacitor on 5 V rail. Use separate GND path for boost. |

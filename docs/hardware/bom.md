@@ -1,6 +1,18 @@
 # Bill of Materials
 
-## Core Module
+## Power Supply
+
+| Qty | Component | Example Part | Purpose | Approx. Cost |
+|-----|-----------|-------------|---------|-------------|
+| 1 | 12 V DC adapter | Any 12 V / 1 A barrel-jack wall-wart | Main system power | £5 |
+| 1 | Buck converter module | LM2596 or MP1584 adjustable | 12 V → 5 V for logic | £1 |
+| 1 | Boost converter module | XL6009 adjustable | 12 V → 50 V for bell | £1-2 |
+
+> **Why 12 V?** A single 5 V → 50 V boost module is hard to source (10:1 ratio).
+> Starting from 12 V the XL6009 only needs a 4:1 boost — well within spec and
+> widely available on Amazon/eBay/AliExpress.
+
+## Controller & Audio
 
 | Qty | Component | Value / Part | Purpose | Approx. Cost |
 |-----|-----------|-------------|---------|-------------|
@@ -8,48 +20,65 @@
 | 1 | MAX98357A I2S DAC module | — | Audio output to phone earpiece | £2 |
 | 1 | Micro-SD card module | SPI breakout | MP3 file storage | £1 |
 | 1 | Micro-SD card | ≥ 1 GB, FAT32 | Stores audio files | £3 |
-| 1 | Optocoupler | PC817 (or similar) | Line sense / isolation | £0.30 |
+
+## Phone Line Interface
+
+| Qty | Component | Value / Part | Purpose | Approx. Cost |
+|-----|-----------|-------------|---------|-------------|
+| 1 | Optocoupler | PC817 (or similar) | Hook/dial isolation + detection | £0.30 |
 | 1 | H-bridge motor driver | L293D (DIP-16) | Bell ring generator | £1.50 |
-| 1 | Audio transformer | 600 Ω : 600 Ω 1:1 | Line audio coupling | £2 |
-| 1 | Boost converter module | XL6009 / MT3608 | 5 V → 50 V for bell | £2 |
-| 1 | Boost converter module | XL6009 or step-up | 5 V → 12 V for line supply | £2 |
+| 1 | Audio transformer | 600 Ω : 600 Ω 1:1 | Phone line audio coupling | £2 |
 
 ## Passive Components
 
-| Qty | Component | Value | Purpose |
-|-----|-----------|-------|---------|
-| 1 | Resistor | 470 Ω, 1 W | Line current limit (R1) |
-| 1 | Resistor | 220 Ω, ¼ W | Optocoupler LED current limit (R2) |
-| 1 | Resistor | 10 kΩ, ¼ W | Pull-down for optocoupler output |
-| 2 | Capacitor (film) | 1 µF, 50 V | Audio coupling caps |
-| 1 | Capacitor (electrolytic) | 100 µF, 63 V | Line supply filter |
-| 1 | Capacitor (ceramic) | 100 nF | Decoupling for L293D |
+| Qty | Component | Value | Label | Purpose |
+|-----|-----------|-------|-------|---------|
+| 1 | Resistor | 470 Ω, 1 W | R1 | Line current limit |
+| 1 | Resistor | 220 Ω, ¼ W | R2 | Optocoupler LED current limit |
+| 1 | Resistor | 10 kΩ, ¼ W | R3 | Pull-down for optocoupler output |
+| 1 | Capacitor (ceramic) | 100 nF | — | Decoupling for L293D |
 
-## Control Panel (Operator's Box)
+## Control Panel
 
 | Qty | Component | Notes |
 |-----|-----------|-------|
-| 3 | Momentary push button | RING / CANCEL / RESET |
-| 1 | Project box / enclosure | Houses ESP32 board + buttons |
-| 1 | Multi-core cable (≥ 6 conductors) | Extended lead from phone to ESP32 box |
-| 1 | Screw terminal block, 3-way | Phone cord connection (Line A, Line B, Bell) |
+| 3 | Momentary push buttons | RING / CANCEL / RESET |
 
 ## Connectors & Mechanical
 
 | Qty | Component | Notes |
 |-----|-----------|-------|
-| 1 | USB Micro-B cable | ESP32 power & serial |
+| 1 | 3-way screw terminal block | Phone cord connection (Line A, Line B, Bell) |
+| 1 | Barrel jack socket | 12 V power input |
+| 1 | Project box / enclosure | Houses all electronics + buttons |
+| 1 | Multi-core cable (≥ 6 conductors) | Extended lead from phone to enclosure |
 | 1 | Prototype PCB / stripboard | 80 × 60 mm minimum |
-| — | Hook-up wire, solder | Assembly |
+| — | Hook-up wire, solder, standoffs | Assembly |
 
 ## Optional
 
 | Qty | Component | Purpose |
 |-----|-----------|---------|
-| 1 | External 12 V DC adapter (≥ 500 mA) | Avoids needing a 5 V → 12 V boost |
-| 1 | Electromagnetic bell (e.g. Bellset No. 26) | External bell for GPO 232 |
-| 1 | 3D-printed enclosure | Tidy installation |
+| 1 | Electromagnetic bell (Bellset No. 26) | External bell for GPO 232 |
+| 1 | USB Micro-B cable | For reprogramming / serial debug |
+| 1 | 3D-printed enclosure | Tidier than a generic project box |
 
 ## Total Estimated Cost
 
-Core components: **~£20** (excluding phone, SD card content, and enclosure).
+| Category | Cost |
+|----------|------|
+| Power supply (adapter + modules) | ~£7 |
+| Controller + audio (ESP32 + DAC + SD) | ~£12 |
+| Phone line interface (opto + H-bridge + transformer) | ~£4 |
+| Passives + connectors | ~£2 |
+| **Total** | **~£25** |
+
+*Excludes: phone, SD card content, enclosure, extended cable.*
+
+## Where to Buy (UK)
+
+- **Amazon UK** — ESP32 DevKit, LM2596 modules, XL6009 modules, SD card modules
+- **eBay** — PC817 optocouplers, L293D, 600 Ω audio transformers, push buttons
+- **CPC/Farnell** — Resistors, capacitors, screw terminals, stripboard
+- **AliExpress** — Cheapest for modules (longer delivery)
+- **Pimoroni / The Pi Hut** — ESP32 boards, breakout modules
