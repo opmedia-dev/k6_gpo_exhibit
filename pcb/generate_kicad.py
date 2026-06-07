@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate KiCad 8 project files for the K6 GPO Exhibit carrier board.
+"""Generate KiCad 10 project files for the K6 GPO Exhibit carrier board.
 
 Creates:
   k6_gpo_carrier.kicad_pro   – project file
@@ -35,17 +35,17 @@ def fp_pad_np(x, y, drill=3.2):
             f'(size {drill} {drill}) (drill {drill}) '
             f'(layers "*.Cu" "*.Mask") (tstamp {uid()}))')
 
-def silk_text(text, x, y, layer="F.Silkscreen", size=1.0, thickness=0.15):
+def silk_text(text, x, y, layer="F.SilkS", size=1.0, thickness=0.15):
     return (f'  (fp_text user "{text}" (at {x:.3f} {y:.3f}) (layer "{layer}")\n'
             f'    (effects (font (size {size} {size}) (thickness {thickness})))\n'
             f'    (tstamp {uid()}))')
 
-def ref_text(ref, x, y, layer="F.Silkscreen"):
+def ref_text(ref, x, y, layer="F.SilkS"):
     return (f'  (fp_text reference "{ref}" (at {x:.3f} {y:.3f}) (layer "{layer}")\n'
             f'    (effects (font (size 1 1) (thickness 0.15)))\n'
             f'    (tstamp {uid()}))')
 
-def val_text(val, x, y, layer="F.Fabrication"):
+def val_text(val, x, y, layer="F.Fab"):
     return (f'  (fp_text value "{val}" (at {x:.3f} {y:.3f}) (layer "{layer}")\n'
             f'    (effects (font (size 1 1) (thickness 0.15)))\n'
             f'    (tstamp {uid()}))')
@@ -120,7 +120,7 @@ def pin_header_1xN(n, ref, val, x, y, angle, net_map, pitch=2.54):
     cy_h = n * pitch + 1.0
     crt = (f'    (fp_rect (start {-1.5:.3f} {-(cy_h/2):.3f}) '
            f'(end {1.5:.3f} {cy_h/2:.3f}) (stroke (width 0.05) (type default)) '
-           f'(fill none) (layer "F.Courtyard") (tstamp {uid()}))\n')
+           f'(fill none) (layer "F.CrtYd") (tstamp {uid()}))\n')
     return make_footprint(ref, val, x, y, angle, "\n".join(pads), crt)
 
 def pin_header_2xN(n, ref, val, x, y, angle, net_map_left, net_map_right, pitch=2.54, row_spacing=25.4):
@@ -137,7 +137,7 @@ def pin_header_2xN(n, ref, val, x, y, angle, net_map_left, net_map_right, pitch=
     crt_h = n * pitch + 1.0
     crt = (f'    (fp_rect (start {-(row_spacing/2+1.5):.3f} {-(crt_h/2):.3f}) '
            f'(end {(row_spacing/2+1.5):.3f} {crt_h/2:.3f}) (stroke (width 0.05) (type default)) '
-           f'(fill none) (layer "F.Courtyard") (tstamp {uid()}))\n')
+           f'(fill none) (layer "F.CrtYd") (tstamp {uid()}))\n')
     return make_footprint(ref, val, x, y, angle, "\n".join(pads), crt)
 
 def dip_package(n_pins, ref, val, x, y, angle, net_map, row_spacing=7.62, pitch=2.54):
@@ -159,7 +159,7 @@ def dip_package(n_pins, ref, val, x, y, angle, net_map, row_spacing=7.62, pitch=
     crt_h = half * pitch + 1.0
     crt = (f'    (fp_rect (start {-(row_spacing/2+1.5):.3f} {-(crt_h/2):.3f}) '
            f'(end {(row_spacing/2+1.5):.3f} {crt_h/2:.3f}) (stroke (width 0.05) (type default)) '
-           f'(fill none) (layer "F.Courtyard") (tstamp {uid()}))\n')
+           f'(fill none) (layer "F.CrtYd") (tstamp {uid()}))\n')
     return make_footprint(ref, val, x, y, angle, "\n".join(pads), crt)
 
 def resistor_th(ref, val, x, y, angle, net_1, net_2, pitch=10.16):
@@ -168,9 +168,9 @@ def resistor_th(ref, val, x, y, angle, net_1, net_2, pitch=10.16):
     pads.append(fp_pad_th(1, -pitch/2, 0, net_id=net_1, net_name=NETS.get(net_1,"")))
     pads.append(fp_pad_th(2, pitch/2, 0, net_id=net_2, net_name=NETS.get(net_2,"")))
     body = (f'    (fp_line (start {-pitch/2+1:.3f} -1.25) (end {pitch/2-1:.3f} -1.25) '
-            f'(stroke (width 0.12) (type default)) (layer "F.Silkscreen") (tstamp {uid()}))\n'
+            f'(stroke (width 0.12) (type default)) (layer "F.SilkS") (tstamp {uid()}))\n'
             f'    (fp_line (start {-pitch/2+1:.3f} 1.25) (end {pitch/2-1:.3f} 1.25) '
-            f'(stroke (width 0.12) (type default)) (layer "F.Silkscreen") (tstamp {uid()}))\n')
+            f'(stroke (width 0.12) (type default)) (layer "F.SilkS") (tstamp {uid()}))\n')
     return make_footprint(ref, val, x, y, angle, "\n".join(pads), body)
 
 def capacitor_th(ref, val, x, y, angle, net_1, net_2, pitch=2.5):
@@ -208,7 +208,7 @@ def transformer_4pin(ref, val, x, y, angle, net_map, pitch_x=10.0, pitch_y=7.5):
     pads.append(fp_pad_th(3, pitch_x/2, -pitch_y/2, net_id=nid3, net_name=NETS.get(nid3,"")))
     pads.append(fp_pad_th(4, pitch_x/2, pitch_y/2, net_id=nid4, net_name=NETS.get(nid4,"")))
     body = (f'    (fp_rect (start -6 -5) (end 6 5) '
-            f'(stroke (width 0.12) (type default)) (fill none) (layer "F.Silkscreen") (tstamp {uid()}))\n')
+            f'(stroke (width 0.12) (type default)) (fill none) (layer "F.SilkS") (tstamp {uid()}))\n')
     return make_footprint(ref, val, x, y, angle, "\n".join(pads), body)
 
 
@@ -408,7 +408,7 @@ def generate_pcb():
     ]
     for lx, ly, ltxt in labels:
         silk_labels.append(
-            f'  (gr_text "{ltxt}" (at {lx:.3f} {ly:.3f}) (layer "F.Silkscreen")\n'
+            f'  (gr_text "{ltxt}" (at {lx:.3f} {ly:.3f}) (layer "F.SilkS")\n'
             f'    (effects (font (size 1 1) (thickness 0.15)) (justify left))\n'
             f'    (tstamp {uid()}))')
 
@@ -426,30 +426,30 @@ def generate_pcb():
             f'    (polygon (pts {zone_corners})))')
 
     # ── Assemble PCB file ──
-    pcb = f"""(kicad_pcb (version 20240108) (generator "k6_gpo_gen") (generator_version "8.0")
+    pcb = f"""(kicad_pcb (version 20260329) (generator "k6_gpo_gen") (generator_version "10.0")
   (general (thickness 1.6) (legacy_teardrops no))
   (paper "A4")
   (layers
     (0 "F.Cu" signal)
-    (31 "B.Cu" signal)
-    (32 "B.Adhesive" user)
-    (33 "F.Adhesive" user)
-    (34 "B.Paste" user)
-    (35 "F.Paste" user)
-    (36 "B.Silkscreen" user)
-    (37 "F.Silkscreen" user)
-    (38 "B.Mask" user)
-    (39 "F.Mask" user)
-    (40 "User.Drawings" user)
-    (41 "User.Comments" user)
-    (42 "User.Eco1" user)
-    (43 "User.Eco2" user)
-    (44 "Edge.Cuts" user)
-    (45 "Margin" user)
-    (46 "B.Courtyard" user)
-    (47 "F.Courtyard" user)
-    (48 "B.Fabrication" user)
-    (49 "F.Fabrication" user)
+    (2 "B.Cu" signal)
+    (1 "F.Mask" user)
+    (3 "B.Mask" user)
+    (5 "F.SilkS" user)
+    (7 "B.SilkS" user)
+    (9 "F.Adhes" user)
+    (11 "B.Adhes" user)
+    (13 "F.Paste" user)
+    (15 "B.Paste" user)
+    (17 "Dwgs.User" user)
+    (19 "Cmts.User" user)
+    (21 "Eco1.User" user)
+    (23 "Eco2.User" user)
+    (25 "Edge.Cuts" user)
+    (27 "Margin" user)
+    (29 "B.CrtYd" user)
+    (31 "F.CrtYd" user)
+    (33 "B.Fab" user)
+    (35 "F.Fab" user)
   )
   (setup
     (pad_to_mask_clearance 0.05)
