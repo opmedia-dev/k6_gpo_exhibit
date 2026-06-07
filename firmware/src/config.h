@@ -6,31 +6,31 @@
 // ============================================================================
 
 // --- Phone line interface ---------------------------------------------------
-// Sense resistor in series with the DC line supply. The voltage across this
-// resistor is divided down and fed to the ADC. When the phone goes off-hook
-// current flows (~20-30 mA) producing a readable voltage; dial pulses appear
-// as brief current interruptions on the same pin.
 constexpr int PIN_LINE_SENSE   = 34;  // ADC1_CH6, input-only GPIO
 
 // --- Bell / ring generator --------------------------------------------------
-// An H-bridge (e.g. L293D) driven at 25 Hz toggles a boosted DC rail across
-// the bell winding via the phone's 3rd (bell) wire.
 constexpr int PIN_RING_EN      = 4;   // H-bridge enable (active-high)
 constexpr int PIN_RING_A       = 16;  // H-bridge input A
 constexpr int PIN_RING_B       = 17;  // H-bridge input B
 
-// --- Audio I/O --------------------------------------------------------------
-// First revision uses the ESP32 built-in DAC for earpiece output and ADC for
-// microphone input. Coupling transformers on the board isolate these from the
-// phone line DC bias.
-constexpr int PIN_AUDIO_OUT    = 25;  // DAC1 — earpiece audio
-constexpr int PIN_AUDIO_IN     = 36;  // ADC1_CH0 (VP) — microphone audio
+// --- I2S audio output (to MAX98357A DAC → coupling transformer → phone) -----
+constexpr int PIN_I2S_BCLK     = 26;
+constexpr int PIN_I2S_LRCLK    = 25;
+constexpr int PIN_I2S_DOUT     = 22;
+
+// --- SD card (SPI) ----------------------------------------------------------
+constexpr int PIN_SD_CS        = 5;
+// MOSI=23, MISO=19, SCK=18 (default VSPI)
+
+// --- External control panel buttons (active-low with internal pull-up) ------
+constexpr int PIN_BTN_RING     = 32;  // trigger incoming ring
+constexpr int PIN_BTN_CANCEL   = 33;  // cancel ring / stop playback
+constexpr int PIN_BTN_RESET    = 27;  // system reset
 
 // --- Status LED -------------------------------------------------------------
 constexpr int PIN_STATUS_LED   = 2;   // on-board LED on most dev-kits
 
 // --- Timing constants -------------------------------------------------------
-// All times in milliseconds unless stated otherwise.
 
 // Hook detection
 constexpr unsigned long HOOK_DEBOUNCE_MS      = 80;
@@ -38,16 +38,39 @@ constexpr int           LINE_THRESHOLD_ON     = 800;   // ADC value: phone off-h
 constexpr int           LINE_THRESHOLD_OFF    = 300;   // ADC value: phone on-hook
 
 // Rotary dial pulse decoding
-constexpr unsigned long PULSE_MIN_BREAK_MS    = 20;    // ignore glitches shorter than this
-constexpr unsigned long PULSE_MAX_BREAK_MS    = 120;   // break longer than this is not a pulse
-constexpr unsigned long INTER_DIGIT_TIMEOUT_MS = 300;  // gap after last pulse → digit complete
+constexpr unsigned long PULSE_MIN_BREAK_MS    = 20;
+constexpr unsigned long PULSE_MAX_BREAK_MS    = 120;
+constexpr unsigned long INTER_DIGIT_TIMEOUT_MS = 300;
 
 // UK ring cadence: 400 ms ON, 200 ms OFF, 400 ms ON, 2000 ms OFF (3 s cycle)
 constexpr unsigned long RING_ON_1_MS          = 400;
 constexpr unsigned long RING_OFF_1_MS         = 200;
 constexpr unsigned long RING_ON_2_MS          = 400;
 constexpr unsigned long RING_OFF_2_MS         = 2000;
-constexpr int           RING_FREQ_HZ          = 25;    // bell drive frequency
+constexpr int           RING_FREQ_HZ          = 25;
 
-// Audio sample rate (built-in DAC/ADC path)
-constexpr int           AUDIO_SAMPLE_RATE     = 8000;  // 8 kHz telephone quality
+// Random auto-ring interval (ms).  The phone will ring automatically at a
+// random interval between these two bounds.
+constexpr unsigned long AUTO_RING_MIN_MS      = 300000;   // 5 minutes
+constexpr unsigned long AUTO_RING_MAX_MS      = 1800000;  // 30 minutes
+
+// Dialling
+constexpr int           MAX_DIALLED_DIGITS    = 11;
+constexpr unsigned long NUMBER_COMPLETE_MS    = 3000;     // gap after last digit
+constexpr unsigned long DIAL_TONE_TIMEOUT_MS  = 15000;    // idle off-hook timeout
+
+// Button debounce
+constexpr unsigned long BTN_DEBOUNCE_MS       = 50;
+
+// --- SD card directory layout -----------------------------------------------
+// /system/dialtone.mp3       continuous dial tone
+// /system/busy.mp3           busy / error tone
+// /system/not_recognised.mp3 "the number you have dialled…"
+// /history/001.mp3 …         exhibit history tracks (picked at random)
+// /numbers/<number>.mp3      mapped tracks keyed by dialled number
+constexpr const char* SD_DIR_SYSTEM    = "/system";
+constexpr const char* SD_DIR_HISTORY   = "/history";
+constexpr const char* SD_DIR_NUMBERS   = "/numbers";
+constexpr const char* SD_FILE_DIALTONE = "/system/dialtone.mp3";
+constexpr const char* SD_FILE_BUSY     = "/system/busy.mp3";
+constexpr const char* SD_FILE_NOT_REC  = "/system/not_recognised.mp3";

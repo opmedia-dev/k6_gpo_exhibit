@@ -3,34 +3,38 @@
 ## Block Diagram
 
 ```
-                         ┌──────────────────────────────────────┐
-                         │         ESP32 Interface Board        │
-                         │                                      │
-  GPO 232/332            │  ┌──────────┐    ┌──────────────┐   │
-  3-core cord            │  │  12 V DC │    │   Boost      │   │
-  ┌─────────┐            │  │  Supply  │    │   Converter  │   │
-  │         │  Red ──────┼──┤  + Sense ├────┤   5V → 50V   │   │
-  │ Line A  │            │  │  Resistor│    │              │   │
-  │         │            │  └────┬─────┘    └──────┬───────┘   │
-  │         │            │       │                  │           │
-  │         │  White ────┼───────┤    ┌─────────────┤           │
-  │ Line B  │            │       │    │   ┌─────────┴───────┐  │
-  │         │            │       │    │   │    H-Bridge     │  │
-  │         │  Blue ─────┼───────┼────┼───┤    (L293D)     │  │
-  │ Bell    │            │       │    │   │    25 Hz AC     │  │
-  │         │            │       │    │   └─────────────────┘  │
-  └─────────┘            │       │    │                        │
-                         │  ┌────┴────┴──────────────────────┐ │
-                         │  │  Line Interface Circuit        │ │
-                         │  │  • Hook / dial pulse detect    │ │
-                         │  │  • Audio coupling transformer  │ │
-                         │  └────────────────────────────────┘ │
-                         │                                      │
-                         │  ┌──────────┐                        │
-                         │  │  ESP32   │  USB / 5V power        │
-                         │  │  DevKit  │◄───────────────────────┤
-                         │  └──────────┘                        │
-                         └──────────────────────────────────────┘
+                         ┌──────────────────────────────────────────┐
+                         │      ESP32 Interface Board               │
+                         │      (in separate enclosure)             │
+  GPO 232/332            │                                          │
+  3-core cord            │  ┌──────────┐    ┌──────────────┐       │
+  (extended)             │  │  12 V DC │    │   Boost      │       │
+  ┌─────────┐            │  │  Supply  │    │   Converter  │       │
+  │         │  Red ──────┼──┤  + Sense ├────┤   5V → 50V   │       │
+  │ Line A  │            │  │  Resistor│    │              │       │
+  │         │            │  └────┬─────┘    └──────┬───────┘       │
+  │         │            │       │                  │               │
+  │         │  White ────┼───────┤    ┌─────────────┤               │
+  │ Line B  │            │       │    │   ┌─────────┴───────┐      │
+  │         │            │       │    │   │    H-Bridge     │      │
+  │         │  Blue ─────┼───────┼────┼───┤    (L293D)     │      │
+  │ Bell    │            │       │    │   │    25 Hz AC     │      │
+  │         │            │       │    │   └─────────────────┘      │
+  └─────────┘            │       │    │                            │
+                         │  ┌────┴────┴──────────────────────┐     │
+                         │  │  Line Interface Circuit        │     │
+                         │  │  • Hook / dial pulse detect    │     │
+                         │  │  • Audio coupling transformer  │     │
+                         │  │  • MAX98357A I2S DAC output    │     │
+                         │  └────────────────────────────────┘     │
+                         │                                          │
+                         │  ┌──────────┐  ┌─────────┐  ┌────────┐ │
+                         │  │  ESP32   │  │ SD Card │  │ Control│ │
+                         │  │  DevKit  │  │ Module  │  │ Buttons│ │
+                         │  └──────────┘  └─────────┘  └────────┘ │
+                         │       │                                  │
+                         │  USB power + serial                     │
+                         └──────────────────────────────────────────┘
 ```
 
 ## Detailed Circuit
@@ -101,35 +105,61 @@
 > still tingle.  The boost converter should be disabled (EN pin low) whenever
 > ringing is not active.  The firmware controls this via `PIN_RING_EN`.
 
-### 3. Audio Coupling
+### 3. Audio Output (I2S DAC → Phone Line)
 
 ```
-                       Audio Transformer (1:1, 600 Ω)
-                      ┌───────────┬───────────┐
-                      │ Primary   │ Secondary │
-        Line A ───────┤           │           ├─── 1 µF ─── GPIO 36 (ADC)
-        (after R1)    │     ◯     │     ◯     │             (mic input)
-                      │           │           │
-        Line B ───────┤           │           ├─── 1 µF ─── GPIO 25 (DAC)
-                      └───────────┴───────────┘             (earpiece output)
+        ESP32                    MAX98357A            Audio Transformer
+    ┌───────────┐             ┌─────────────┐      ┌───────────┬───────────┐
+    │ GPIO 26 ──┼── BCLK ──►│ BCLK        │      │ Primary   │ Secondary │
+    │ GPIO 25 ──┼── LRCLK ─►│ LRC     L+ ├─────►┤           │           ├─── Line A
+    │ GPIO 22 ──┼── DIN ───►│ DIN     L- ├─────►┤     ◯     │     ◯     │
+    │ 5V ───────┼── VIN ───►│ VIN        │      │           │           │
+    │ GND ──────┼── GND ───►│ GND        │      │           │           ├─── Line B
+    └───────────┘             └─────────────┘      └───────────┴───────────┘
 ```
 
 **How it works:**
 
-- The transformer isolates the ESP32 from the phone line DC.
-- **Receive path:** AC audio from the carbon microphone (modulating the
-  line current) appears on the transformer secondary → coupling capacitor
-  → ESP32 ADC (GPIO 36).
-- **Transmit path:** ESP32 DAC (GPIO 25) → coupling capacitor →
-  transformer secondary → primary injects AC onto the phone line →
-  phone's induction coil → earpiece.
-- A 600 Ω telephone-grade transformer is ideal; a small 1:1 audio
-  transformer (e.g. Bourns LM-NP-1001) works well.
+- The ESP32 sends I2S audio data to the MAX98357A DAC module.
+- The DAC output (L+/L-) feeds the primary of the audio transformer.
+- The transformer secondary is connected across the phone line pair.
+- Audio couples through the phone's induction coil to the earpiece.
+- A 10 Ω resistor in series with the transformer primary may be needed
+  to limit current and match impedance.
 
-### 4. Power Supply
+### 4. SD Card Module (SPI)
+
+```
+        ESP32               SD Card Module
+    ┌───────────┐          ┌─────────────┐
+    │ GPIO 5  ──┼── CS ──►│ CS          │
+    │ GPIO 23 ──┼── MOSI ►│ MOSI        │
+    │ GPIO 19 ──┼── MISO ◄│ MISO        │
+    │ GPIO 18 ──┼── SCK ─►│ SCK         │
+    │ 3.3V ─────┼── VCC ─►│ VCC         │
+    │ GND ──────┼── GND ─►│ GND         │
+    └───────────┘          └─────────────┘
+```
+
+### 5. Control Panel Buttons
+
+```
+    GPIO 32 ──── [BTN RING] ──── GND
+    GPIO 33 ──── [BTN CANCEL] ── GND
+    GPIO 27 ──── [BTN RESET] ─── GND
+
+    (ESP32 internal pull-ups enabled; buttons connect pin to GND)
+```
+
+The buttons are mounted on the operator's control box, connected to the
+ESP32 board via the multi-core cable alongside the phone cord.
+
+### 6. Power Supply
 
 ```
   USB 5V ──┬──── ESP32 DevKit (on-board 3.3V regulator)
+            │
+            ├──── MAX98357A VIN
             │
             ├──── Boost Converter Module ──── 50V DC (ring generator)
             │
@@ -137,22 +167,24 @@
                   (or external 12V adapter)
 ```
 
-- The ESP32 dev-kit is powered by USB (5 V).
-- A separate 12 V source (or a boost module from 5 V) powers the phone line.
-- A second boost module provides ~50 V for the ring generator.
-- Both high-voltage rails should be switched off when not needed to
-  conserve power and for safety.
-
 ## Full Pin Summary
 
 | ESP32 GPIO | Function | Direction | Notes |
 |------------|----------|-----------|-------|
 | 34 | Line sense (hook/dial) | Input | ADC1_CH6, input-only |
-| 36 | Audio in (microphone) | Input | ADC1_CH0 (VP), input-only |
-| 25 | Audio out (earpiece) | Output | DAC channel 1 |
+| 26 | I2S BCLK | Output | To MAX98357A |
+| 25 | I2S LRCLK | Output | To MAX98357A |
+| 22 | I2S DOUT | Output | To MAX98357A |
+| 5 | SD card CS | Output | SPI chip select |
+| 23 | SD card MOSI | Output | SPI data out |
+| 19 | SD card MISO | Input | SPI data in |
+| 18 | SD card SCK | Output | SPI clock |
 | 4 | Ring enable | Output | H-bridge EN pin |
 | 16 | Ring phase A | Output | H-bridge IN1 |
 | 17 | Ring phase B | Output | H-bridge IN2 |
+| 32 | Button: RING | Input | Active-low, internal pull-up |
+| 33 | Button: CANCEL | Input | Active-low, internal pull-up |
+| 27 | Button: RESET | Input | Active-low, internal pull-up |
 | 2 | Status LED | Output | On-board LED |
 
 ## PCB Layout Notes
@@ -165,3 +197,5 @@
   the ESP32 logic — do not bridge the isolation barrier with other traces.
 - Audio transformer should be as close to the phone line terminals as
   practical.
+- Run the extended phone cord and button wiring through shielded or
+  twisted-pair cable to reduce interference pickup.

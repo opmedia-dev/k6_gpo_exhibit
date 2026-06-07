@@ -5,19 +5,22 @@
 // ============================================================================
 // K6 GPO Exhibit — main application
 //
-// Demonstrates a fully functional ESP32 interface to an unmodified GPO 232 or
-// 332 rotary telephone over the original 3-core cord.
+// An ESP32 interface for an unmodified GPO 232/332 rotary telephone,
+// designed for a K6 phone box exhibit.
+//
+// Features:
+//   • Phone rings at random intervals; answering plays a history track
+//   • Dialling a number plays a matching MP3 or "number not recognised"
+//   • External control box: RING / CANCEL / RESET buttons
+//   • All audio from SD card, played via I2S to MAX98357A DAC
 //
 // Serial commands (115200 baud):
-//   R         — trigger incoming ring
-//   H         — hang up / stop ringing
-//   S         — print current state
-//   T<text>   — speak text (placeholder for future TTS)
-//
-// On handset lift the phone receives a UK dial tone.  Dialled digits are
-// printed to Serial and passed to the registered callbacks.  After the
-// number is complete the state transitions to CONNECTED, where bidirectional
-// audio flows through the coupling transformer on the interface board.
+//   R   — trigger ring
+//   H   — hang up / stop
+//   C   — cancel ring
+//   S   — print state
+//   A   — toggle auto-ring on/off
+//   V0-9 — set volume (0=min, 9=max)
 // ============================================================================
 
 PhoneController phone;
@@ -25,16 +28,20 @@ PhoneController phone;
 // --- Callbacks --------------------------------------------------------------
 
 static void onDigit(uint8_t digit) {
-    Serial.printf("[app] digit dialled: %d\n", digit);
+    Serial.printf("[app] digit: %d\n", digit);
 }
 
 static void onNumber(const char* number) {
-    Serial.printf("[app] complete number: %s\n", number);
+    Serial.printf("[app] number: %s\n", number);
 }
 
 static void onHook(HookState state) {
     Serial.printf("[app] hook: %s\n",
                   state == HookState::OFF_HOOK ? "OFF_HOOK" : "ON_HOOK");
+}
+
+static void onState(PhoneState state) {
+    (void)state;
 }
 
 // --- Serial command handler -------------------------------------------------
@@ -45,20 +52,45 @@ static void handleSerial() {
     char c = Serial.read();
     switch (toupper(c)) {
     case 'R':
-        Serial.println("[app] → ring command");
+        Serial.println("[cmd] ring");
         phone.ring();
         break;
     case 'H':
-        Serial.println("[app] → hang up command");
+        Serial.println("[cmd] hang up");
         phone.hangUp();
         break;
+    case 'C':
+        Serial.println("[cmd] cancel");
+        phone.cancelRing();
+        break;
     case 'S':
-        Serial.printf("[app] state=%d  hook=%s  line_raw=%d\n",
-                      (int)phone.state(),
+        Serial.printf("[cmd] state=%s  hook=%s  line=%d  auto_ring=%s  sd=%s\n",
+                      phone.stateName(),
                       phone.line().hookState() == HookState::OFF_HOOK
                           ? "OFF_HOOK" : "ON_HOOK",
-                      phone.line().lastRawReading());
+                      phone.line().lastRawReading(),
+                      phone.autoRingEnabled() ? "ON" : "OFF",
+                      phone.player().sdReady() ? "OK" : "FAIL");
         break;
+    case 'A':
+        phone.setAutoRing(!phone.autoRingEnabled());
+        Serial.printf("[cmd] auto-ring %s\n",
+                      phone.autoRingEnabled() ? "ON" : "OFF");
+        break;
+    case 'V': {
+        // Read the next character as volume digit 0-9.
+        unsigned long t = millis();
+        while (!Serial.available() && millis() - t < 500) {}
+        if (Serial.available()) {
+            int v = Serial.read() - '0';
+            if (v >= 0 && v <= 9) {
+                uint8_t vol = map(v, 0, 9, 0, 21);
+                phone.player().setVolume(vol);
+                Serial.printf("[cmd] volume → %d/21\n", vol);
+            }
+        }
+        break;
+    }
     default:
         break;
     }
@@ -79,9 +111,10 @@ void setup() {
     phone.onDigit(onDigit);
     phone.onNumber(onNumber);
     phone.onHook(onHook);
+    phone.onState(onState);
     phone.begin();
 
-    Serial.println("[app] ready — send 'R' to ring, 'H' to hang up, 'S' for status");
+    Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol");
 }
 
 void loop() {

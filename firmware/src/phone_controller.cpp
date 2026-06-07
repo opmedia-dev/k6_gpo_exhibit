@@ -1,63 +1,94 @@
 #include "phone_controller.h"
 #include "config.h"
 
-// Timeout (ms) after last digit before the number is considered complete.
-static constexpr unsigned long NUMBER_COMPLETE_TIMEOUT_MS = 3000;
-
-// Maximum time in DIAL_TONE before reverting to busy (exchange timeout).
-static constexpr unsigned long DIAL_TONE_TIMEOUT_MS = 15000;
-
 void PhoneController::begin() {
     line_.begin();
     dial_.begin();
     bell_.begin();
-    audio_.begin();
+    panel_.begin();
+
+    bool sdOk = player_.begin();
 
     pinMode(PIN_STATUS_LED, OUTPUT);
+    randomSeed(analogRead(0) ^ micros());
+    resetAutoRingTimer();
     enterState(PhoneState::IDLE);
 
     Serial.println("[phone] controller ready");
+    if (!sdOk) Serial.println("[phone] WARNING: SD card not available — no audio playback");
 }
 
 void PhoneController::update() {
-    // Always poll the line — this gives us hook state and raw ADC.
+    // --- poll inputs --------------------------------------------------------
     line_.update();
+    bell_.update();
+    player_.update();
 
-    // Notify on hook change.
     if (line_.hookChanged() && hook_cb_) {
         hook_cb_(line_.hookState());
     }
 
-    // Bell cadence runs independently.
-    bell_.update();
+    // --- control panel buttons ----------------------------------------------
+    Button btn = panel_.update();
+    if (btn == Button::RING) {
+        Serial.println("[panel] RING pressed");
+        ring();
+    } else if (btn == Button::CANCEL) {
+        Serial.println("[panel] CANCEL pressed");
+        cancelRing();
+    } else if (btn == Button::RESET) {
+        Serial.println("[panel] RESET pressed — rebooting");
+        delay(200);
+        ESP.restart();
+    }
 
+    // --- state machine ------------------------------------------------------
     switch (state_) {
 
-    // ----- IDLE ----------------------------------------------------------
+    // ----- IDLE --------------------------------------------------------------
     case PhoneState::IDLE:
+        // Auto-ring timer.
+        if (auto_ring_enabled_ && millis() >= next_ring_time_) {
+            Serial.println("[phone] auto-ring timer fired");
+            ring();
+            break;
+        }
+        // Handset lifted → dial tone.
         if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
             enterState(PhoneState::DIAL_TONE);
         }
         break;
 
-    // ----- RINGING -------------------------------------------------------
+    // ----- RINGING -----------------------------------------------------------
     case PhoneState::RINGING:
         if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
             bell_.stopRinging();
-            enterState(PhoneState::CONNECTED);
+            enterState(PhoneState::PLAYING_HISTORY);
         }
         break;
 
-    // ----- DIAL TONE -----------------------------------------------------
-    case PhoneState::DIAL_TONE:
+    // ----- PLAYING_HISTORY ---------------------------------------------------
+    case PhoneState::PLAYING_HISTORY:
         if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
-            audio_.stopTone();
+            player_.stop();
             enterState(PhoneState::IDLE);
             break;
         }
-        // Check for first dial pulse — transition to DIALING.
+        if (!player_.isPlaying()) {
+            // Track finished — return to idle.
+            enterState(PhoneState::IDLE);
+        }
+        break;
+
+    // ----- DIAL TONE ---------------------------------------------------------
+    case PhoneState::DIAL_TONE:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
         if (dial_.update(line_.isLineBreak())) {
-            audio_.stopTone();
+            player_.stop();
             uint8_t d = dial_.digit();
             if (dial_pos_ < MAX_DIALLED_DIGITS) {
                 dialled_[dial_pos_++] = '0' + d;
@@ -65,22 +96,20 @@ void PhoneController::update() {
             }
             last_digit_time_ = millis();
             if (digit_cb_) digit_cb_(d);
-            Serial.printf("[phone] digit: %d  number so far: %s\n", d, dialled_);
+            Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
             enterState(PhoneState::DIALING);
             break;
         }
-        // If the line break starts, we may be about to dial — keep listening.
         if (line_.isLineBreak()) {
-            audio_.stopTone();
+            player_.stop();
         }
-        // Timeout → busy tone.
         if (millis() - state_enter_time_ > DIAL_TONE_TIMEOUT_MS) {
-            audio_.stopTone();
+            player_.stop();
             enterState(PhoneState::BUSY);
         }
         break;
 
-    // ----- DIALING -------------------------------------------------------
+    // ----- DIALING -----------------------------------------------------------
     case PhoneState::DIALING:
         if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
             dial_.reset();
@@ -95,36 +124,50 @@ void PhoneController::update() {
             }
             last_digit_time_ = millis();
             if (digit_cb_) digit_cb_(d);
-            Serial.printf("[phone] digit: %d  number so far: %s\n", d, dialled_);
+            Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
         }
-        // Number complete after timeout.
+        // Number complete after inter-digit timeout.
         if (dial_pos_ > 0 &&
-            millis() - last_digit_time_ > NUMBER_COMPLETE_TIMEOUT_MS) {
+            millis() - last_digit_time_ > NUMBER_COMPLETE_MS) {
             Serial.printf("[phone] number complete: %s\n", dialled_);
             if (number_cb_) number_cb_(dialled_);
-            enterState(PhoneState::CONNECTED);
+            // Try to play the matching track.
+            char path[64];
+            snprintf(path, sizeof(path), "%s/%s.mp3", SD_DIR_NUMBERS, dialled_);
+            if (player_.sdReady() && SD.exists(path)) {
+                player_.playFile(path, false);
+                enterState(PhoneState::PLAYING_NUMBER);
+            } else {
+                player_.playNotRecognised();
+                enterState(PhoneState::PLAYING_NOT_REC);
+            }
         }
         break;
 
-    // ----- CONNECTED -----------------------------------------------------
-    case PhoneState::CONNECTED:
+    // ----- PLAYING_NUMBER / PLAYING_NOT_REC ----------------------------------
+    case PhoneState::PLAYING_NUMBER:
+    case PhoneState::PLAYING_NOT_REC:
         if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
             enterState(PhoneState::IDLE);
+            break;
         }
-        // Application can read audio via audio_.readSample() and inject via
-        // audio_.writeSample() from external code.
+        if (!player_.isPlaying()) {
+            // Playback finished — go to busy tone so user hangs up.
+            enterState(PhoneState::BUSY);
+        }
         break;
 
-    // ----- BUSY ----------------------------------------------------------
+    // ----- BUSY --------------------------------------------------------------
     case PhoneState::BUSY:
         if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
-            audio_.stopTone();
+            player_.stop();
             enterState(PhoneState::IDLE);
         }
         break;
     }
 
-    // Status LED: on when off-hook, blink when ringing.
+    // --- Status LED ----------------------------------------------------------
     if (state_ == PhoneState::RINGING) {
         digitalWrite(PIN_STATUS_LED, (millis() / 250) % 2);
     } else {
@@ -140,9 +183,23 @@ void PhoneController::ring() {
     Serial.println("[phone] ringing");
 }
 
+void PhoneController::cancelRing() {
+    if (state_ == PhoneState::RINGING) {
+        bell_.stopRinging();
+        enterState(PhoneState::IDLE);
+        Serial.println("[phone] ring cancelled");
+    } else {
+        // Cancel also stops any current playback.
+        player_.stop();
+        if (state_ != PhoneState::IDLE) {
+            enterState(PhoneState::IDLE);
+        }
+    }
+}
+
 void PhoneController::hangUp() {
     bell_.stopRinging();
-    audio_.stopTone();
+    player_.stop();
     if (state_ != PhoneState::IDLE) {
         enterState(PhoneState::IDLE);
     }
@@ -157,27 +214,57 @@ void PhoneController::enterState(PhoneState s) {
         dial_.reset();
         dial_pos_   = 0;
         dialled_[0] = '\0';
-        Serial.println("[phone] → IDLE");
+        resetAutoRingTimer();
         break;
+
     case PhoneState::RINGING:
-        Serial.println("[phone] → RINGING");
         break;
+
+    case PhoneState::PLAYING_HISTORY:
+        player_.playRandomHistory();
+        break;
+
     case PhoneState::DIAL_TONE:
         dial_.reset();
         dial_pos_   = 0;
         dialled_[0] = '\0';
-        Serial.println("[phone] → DIAL_TONE");
-        audio_.playDialTone(DIAL_TONE_TIMEOUT_MS);
+        player_.playDialTone();
         break;
+
     case PhoneState::DIALING:
-        Serial.println("[phone] → DIALING");
         break;
-    case PhoneState::CONNECTED:
-        Serial.println("[phone] → CONNECTED");
+
+    case PhoneState::PLAYING_NUMBER:
         break;
+
+    case PhoneState::PLAYING_NOT_REC:
+        break;
+
     case PhoneState::BUSY:
-        Serial.println("[phone] → BUSY");
-        audio_.playBusyTone(30);
+        player_.playBusyTone();
         break;
+    }
+
+    Serial.printf("[phone] → %s\n", stateName());
+    if (state_cb_) state_cb_(s);
+}
+
+void PhoneController::resetAutoRingTimer() {
+    unsigned long interval = random(AUTO_RING_MIN_MS, AUTO_RING_MAX_MS);
+    next_ring_time_ = millis() + interval;
+    Serial.printf("[phone] next auto-ring in %lu s\n", interval / 1000);
+}
+
+const char* PhoneController::stateName() const {
+    switch (state_) {
+    case PhoneState::IDLE:            return "IDLE";
+    case PhoneState::RINGING:         return "RINGING";
+    case PhoneState::PLAYING_HISTORY: return "PLAYING_HISTORY";
+    case PhoneState::DIAL_TONE:       return "DIAL_TONE";
+    case PhoneState::DIALING:         return "DIALING";
+    case PhoneState::PLAYING_NUMBER:  return "PLAYING_NUMBER";
+    case PhoneState::PLAYING_NOT_REC: return "PLAYING_NOT_REC";
+    case PhoneState::BUSY:            return "BUSY";
+    default:                          return "UNKNOWN";
     }
 }

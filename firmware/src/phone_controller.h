@@ -1,78 +1,82 @@
 #pragma once
 
 #include <Arduino.h>
+#include "config.h"
 #include "phone_line.h"
 #include "rotary_decoder.h"
 #include "bell_driver.h"
-#include "audio_interface.h"
+#include "audio_player.h"
+#include "control_panel.h"
 
 // ============================================================================
-// Phone controller — top-level state machine
+// Phone controller — exhibit state machine
 //
 // States:
-//   IDLE        Phone on-hook; waiting for incoming ring or handset lift.
-//   RINGING     Bell ringing (triggered externally). Stops on off-hook.
-//   DIAL_TONE   Handset lifted; continuous dial tone plays.
-//   DIALING     Rotary dial pulses detected; tone stops, digits accumulate.
-//   CONNECTED   Dialling complete; call active (audio pass-through).
-//   BUSY        Error / no route — busy tone plays until on-hook.
-//
-// The controller owns the other subsystem objects and drives them each loop().
-// Application code can trigger an incoming ring or inject audio by calling
-// the public API.
+//   IDLE             On-hook.  Auto-ring timer ticking.
+//   RINGING          Bell ringing (auto or manual).  Awaiting pickup.
+//   PLAYING_HISTORY  Handset answered a ring → playing a history track.
+//   DIAL_TONE        Handset lifted without ring → dial tone plays.
+//   DIALING          Digits accumulating from rotary dial.
+//   PLAYING_NUMBER   Dialling complete → matched MP3 playing.
+//   PLAYING_NOT_REC  Dialling complete → "number not recognised" playing.
+//   BUSY             Error / timeout → busy tone.
 // ============================================================================
-
-// Maximum number of dialled digits stored
-constexpr int MAX_DIALLED_DIGITS = 20;
 
 enum class PhoneState : uint8_t {
     IDLE,
     RINGING,
+    PLAYING_HISTORY,
     DIAL_TONE,
     DIALING,
-    CONNECTED,
+    PLAYING_NUMBER,
+    PLAYING_NOT_REC,
     BUSY
 };
 
-// Callback typedefs for application integration
 using DigitCallback   = void (*)(uint8_t digit);
 using NumberCallback  = void (*)(const char* number);
 using HookCallback    = void (*)(HookState state);
+using StateCallback   = void (*)(PhoneState state);
 
 class PhoneController {
 public:
     void begin();
-    void update();  // call every loop()
+    void update();
 
     PhoneState state() const { return state_; }
+    const char* stateName() const;
 
-    // Trigger an incoming ring (ignored if phone is off-hook).
     void ring();
-
-    // Hang up (end call / stop ringing) from the application side.
+    void cancelRing();
     void hangUp();
 
-    // Register callbacks
     void onDigit(DigitCallback cb)   { digit_cb_  = cb; }
     void onNumber(NumberCallback cb) { number_cb_ = cb; }
     void onHook(HookCallback cb)     { hook_cb_   = cb; }
+    void onState(StateCallback cb)   { state_cb_  = cb; }
 
-    // Access subsystems
-    PhoneLine&      line()  { return line_; }
-    BellDriver&     bell()  { return bell_; }
-    AudioInterface& audio() { return audio_; }
-    RotaryDecoder&  dial()  { return dial_; }
+    // Enable / disable the random auto-ring feature.
+    void setAutoRing(bool enabled) { auto_ring_enabled_ = enabled; }
+    bool autoRingEnabled() const   { return auto_ring_enabled_; }
+
+    PhoneLine&      line()    { return line_; }
+    BellDriver&     bell()    { return bell_; }
+    AudioPlayer&    player()  { return player_; }
+    RotaryDecoder&  dial()    { return dial_; }
+    ControlPanel&   panel()   { return panel_; }
 
     const char* dialledNumber() const { return dialled_; }
 
 private:
     void enterState(PhoneState s);
+    void resetAutoRingTimer();
 
     PhoneState     state_ = PhoneState::IDLE;
     PhoneLine      line_;
     RotaryDecoder  dial_;
     BellDriver     bell_;
-    AudioInterface audio_;
+    AudioPlayer    player_;
+    ControlPanel   panel_;
 
     char           dialled_[MAX_DIALLED_DIGITS + 1] = {};
     uint8_t        dial_pos_ = 0;
@@ -80,7 +84,12 @@ private:
     unsigned long  state_enter_time_ = 0;
     unsigned long  last_digit_time_  = 0;
 
+    // Auto-ring
+    bool           auto_ring_enabled_ = true;
+    unsigned long  next_ring_time_    = 0;
+
     DigitCallback  digit_cb_  = nullptr;
     NumberCallback number_cb_ = nullptr;
     HookCallback   hook_cb_   = nullptr;
+    StateCallback  state_cb_  = nullptr;
 };
