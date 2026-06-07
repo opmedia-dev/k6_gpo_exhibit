@@ -15,7 +15,7 @@ def uid():
 
 # ─── Board dimensions ────────────────────────────────────────────────
 BOARD_W = 100.0   # mm
-BOARD_H = 80.0
+BOARD_H = 100.0
 ORIGIN_X = 130.0  # placement origin in KiCad space
 ORIGIN_Y = 90.0
 CORNER_R = 2.0    # edge fillet radius
@@ -254,12 +254,13 @@ def generate_pcb():
         mount_holes.append(mounting_hole(f"MH{i}", OX + mx, OY + my))
 
     # ── Component placement ──
+    # Board is 100×100mm. Components are spread out to avoid label overlap.
+    # Left zone: buttons, SD card.  Center: ESP32.  Top: power + DAC.
+    # Right: audio output, phone, driver ICs.
     footprints = []
 
     # -- ESP32 DevKit V1 (2 rows of 15 pins, 25.4mm apart) --
-    # Left header (top to bottom): 3V3, EN, 36, 39, 34, 35, 32, 33, 25, 26, 27, 14, 12, GND, 13
-    # Right header (top to bottom): VIN, GND, 23, 22, TX, RX, 21, 19(nc), 18, 5, 17, 16, 4, 2, 15
-    esp_x, esp_y = OX + 50, OY + 40  # center of board
+    esp_x, esp_y = OX + 38, OY + 40
     esp_left = {
         1: 3,     # 3V3
         2: 0,     # EN
@@ -298,62 +299,55 @@ def generate_pcb():
                                      esp_x, esp_y, 0, esp_left, esp_right))
 
     # -- LM2596 Buck Converter Module (12V → 5V) --
-    # 4-pin header: IN+, IN-, OUT+, OUT-
-    buck_x, buck_y = OX + 20, OY + 12
+    buck_x, buck_y = OX + 28, OY + 12
     footprints.append(pin_header_1xN(4, "J1", "LM2596_Buck",
                                      buck_x, buck_y, 0,
-                                     {1: 1, 2: 4, 3: 2, 4: 4}))  # IN+=12V, IN-=GND, OUT+=5V, OUT-=GND
+                                     {1: 1, 2: 4, 3: 2, 4: 4}))
 
     # -- XL6009 Boost Converter Module (12V → 50V) --
-    boost_x, boost_y = OX + 45, OY + 12
+    boost_x, boost_y = OX + 50, OY + 12
     footprints.append(pin_header_1xN(4, "J2", "XL6009_Boost",
                                      boost_x, boost_y, 0,
-                                     {1: 1, 2: 4, 3: 5, 4: 4}))  # IN+=12V, IN-=GND, OUT+=50V, OUT-=GND
+                                     {1: 1, 2: 4, 3: 5, 4: 4}))
 
     # -- 12V Power Input (2-pin screw terminal) --
-    pwr_x, pwr_y = OX + 8, OY + 12
+    pwr_x, pwr_y = OX + 10, OY + 12
     footprints.append(screw_terminal(2, "J3", "12V_IN",
                                      pwr_x, pwr_y, 90,
-                                     {1: 1, 2: 4}))  # +12V, GND
+                                     {1: 1, 2: 4}))
 
     # -- Phone Cord Terminal Block (3-pin screw terminal) --
-    phone_x, phone_y = OX + 92, OY + 40
+    phone_x, phone_y = OX + 92, OY + 52
     footprints.append(screw_terminal(3, "J4", "PHONE",
                                      phone_x, phone_y, 90,
-                                     {1: 6, 2: 7, 3: 8}))  # Line A, Line B, Bell
+                                     {1: 6, 2: 7, 3: 8}))
 
     # -- MAX98357A I2S DAC (7-pin header) --
-    # Pins: VIN, GND, SD, GAIN, DIN, BCLK, LRC
-    # (Some modules have L+/L- on separate pins; simplified to 7-pin + 2-pin output)
-    dac_x, dac_y = OX + 75, OY + 15
+    dac_x, dac_y = OX + 82, OY + 18
     footprints.append(pin_header_1xN(7, "J5", "MAX98357A",
                                      dac_x, dac_y, 0,
                                      {1: 2, 2: 4, 3: 0, 4: 0, 5: 15, 6: 13, 7: 14}))
-    # DAC output (L+, L-) 2-pin header
-    dac_out_x, dac_out_y = OX + 82, OY + 15
+    # DAC output (SPK+, SPK-) 2-pin header
+    dac_out_x, dac_out_y = OX + 92, OY + 18
     footprints.append(pin_header_1xN(2, "J6", "DAC_OUT",
                                      dac_out_x, dac_out_y, 0,
-                                     {1: 25, 2: 26}))  # AUDIO_P1, AUDIO_P2
+                                     {1: 25, 2: 26}))
 
     # -- SD Card Module (6-pin header) --
-    sd_x, sd_y = OX + 25, OY + 68
+    sd_x, sd_y = OX + 25, OY + 90
     footprints.append(pin_header_1xN(6, "J7", "SD_Card",
                                      sd_x, sd_y, 0,
                                      {1: 4, 2: 3, 3: 17, 4: 18, 5: 19, 6: 16}))
-    # GND, VCC(3V3), MOSI, MISO, SCK, CS
 
     # -- Control Panel Button Headers (3x 2-pin) --
-    btn_base_x, btn_base_y = OX + 10, OY + 55
+    btn_base_x, btn_base_y = OX + 8, OY + 64
     for i, (name, net) in enumerate([("BTN_RING", 20), ("BTN_CANCEL", 21), ("BTN_RESET", 22)]):
         footprints.append(pin_header_1xN(2, f"J{8+i}", name,
                                          btn_base_x, btn_base_y + i * 8, 0,
                                          {1: net, 2: 4}))
 
     # -- L293D H-Bridge (DIP-16) --
-    l293d_x, l293d_y = OX + 75, OY + 55
-    # Pin mapping: 1=EN(GPIO4), 2=IN1(GPIO16), 3=OUT1(BELL), 4=GND,
-    #   5=GND, 6=OUT2(LINE_B), 7=IN2(GPIO17), 8=VS(+50V),
-    #   9=GND, 10=n/c, 11=n/c, 12=GND, 13=GND, 14=n/c, 15=n/c, 16=VSS(+5V)
+    l293d_x, l293d_y = OX + 82, OY + 76
     l293d_nets = {
         1: 10, 2: 11, 3: 8, 4: 4, 5: 4, 6: 7, 7: 12, 8: 5,
         9: 4, 10: 0, 11: 0, 12: 4, 13: 4, 14: 0, 15: 0, 16: 2
@@ -362,38 +356,40 @@ def generate_pcb():
                                   l293d_x, l293d_y, 0, l293d_nets))
 
     # -- PC817 Optocoupler (DIP-4) --
-    # Pins: 1=Anode, 2=Cathode, 3=Emitter, 4=Collector
-    opto_x, opto_y = OX + 75, OY + 70
-    opto_nets = {1: 23, 2: 7, 3: 24, 4: 3}  # Anode=OPTO_ANODE, Cathode=LINE_B, Emitter=OPTO_EMIT, Collector=+3V3
+    opto_x, opto_y = OX + 82, OY + 92
+    opto_nets = {1: 23, 2: 7, 3: 24, 4: 3}
     footprints.append(dip_package(4, "U3", "PC817",
                                   opto_x, opto_y, 0, opto_nets))
 
     # -- R1: 470Ω 1W (12V → Junction A) --
-    r1_x, r1_y = OX + 60, OY + 68
-    footprints.append(resistor_th("R1", "470R", r1_x, r1_y, 0, 1, 27))  # +12V → JUNC_A
+    r1_x, r1_y = OX + 55, OY + 86
+    footprints.append(resistor_th("R1", "470R", r1_x, r1_y, 0, 1, 27))
 
     # -- R2: 220Ω (Junction A → Opto Anode) --
-    r2_x, r2_y = OX + 60, OY + 74
-    footprints.append(resistor_th("R2", "220R", r2_x, r2_y, 0, 27, 23))  # JUNC_A → OPTO_ANODE
+    r2_x, r2_y = OX + 55, OY + 93
+    footprints.append(resistor_th("R2", "220R", r2_x, r2_y, 0, 27, 23))
 
     # -- R3: 10kΩ (Opto Emitter → GND) --
-    r3_x, r3_y = OX + 88, OY + 74
-    footprints.append(resistor_th("R3", "10K", r3_x, r3_y, 90, 24, 4))  # OPTO_EMIT → GND
+    r3_x, r3_y = OX + 92, OY + 86
+    footprints.append(resistor_th("R3", "10K", r3_x, r3_y, 90, 24, 4))
 
     # -- C1: 100nF decoupling for L293D --
-    c1_x, c1_y = OX + 68, OY + 55
-    footprints.append(capacitor_th("C1", "100nF", c1_x, c1_y, 0, 2, 4))  # +5V → GND
+    c1_x, c1_y = OX + 70, OY + 68
+    footprints.append(capacitor_th("C1", "100nF", c1_x, c1_y, 0, 2, 4))
 
     # -- Audio Transformer --
-    xfmr_x, xfmr_y = OX + 88, OY + 30
-    xfmr_nets = {1: 25, 2: 26, 3: 6, 4: 7}  # P1=AUDIO_P1, P2=AUDIO_P2, S1=LINE_A, S2=LINE_B
+    xfmr_x, xfmr_y = OX + 90, OY + 38
+    xfmr_nets = {1: 25, 2: 26, 3: 6, 4: 7}
     footprints.append(transformer_4pin("T1", "600R_XFMR", xfmr_x, xfmr_y, 0, xfmr_nets))
 
-    # ── Silkscreen labels ──
+    # ══════════════════════════════════════════════════════════════════
+    #  SILKSCREEN LABELS — short labels, positioned to avoid overlap
+    # ══════════════════════════════════════════════════════════════════
     silk_labels = []
-    SZ_TITLE = 1.0   # title text size
-    SZ_PIN = 0.6     # pin label text size
-    TH_PIN = 0.12    # pin label stroke
+    SZ_TITLE = 1.0
+    SZ_SUB = 0.8     # sub-title
+    SZ_PIN = 0.5     # pin labels (smaller to fit)
+    TH_PIN = 0.10
 
     def silk(x, y, txt, size=SZ_TITLE, thickness=0.15, justify="left"):
         silk_labels.append(
@@ -405,112 +401,104 @@ def generate_pcb():
         silk(x, y, txt, size=SZ_PIN, thickness=TH_PIN, justify=justify)
 
     # Board title & URL
-    silk(OX + 50, OY + 3, "K6 GPO Exhibit — Carrier Board v1.0")
-    silk(OX + 50, OY + 77, "github.com/opmedia-dev/k6_gpo_exhibit")
+    silk(OX + 50, OY + 3, "K6 GPO Exhibit — Carrier Board v1.0", justify="center")
+    silk(OX + 50, OY + 97, "github.com/opmedia-dev/k6_gpo_exhibit", size=0.7, justify="center")
 
-    # ── J3: 12V Power Input (2-pin, vertical, pitch 2.54) ──
+    # ── J3: 12V Power Input (screw terminal, rotated 90°) ──
     silk(pwr_x, pwr_y - 7, "12V IN")
-    silk_pin(pwr_x + 3, pwr_y - 1.27, "+12V")
-    silk_pin(pwr_x + 3, pwr_y + 1.27, "GND")
+    silk_pin(pwr_x + 4, pwr_y - 2.54, "+12V")
+    silk_pin(pwr_x + 4, pwr_y + 2.54, "GND")
 
-    # ── J1: LM2596 Buck (4-pin, vertical, pitch 2.54) ──
-    silk(buck_x, buck_y - 7, "BUCK 12V>5V")
-    pin_labels_j1 = ["IN+ (12V)", "IN- (GND)", "OUT+ (5V)", "OUT- (GND)"]
-    for i, lbl in enumerate(pin_labels_j1):
-        py = buck_y + (i - 1.5) * 2.54
-        silk_pin(buck_x + 3, py, lbl)
+    # ── J1: LM2596 Buck ──
+    silk(buck_x, buck_y - 7, "BUCK")
+    for i, lbl in enumerate(["12V+", "GND", "5V+", "GND"]):
+        silk_pin(buck_x + 3, buck_y + (i - 1.5) * 2.54, lbl)
 
-    # ── J2: XL6009 Boost (4-pin, vertical, pitch 2.54) ──
-    silk(boost_x, boost_y - 7, "BOOST 12V>50V")
-    pin_labels_j2 = ["IN+ (12V)", "IN- (GND)", "OUT+ (50V)", "OUT- (GND)"]
-    for i, lbl in enumerate(pin_labels_j2):
-        py = boost_y + (i - 1.5) * 2.54
-        silk_pin(boost_x + 3, py, lbl)
+    # ── J2: XL6009 Boost ──
+    silk(boost_x, boost_y - 7, "BOOST")
+    for i, lbl in enumerate(["12V+", "GND", "50V+", "GND"]):
+        silk_pin(boost_x + 3, boost_y + (i - 1.5) * 2.54, lbl)
 
-    # ── U1: ESP32 DevKit (2x15 headers) ──
-    silk(esp_x, esp_y - 22, "ESP32 DevKit")
-    esp_left_labels = [
-        "3V3", "EN", "GPIO36", "GPIO39", "GPIO34 SENSE",
-        "GPIO35", "GPIO32 RING", "GPIO33 CANCEL", "GPIO25 LRCLK",
-        "GPIO26 BCLK", "GPIO27 RESET", "GPIO14", "GPIO12", "GND", "GPIO13"
+    # ── U1: ESP32 DevKit (2×15 headers) ──
+    silk(esp_x, esp_y - 21, "ESP32 DevKit", justify="center")
+    # Left: short labels — GPIO number + 2-3 char function code for used pins
+    esp_left_lbl = [
+        "3V3", "EN", "36", "39", "34 SN", "35",
+        "32 RG", "33 CN", "25 LR", "26 BC",
+        "27 RS", "14", "12", "GND", "13"
     ]
-    esp_right_labels = [
-        "VIN 5V", "GND", "GPIO23 MOSI", "GPIO22 I2S", "TX0",
-        "RX0", "GPIO21", "GPIO19 MISO", "GPIO18 SCK",
-        "GPIO5 CS", "GPIO17 RING_B", "GPIO16 RING_A", "GPIO4 RING_EN",
-        "GPIO2 LED", "GPIO15"
+    esp_right_lbl = [
+        "5V", "GND", "23 MO", "22 DIN", "TX",
+        "RX", "21", "19 MI", "18 CK",
+        "5 CS", "17 RB", "16 RA", "4 REN", "2 LD", "15"
     ]
-    for i, lbl in enumerate(esp_left_labels):
+    for i, lbl in enumerate(esp_left_lbl):
         py = esp_y + (i - 7) * 2.54
-        silk_pin(esp_x - 12.7 - 2, py, lbl, justify="right")
-    for i, lbl in enumerate(esp_right_labels):
+        silk_pin(esp_x - 12.7 - 1.5, py, lbl, justify="right")
+    for i, lbl in enumerate(esp_right_lbl):
         py = esp_y + (i - 7) * 2.54
-        silk_pin(esp_x + 12.7 + 2, py, lbl)
+        silk_pin(esp_x + 12.7 + 1.5, py, lbl)
 
-    # ── J5: MAX98357A DAC (7-pin) ──
-    silk(dac_x, dac_y - 7, "MAX98357A")
-    dac_labels = ["VIN 5V", "GND", "SD", "GAIN", "DIN", "BCLK", "LRC"]
-    for i, lbl in enumerate(dac_labels):
-        py = dac_y + (i - 3) * 2.54
-        silk_pin(dac_x + 3, py, lbl)
+    # ── J5: MAX98357A DAC ──
+    silk(dac_x, dac_y - 12, "MAX98357A", size=SZ_SUB)
+    for i, lbl in enumerate(["5V", "GND", "SD", "GAIN", "DIN", "BCK", "LRC"]):
+        silk_pin(dac_x + 3, dac_y + (i - 3) * 2.54, lbl)
 
-    # ── J6: DAC Output (2-pin) ──
+    # ── J6: DAC Output ──
     silk_pin(dac_out_x + 3, dac_out_y - 1.27, "SPK+")
     silk_pin(dac_out_x + 3, dac_out_y + 1.27, "SPK-")
 
-    # ── J4: Phone Cord (3-pin screw terminal, rotated 90°) ──
-    silk(phone_x, phone_y - 12, "PHONE")
-    phone_labels = ["LINE A (Red)", "LINE B (Wht)", "BELL (Blue)"]
-    for i, lbl in enumerate(phone_labels):
-        px = phone_x + (i - 1) * 2.54
-        silk_pin(px, phone_y + 4, lbl, justify="left")
+    # ── T1: Audio Transformer ──
+    silk(xfmr_x, xfmr_y - 7, "XFMR", justify="center")
+    silk_pin(xfmr_x - 6, xfmr_y - 3.75, "SPK+", justify="right")
+    silk_pin(xfmr_x - 6, xfmr_y + 3.75, "SPK-", justify="right")
+    silk_pin(xfmr_x + 6, xfmr_y - 3.75, "LnA")
+    silk_pin(xfmr_x + 6, xfmr_y + 3.75, "LnB")
 
-    # ── J7: SD Card Module (6-pin) ──
-    silk(sd_x, sd_y - 10, "SD CARD")
-    sd_labels = ["GND", "VCC 3V3", "MOSI", "MISO", "SCK", "CS"]
-    for i, lbl in enumerate(sd_labels):
-        py = sd_y + (i - 2.5) * 2.54
-        silk_pin(sd_x + 3, py, lbl)
+    # ── J4: Phone Cord (screw terminal, rotated 90°, pitch 5.08mm) ──
+    silk(phone_x - 8, phone_y, "PHONE")
+    for i, lbl in enumerate(["A Red", "B Wht", "Bell"]):
+        silk_pin(phone_x + 4, phone_y + (i - 1) * 5.08, lbl)
 
-    # ── J8/J9/J10: Button Headers (2-pin each) ──
-    silk(btn_base_x, btn_base_y - 5, "BUTTONS")
+    # ── J8/J9/J10: Button Headers ──
+    silk(btn_base_x, btn_base_y - 4, "BUTTONS")
     for i, name in enumerate(["RING", "CANCEL", "RESET"]):
         by = btn_base_y + i * 8
         silk_pin(btn_base_x + 3, by - 1.27, name)
         silk_pin(btn_base_x + 3, by + 1.27, "GND")
 
-    # ── U2: L293D (DIP-16) ──
-    silk(l293d_x, l293d_y - 14, "L293D")
-    l293d_left = ["1 EN1", "2 IN1", "3 OUT1>BELL", "4 GND",
-                  "5 GND", "6 OUT2>LINEB", "7 IN2", "8 VS +50V"]
-    l293d_right = ["16 VSS +5V", "15 NC", "14 NC", "13 GND",
-                   "12 GND", "11 NC", "10 NC", "9 GND"]
-    for i, lbl in enumerate(l293d_left):
-        py = l293d_y + (i - 3.5) * 1.27
-        silk_pin(l293d_x - 7, py, lbl, justify="right")
-    for i, lbl in enumerate(l293d_right):
-        py = l293d_y + (i - 3.5) * 1.27
-        silk_pin(l293d_x + 7, py, lbl)
+    # ── J7: SD Card Module ──
+    silk(sd_x, sd_y - 10, "SD CARD")
+    for i, lbl in enumerate(["GND", "3V3", "MOSI", "MISO", "SCK", "CS"]):
+        silk_pin(sd_x + 3, sd_y + (i - 2.5) * 2.54, lbl)
 
-    # ── U3: PC817 Optocoupler (DIP-4) ──
-    silk(opto_x, opto_y - 7, "PC817")
-    silk_pin(opto_x - 6, opto_y - 0.635, "1 Anode", justify="right")
-    silk_pin(opto_x - 6, opto_y + 0.635, "2 Cathode>LINEB", justify="right")
-    silk_pin(opto_x + 6, opto_y + 0.635, "3 Emitter")
-    silk_pin(opto_x + 6, opto_y - 0.635, "4 Collector>3V3")
+    # ── U2: L293D (DIP-16, pin pitch 2.54mm) ──
+    silk(l293d_x, l293d_y - 13, "L293D")
+    # Left pins 1-8 — label key signals only
+    l293d_left_lbl = ["EN", "IN1", "BELL", "GND", "GND", "LnB", "IN2", "50V"]
+    for i, lbl in enumerate(l293d_left_lbl):
+        if lbl:
+            py = l293d_y + (i - 3.5) * 2.54
+            silk_pin(l293d_x - 3.81 - 1.5, py, lbl, justify="right")
+    # Right pins 16-9 — only label 5V
+    l293d_right_lbl = ["5V", "", "", "", "", "", "", "GND"]
+    for i, lbl in enumerate(l293d_right_lbl):
+        if lbl:
+            py = l293d_y + (i - 3.5) * 2.54
+            silk_pin(l293d_x + 3.81 + 1.5, py, lbl)
 
-    # ── T1: Audio Transformer ──
-    silk(xfmr_x, xfmr_y - 8, "AUDIO XFMR")
-    silk_pin(xfmr_x - 6, xfmr_y - 3.75, "P1 SPK+", justify="right")
-    silk_pin(xfmr_x - 6, xfmr_y + 3.75, "P2 SPK-", justify="right")
-    silk_pin(xfmr_x + 6, xfmr_y - 3.75, "S1 LINE A")
-    silk_pin(xfmr_x + 6, xfmr_y + 3.75, "S2 LINE B")
+    # ── U3: PC817 Optocoupler (DIP-4, pin pitch 2.54mm) ──
+    silk(opto_x, opto_y - 5, "PC817")
+    silk_pin(opto_x - 3.81 - 1.5, opto_y - 1.27, "An", justify="right")
+    silk_pin(opto_x - 3.81 - 1.5, opto_y + 1.27, "Kth", justify="right")
+    silk_pin(opto_x + 3.81 + 1.5, opto_y - 1.27, "Col")
+    silk_pin(opto_x + 3.81 + 1.5, opto_y + 1.27, "Em")
 
-    # ── Discrete components ──
-    silk_pin(r1_x - 8, r1_y, "R1 470R (12V>JncA)")
-    silk_pin(r2_x - 8, r2_y, "R2 220R (JncA>Opto)")
-    silk_pin(r3_x, r3_y - 6, "R3 10K")
-    silk_pin(c1_x - 4, c1_y, "C1 100nF", justify="right")
+    # ── Discrete components — ref + value only ──
+    silk_pin(r1_x, r1_y - 2.5, "R1 470R")
+    silk_pin(r2_x, r2_y - 2.5, "R2 220R")
+    silk_pin(r3_x + 2, r3_y, "R3 10K")
+    silk_pin(c1_x, c1_y - 2, "C1 100nF")
 
     # ── Ground fill zones (both layers) ──
     zone_corners = " ".join(f"(xy {OX + dx:.3f} {OY + dy:.3f})"

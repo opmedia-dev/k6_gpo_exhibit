@@ -1,7 +1,10 @@
 # PCB — K6 GPO Exhibit Carrier Board
 
-KiCad 7+ project for a 2-layer carrier board (100 × 80 mm).  All modules
+KiCad 10 project for a 2-layer carrier board (100 × 100 mm).  All modules
 plug in via through-hole pin headers — no SMD soldering required.
+
+See **[PINOUT.md](PINOUT.md)** for the complete pinout reference with every
+pin, net, and signal described.
 
 ## Files
 
@@ -11,12 +14,13 @@ plug in via through-hole pin headers — no SMD soldering required.
 | `k6_gpo_carrier.kicad_sch` | Schematic (text-documentation style — shows all nets and pin assignments) |
 | `k6_gpo_carrier.kicad_pcb` | PCB layout with component placement, ground-fill zones, and board outline |
 | `generate_kicad.py` | Python script that generates all files above (run to regenerate) |
+| `PINOUT.md` | Complete pinout reference (full tables for every connector and IC) |
 
 ## Board Specifications
 
 | Parameter | Value |
 |-----------|-------|
-| Dimensions | 100 × 80 mm |
+| Dimensions | 100 × 100 mm |
 | Layers | 2 (F.Cu + B.Cu) |
 | Copper weight | 1 oz |
 | Board thickness | 1.6 mm |
@@ -27,29 +31,28 @@ plug in via through-hole pin headers — no SMD soldering required.
 ## Component Placement
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ [12V IN]  [BUCK 12V→5V]  [BOOST 12V→50V]         [MAX98357A]   │
-│  J3          J1              J2              J5 DAC  J6 OUT     │
-│                                                                  │
-│                                              ┌──────────┐ [XFMR]│
-│                                              │          │  T1    │
-│ [BUTTONS]     ┌─────────────────────┐        │  PHONE   │       │
-│  J8 RING      │                     │        │  J4      │       │
-│  J9 CANCEL    │    ESP32 DevKit     │        │  3-pin   │       │
-│  J10 RESET    │        U1           │        │  screw   │       │
-│               │  2×15 pin headers   │        │          │       │
-│               │                     │        └──────────┘       │
-│               └─────────────────────┘   [C1]                    │
-│                                              ┌────────┐         │
-│ [SD CARD]      [R1 470R]  [R2 220R]         │ L293D  │ [R3 10K]│
-│  J7            ──────────  ──────────        │  U2    │ ────────│
-│                                              └────────┘         │
-│                                              ┌────┐             │
-│                                              │PC817│            │
-│                                              │ U3  │            │
-│ (MH)                                         └────┘       (MH) │
-└──────────────────────────────────────────────────────────────────┘
-  (MH) = Mounting hole M3                                    (MH)
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ (MH)  [12V IN]  [BUCK]   [BOOST]                [MAX98357A] [DAC] (MH)     │
+│         J3       J1        J2                      J5        J6             │
+│                                                                             │
+│                                                    [XFMR T1]               │
+│                 ┌─────────────────────┐                                     │
+│                 │                     │            [PHONE J4]               │
+│                 │    ESP32 DevKit     │             3-pin screw             │
+│                 │        U1           │                                     │
+│ [BUTTONS]       │  2×15 pin headers   │                                     │
+│  J8 RING        └─────────────────────┘       [C1]                         │
+│  J9 CANCEL                                                                  │
+│  J10 RESET                                    ┌────────┐                   │
+│                                               │ L293D  │                   │
+│                                               │  U2    │                   │
+│                 [R1 470R]  [R2 220R]          └────────┘  [R3 10K]         │
+│ [SD CARD]                                     ┌────┐                       │
+│  J7                                           │PC817│                      │
+│                                               │ U3  │                      │
+│ (MH)                                          └────┘            (MH)       │
+└──────────────────────────────────────────────────────────────────────────────┘
+  (MH) = Mounting hole M3
 ```
 
 ## Connectors
@@ -89,7 +92,7 @@ plug in via through-hole pin headers — no SMD soldering required.
 
 ### Ordering from JLCPCB / PCBWay
 
-1. Open the project in KiCad 7+
+1. Open the project in KiCad 10+
 2. **File → Plot** → select Gerber format, output to `gerbers/`
 3. Check layers: F.Cu, B.Cu, F.SilkS, B.SilkS, F.Mask, B.Mask, Edge.Cuts
 4. **Generate Drill Files** → Excellon format
