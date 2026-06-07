@@ -247,11 +247,11 @@ def generate_pcb():
 
     # ── Mounting holes ──
     mount_holes = []
-    for mx, my in [(MOUNT_INSET, MOUNT_INSET),
+    for i, (mx, my) in enumerate([(MOUNT_INSET, MOUNT_INSET),
                    (BOARD_W - MOUNT_INSET, MOUNT_INSET),
                    (MOUNT_INSET, BOARD_H - MOUNT_INSET),
-                   (BOARD_W - MOUNT_INSET, BOARD_H - MOUNT_INSET)]:
-        mount_holes.append(mounting_hole("MH", OX + mx, OY + my))
+                   (BOARD_W - MOUNT_INSET, BOARD_H - MOUNT_INSET)], start=1):
+        mount_holes.append(mounting_hole(f"MH{i}", OX + mx, OY + my))
 
     # ── Component placement ──
     footprints = []
