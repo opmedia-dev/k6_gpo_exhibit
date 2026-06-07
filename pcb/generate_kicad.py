@@ -426,7 +426,7 @@ def generate_pcb():
             f'    (polygon (pts {zone_corners})))')
 
     # ── Assemble PCB file ──
-    pcb = f"""(kicad_pcb (version 20260329) (generator "k6_gpo_gen") (generator_version "10.0")
+    pcb = f"""(kicad_pcb (version 20260206) (generator "k6_gpo_gen") (generator_version "10.0")
   (general (thickness 1.6) (legacy_teardrops no))
   (paper "A4")
   (layers
