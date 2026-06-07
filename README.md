@@ -52,6 +52,13 @@ See [`docs/hardware/`](docs/hardware/) for:
 - [**Bill of Materials**](docs/hardware/bom.md) — ~£25 in components
 - [**Wiring Guide**](docs/hardware/wiring-guide.md) — step-by-step build + test
 
+### PCB
+
+A KiCad carrier board layout is in [`pcb/`](pcb/) — 100 × 80 mm, 2-layer,
+all through-hole.  All modules (ESP32 DevKit, MAX98357A, SD card, buck/boost
+converters) plug in via pin headers.  See [`pcb/README.md`](pcb/README.md)
+for fabrication instructions.
+
 ## SD Card Setup
 
 Format a micro-SD card as FAT32 and create this directory structure:
@@ -179,7 +186,7 @@ bell ringing requirements.
 - **Wi-Fi / MQTT** integration for remote exhibit control
 - **Multi-phone networking** — connect two GPO phones via ESP-NOW
 - **VoIP gateway** — bridge the GPO phone to SIP/VoIP
-- **KiCad PCB** — proper PCB layout (currently prototyped on stripboard)
+- **KiCad PCB refinement** — route traces, generate production Gerbers
 - **OLED status display** on the operator's control box
 
 ## License
