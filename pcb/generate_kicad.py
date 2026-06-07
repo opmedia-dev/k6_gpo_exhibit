@@ -391,26 +391,126 @@ def generate_pcb():
 
     # ── Silkscreen labels ──
     silk_labels = []
-    labels = [
-        (OX + 50, OY + 3, "K6 GPO Exhibit — Carrier Board v1.0"),
-        (OX + 50, OY + 77, "github.com/opmedia-dev/k6_gpo_exhibit"),
-        (pwr_x, pwr_y - 7, "12V IN"),
-        (buck_x, buck_y - 7, "BUCK 12V>5V"),
-        (boost_x, boost_y - 7, "BOOST 12V>50V"),
-        (phone_x, phone_y - 12, "PHONE"),
-        (esp_x, esp_y - 22, "ESP32 DevKit"),
-        (dac_x, dac_y - 7, "MAX98357A"),
-        (sd_x, sd_y - 10, "SD CARD"),
-        (btn_base_x, btn_base_y - 5, "BUTTONS"),
-        (l293d_x, l293d_y - 14, "L293D"),
-        (opto_x, opto_y - 7, "PC817"),
-        (xfmr_x, xfmr_y - 8, "AUDIO XFMR"),
-    ]
-    for lx, ly, ltxt in labels:
+    SZ_TITLE = 1.0   # title text size
+    SZ_PIN = 0.6     # pin label text size
+    TH_PIN = 0.12    # pin label stroke
+
+    def silk(x, y, txt, size=SZ_TITLE, thickness=0.15, justify="left"):
         silk_labels.append(
-            f'  (gr_text "{ltxt}" (at {lx:.3f} {ly:.3f}) (layer "F.SilkS")\n'
-            f'    (effects (font (size 1 1) (thickness 0.15)) (justify left))\n'
+            f'  (gr_text "{txt}" (at {x:.3f} {y:.3f}) (layer "F.SilkS")\n'
+            f'    (effects (font (size {size} {size}) (thickness {thickness})) (justify {justify}))\n'
             f'    (tstamp {uid()}))')
+
+    def silk_pin(x, y, txt, justify="left"):
+        silk(x, y, txt, size=SZ_PIN, thickness=TH_PIN, justify=justify)
+
+    # Board title & URL
+    silk(OX + 50, OY + 3, "K6 GPO Exhibit — Carrier Board v1.0")
+    silk(OX + 50, OY + 77, "github.com/opmedia-dev/k6_gpo_exhibit")
+
+    # ── J3: 12V Power Input (2-pin, vertical, pitch 2.54) ──
+    silk(pwr_x, pwr_y - 7, "12V IN")
+    silk_pin(pwr_x + 3, pwr_y - 1.27, "+12V")
+    silk_pin(pwr_x + 3, pwr_y + 1.27, "GND")
+
+    # ── J1: LM2596 Buck (4-pin, vertical, pitch 2.54) ──
+    silk(buck_x, buck_y - 7, "BUCK 12V>5V")
+    pin_labels_j1 = ["IN+ (12V)", "IN- (GND)", "OUT+ (5V)", "OUT- (GND)"]
+    for i, lbl in enumerate(pin_labels_j1):
+        py = buck_y + (i - 1.5) * 2.54
+        silk_pin(buck_x + 3, py, lbl)
+
+    # ── J2: XL6009 Boost (4-pin, vertical, pitch 2.54) ──
+    silk(boost_x, boost_y - 7, "BOOST 12V>50V")
+    pin_labels_j2 = ["IN+ (12V)", "IN- (GND)", "OUT+ (50V)", "OUT- (GND)"]
+    for i, lbl in enumerate(pin_labels_j2):
+        py = boost_y + (i - 1.5) * 2.54
+        silk_pin(boost_x + 3, py, lbl)
+
+    # ── U1: ESP32 DevKit (2x15 headers) ──
+    silk(esp_x, esp_y - 22, "ESP32 DevKit")
+    esp_left_labels = [
+        "3V3", "EN", "GPIO36", "GPIO39", "GPIO34 SENSE",
+        "GPIO35", "GPIO32 RING", "GPIO33 CANCEL", "GPIO25 LRCLK",
+        "GPIO26 BCLK", "GPIO27 RESET", "GPIO14", "GPIO12", "GND", "GPIO13"
+    ]
+    esp_right_labels = [
+        "VIN 5V", "GND", "GPIO23 MOSI", "GPIO22 I2S", "TX0",
+        "RX0", "GPIO21", "GPIO19 MISO", "GPIO18 SCK",
+        "GPIO5 CS", "GPIO17 RING_B", "GPIO16 RING_A", "GPIO4 RING_EN",
+        "GPIO2 LED", "GPIO15"
+    ]
+    for i, lbl in enumerate(esp_left_labels):
+        py = esp_y + (i - 7) * 2.54
+        silk_pin(esp_x - 12.7 - 2, py, lbl, justify="right")
+    for i, lbl in enumerate(esp_right_labels):
+        py = esp_y + (i - 7) * 2.54
+        silk_pin(esp_x + 12.7 + 2, py, lbl)
+
+    # ── J5: MAX98357A DAC (7-pin) ──
+    silk(dac_x, dac_y - 7, "MAX98357A")
+    dac_labels = ["VIN 5V", "GND", "SD", "GAIN", "DIN", "BCLK", "LRC"]
+    for i, lbl in enumerate(dac_labels):
+        py = dac_y + (i - 3) * 2.54
+        silk_pin(dac_x + 3, py, lbl)
+
+    # ── J6: DAC Output (2-pin) ──
+    silk_pin(dac_out_x + 3, dac_out_y - 1.27, "SPK+")
+    silk_pin(dac_out_x + 3, dac_out_y + 1.27, "SPK-")
+
+    # ── J4: Phone Cord (3-pin screw terminal, rotated 90°) ──
+    silk(phone_x, phone_y - 12, "PHONE")
+    phone_labels = ["LINE A (Red)", "LINE B (Wht)", "BELL (Blue)"]
+    for i, lbl in enumerate(phone_labels):
+        px = phone_x + (i - 1) * 2.54
+        silk_pin(px, phone_y + 4, lbl, justify="left")
+
+    # ── J7: SD Card Module (6-pin) ──
+    silk(sd_x, sd_y - 10, "SD CARD")
+    sd_labels = ["GND", "VCC 3V3", "MOSI", "MISO", "SCK", "CS"]
+    for i, lbl in enumerate(sd_labels):
+        py = sd_y + (i - 2.5) * 2.54
+        silk_pin(sd_x + 3, py, lbl)
+
+    # ── J8/J9/J10: Button Headers (2-pin each) ──
+    silk(btn_base_x, btn_base_y - 5, "BUTTONS")
+    for i, name in enumerate(["RING", "CANCEL", "RESET"]):
+        by = btn_base_y + i * 8
+        silk_pin(btn_base_x + 3, by - 1.27, name)
+        silk_pin(btn_base_x + 3, by + 1.27, "GND")
+
+    # ── U2: L293D (DIP-16) ──
+    silk(l293d_x, l293d_y - 14, "L293D")
+    l293d_left = ["1 EN1", "2 IN1", "3 OUT1>BELL", "4 GND",
+                  "5 GND", "6 OUT2>LINEB", "7 IN2", "8 VS +50V"]
+    l293d_right = ["16 VSS +5V", "15 NC", "14 NC", "13 GND",
+                   "12 GND", "11 NC", "10 NC", "9 GND"]
+    for i, lbl in enumerate(l293d_left):
+        py = l293d_y + (i - 3.5) * 1.27
+        silk_pin(l293d_x - 7, py, lbl, justify="right")
+    for i, lbl in enumerate(l293d_right):
+        py = l293d_y + (i - 3.5) * 1.27
+        silk_pin(l293d_x + 7, py, lbl)
+
+    # ── U3: PC817 Optocoupler (DIP-4) ──
+    silk(opto_x, opto_y - 7, "PC817")
+    silk_pin(opto_x - 6, opto_y - 0.635, "1 Anode", justify="right")
+    silk_pin(opto_x - 6, opto_y + 0.635, "2 Cathode>LINEB", justify="right")
+    silk_pin(opto_x + 6, opto_y + 0.635, "3 Emitter")
+    silk_pin(opto_x + 6, opto_y - 0.635, "4 Collector>3V3")
+
+    # ── T1: Audio Transformer ──
+    silk(xfmr_x, xfmr_y - 8, "AUDIO XFMR")
+    silk_pin(xfmr_x - 6, xfmr_y - 3.75, "P1 SPK+", justify="right")
+    silk_pin(xfmr_x - 6, xfmr_y + 3.75, "P2 SPK-", justify="right")
+    silk_pin(xfmr_x + 6, xfmr_y - 3.75, "S1 LINE A")
+    silk_pin(xfmr_x + 6, xfmr_y + 3.75, "S2 LINE B")
+
+    # ── Discrete components ──
+    silk_pin(r1_x - 8, r1_y, "R1 470R (12V>JncA)")
+    silk_pin(r2_x - 8, r2_y, "R2 220R (JncA>Opto)")
+    silk_pin(r3_x, r3_y - 6, "R3 10K")
+    silk_pin(c1_x - 4, c1_y, "C1 100nF", justify="right")
 
     # ── Ground fill zones (both layers) ──
     zone_corners = " ".join(f"(xy {OX + dx:.3f} {OY + dy:.3f})"
