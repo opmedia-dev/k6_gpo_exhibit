@@ -23,6 +23,10 @@ complete mapping.
 | RA | RING_A (bell H-bridge A) |
 | REN | RING_EN (bell enable) |
 | LD | LED_STATUS |
+| VIN | LM2596 pin 1 (12V input) |
+| SW | LM2596 pin 2 (switch output) |
+| FB | LM2596 pin 4 (feedback / +5V) |
+| ON | LM2596 pin 5 (ON/OFF) |
 | LnA | LINE_A (phone line) |
 | LnB | LINE_B (phone line) |
 | An | Anode |
@@ -41,17 +45,30 @@ complete mapping.
 | 1 | +12V | DC input from wall adapter |
 | 2 | GND | Ground |
 
-## J1 — LM2596 Buck Converter (12V → 5V)
+## U4 — LM2596-5.0 Buck Converter IC (12V → 5V)
 
-5-pin header
+TO-220-5 package, on-board with supporting passives.
 
 | Pin | Silk | Net | Description |
 |-----|------|-----|-------------|
-| 1 | 12V+ | +12V | Input positive |
-| 2 | GND | GND | Input negative |
-| 3 | 5V+ | +5V | Output positive |
-| 4 | GND | GND | Output negative |
-| 5 | ON | — | ON/OFF (leave open or tie to GND for always-on) |
+| 1 | VIN | +12V | Input voltage (12V) |
+| 2 | SW | SW_OUT | Switch output → D1 cathode / L1 input |
+| 3 | GND | GND | Ground (also connected to heatsink tab) |
+| 4 | FB | +5V | Feedback (fixed 5V version → connects to output) |
+| 5 | ON | GND | ON/OFF control (GND = always on) |
+
+### Supporting Buck Converter Components
+
+| Ref | Value | Net 1 | Net 2 | Description |
+|-----|-------|-------|-------|-------------|
+| C2 | 680 µF 25V electrolytic | +12V | GND | Input filter capacitor |
+| L1 | 33 µH power inductor | SW_OUT | +5V | Energy storage inductor |
+| D1 | 1N5825 (5A 40V Schottky) | GND (anode) | SW_OUT (cathode) | Freewheeling diode |
+| C3 | 220 µF 25V electrolytic | +5V | GND | Output filter capacitor |
+
+**Circuit:** +12V → CIN (C2) → U4 VIN (pin 1). U4 OUTPUT (pin 2) → L1 → +5V rail.
+D1 cathode connects to pin 2/L1 junction (SW_OUT); D1 anode to GND.
+COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 
 ## J2 — XL6009 Boost Converter (12V → 50V)
 
@@ -179,7 +196,7 @@ complete mapping.
 | 1 | RESET | BTN_RESET | Button signal → ESP32 GPIO 27 |
 | 2 | GND | GND | Ground |
 
-## J7 — SD Card Module (SPI)
+## J7 — Micro-SD Card Module (SPI)
 
 6-pin header
 
@@ -232,3 +249,18 @@ complete mapping.
 | R2 | 220 Ω ¼W | R2 220R | JUNC_A | OPTO_ANODE | Opto LED current limit |
 | R3 | 10 kΩ ¼W | R3 10K | OPTO_EMIT | GND | Opto output pull-down |
 | C1 | 100 nF | C1 100nF | +5V | GND | L293D decoupling |
+| C2 | 680 µF 25V | C2 680µF | +12V | GND | LM2596 input filter |
+| C3 | 220 µF 25V | C3 220µF | +5V | GND | LM2596 output filter |
+| L1 | 33 µH 3A | L1 33µH | SW_OUT | +5V | Buck inductor |
+| D1 | 1N5825 | D1 1N5825 | GND | SW_OUT | Buck freewheeling diode |
+
+## Module Clearance Zones
+
+Dashed silkscreen outlines on the PCB show where plug-in module boards sit.
+Do not place tall components within these zones.
+
+| Module | Size (mm) | Header | Orientation |
+|--------|-----------|--------|-------------|
+| XL6009 Boost | 43 × 21 | J2 (4-pin) | Extends right from header |
+| MAX98357A DAC | 19 × 18 | J5 (7-pin) | Extends left from header |
+| Micro-SD Card | 25 × 20 | J7 (6-pin) | Extends right from header |

@@ -1,5 +1,5 @@
 (kicad_sch (version 20230121) (generator k6_gpo_gen)
-  (uuid 36d4288e-f8b5-49e1-afb8-c722897a141c)
+  (uuid 352211bc-3cd6-42a5-9166-591cf4883e31)
   (paper "A3")
 
   (title_block
@@ -17,7 +17,7 @@
     (effects (font (size 2.54 2.54) (bold yes))))
   (text "J3: 12V DC Input (2-pin screw terminal)\nPin 1: +12V   Pin 2: GND" (at 25.4 33.02 0)
     (effects (font (size 1.27 1.27)) (justify left)))
-  (text "J1: LM2596 Buck (12V to 5V)\nPin 1: IN+ (+12V)   Pin 2: IN- (GND)\nPin 3: OUT+ (+5V)   Pin 4: OUT- (GND)" (at 25.4 45.72 0)
+  (text "U4: LM2596-5.0 Buck Converter IC (TO-220-5, 12V to 5V)\nPin 1: VIN (+12V)  Pin 2: OUTPUT (SW_OUT)  Pin 3: GND\nPin 4: FEEDBACK (+5V)  Pin 5: ON/OFF (GND = always on)\nC2: 680uF 25V input cap (+12V to GND)\nL1: 33uH inductor (SW_OUT to +5V)\nD1: 1N5825 Schottky (anode=GND, cathode=SW_OUT)\nC3: 220uF 25V output cap (+5V to GND)" (at 25.4 45.72 0)
     (effects (font (size 1.27 1.27)) (justify left)))
   (text "J2: XL6009 Boost (12V to 50V)\nPin 1: IN+ (+12V)   Pin 2: IN- (GND)\nPin 3: OUT+ (+50V)  Pin 4: OUT- (GND)" (at 25.4 60.96 0)
     (effects (font (size 1.27 1.27)) (justify left)))
@@ -57,7 +57,7 @@
 
   (text "=== NET LIST ===" (at 177.8 193.04 0)
     (effects (font (size 2.54 2.54) (bold yes))))
-  (text "+12V: J3.1, J1.1, J2.1, R1.1\n+5V: J1.3, U1.R1(VIN), J5.1, U2.16(VSS), C1.1\n+3V3: U1.L1(3V3), U3.4(Collector), J7.2\n+50V: J2.3, U2.8(VS)\nGND: J3.2, J1.2, J1.4, J2.2, J2.4, U1.L14, U1.R2, J5.2,\n     U2.4, U2.5, U2.9, U2.12, U2.13, J7.1, J8.2, J9.2, J10.2,\n     R3.2, C1.2\nLINE_A: J4.1, R1.2(via JUNC_A), T1.S1\nLINE_B: J4.2, U3.2(Cathode), U2.6(OUT2), T1.S2\nBELL: J4.3, U2.3(OUT1)\nLINE_SENSE: U1.L5(GPIO34), U3.3(Emitter)\nRING_EN: U1.R13(GPIO4), U2.1(EN1,2)\nRING_A: U1.R12(GPIO16), U2.2(IN1)\nRING_B: U1.R11(GPIO17), U2.7(IN2)\nI2S_BCLK: U1.L10(GPIO26), J5.6\nI2S_LRCLK: U1.L9(GPIO25), J5.7\nI2S_DOUT: U1.R4(GPIO22), J5.5\nSD_CS: U1.R10(GPIO5), J7.6\nSPI_MOSI: U1.R3(GPIO23), J7.3\nSPI_MISO: U1.R8(GPIO19), J7.4\nSPI_SCK: U1.R9(GPIO18), J7.5\nBTN_RING: U1.L7(GPIO32), J8.1\nBTN_CANCEL: U1.L8(GPIO33), J9.1\nBTN_RESET: U1.L11(GPIO27), J10.1\nAUDIO_P1: J6.1, T1.P1\nAUDIO_P2: J6.2, T1.P2\nJUNC_A: R1.2, R2.1, J4.1(LINE_A)\nOPTO_ANODE: R2.2, U3.1\nOPTO_EMIT: U3.3, R3.1, LINE_SENSE" (at 177.8 205.74 0)
+  (text "+12V: J3.1, U4.1(VIN), J2.1, R1.1, C2.1\n+5V: U4.4(FB), L1.2, C3.1, U1.R1(VIN), J5.1, U2.16(VSS), C1.1\n+3V3: U1.L1(3V3), U3.4(Collector), J7.2\n+50V: J2.3, U2.8(VS)\nGND: J3.2, U4.3, U4.5(ON), C2.2, D1.1(anode), C3.2,\n     J2.2, J2.4, U1.L14, U1.R2, J5.2,\n     U2.4, U2.5, U2.9, U2.12, U2.13, J7.1, J8.2, J9.2, J10.2,\n     R3.2, C1.2\nSW_OUT: U4.2(OUTPUT), D1.2(cathode), L1.1\nLINE_A: J4.1, R1.2(via JUNC_A), T1.S1\nLINE_B: J4.2, U3.2(Cathode), U2.6(OUT2), T1.S2\nBELL: J4.3, U2.3(OUT1)\nLINE_SENSE: U1.L5(GPIO34), U3.3(Emitter)\nRING_EN: U1.R13(GPIO4), U2.1(EN1,2)\nRING_A: U1.R12(GPIO16), U2.2(IN1)\nRING_B: U1.R11(GPIO17), U2.7(IN2)\nI2S_BCLK: U1.L10(GPIO26), J5.6\nI2S_LRCLK: U1.L9(GPIO25), J5.7\nI2S_DOUT: U1.R4(GPIO22), J5.5\nSD_CS: U1.R10(GPIO5), J7.6\nSPI_MOSI: U1.R3(GPIO23), J7.3\nSPI_MISO: U1.R8(GPIO19), J7.4\nSPI_SCK: U1.R9(GPIO18), J7.5\nBTN_RING: U1.L7(GPIO32), J8.1\nBTN_CANCEL: U1.L8(GPIO33), J9.1\nBTN_RESET: U1.L11(GPIO27), J10.1\nAUDIO_P1: J6.1, T1.P1\nAUDIO_P2: J6.2, T1.P2\nJUNC_A: R1.2, R2.1, J4.1(LINE_A)\nOPTO_ANODE: R2.2, U3.1\nOPTO_EMIT: U3.3, R3.1, LINE_SENSE" (at 177.8 205.74 0)
     (effects (font (size 1.27 1.27)) (justify left)))
 
 )

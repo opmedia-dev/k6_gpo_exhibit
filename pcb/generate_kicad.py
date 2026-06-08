@@ -4,9 +4,11 @@
 Creates:
   k6_gpo_carrier.kicad_pro   – project file
   k6_gpo_carrier.kicad_sch   – schematic
-  k6_gpo_carrier.kicad_pcb   – PCB layout (100 × 80 mm, 2-layer)
+  k6_gpo_carrier.kicad_pcb   – PCB layout (100 × 100 mm, 2-layer)
 
-All modules plug in via pin-headers.  Through-hole only.
+LM2596 buck converter is on-board (TO-220-5 IC + passives).
+XL6009, MAX98357A, and Micro-SD modules plug in via pin-headers.
+All through-hole.
 """
 import uuid, json, textwrap, math
 
@@ -83,6 +85,7 @@ NETS = {
     26: "AUDIO_P2",       # transformer primary 2
     27: "JUNC_A",         # R1/R2 junction
     28: "LED_STATUS",     # GPIO 2
+    29: "SW_OUT",         # LM2596 switch output → D1/L1
 }
 
 def net_defs():
@@ -298,11 +301,21 @@ def generate_pcb():
     footprints.append(pin_header_2xN(15, "U1", "ESP32_DevKit",
                                      esp_x, esp_y, 0, esp_left, esp_right))
 
-    # -- LM2596 Buck Converter Module (12V → 5V) --
-    buck_x, buck_y = OX + 28, OY + 12
-    footprints.append(pin_header_1xN(5, "J1", "LM2596_Buck",
+    # -- LM2596-5.0 Buck Converter IC + passives (12V → 5V) --
+    buck_x, buck_y = OX + 28, OY + 14
+    # U4: LM2596-5.0 TO-220-5  (VIN, OUTPUT/SW, GND, FB, ON/OFF)
+    footprints.append(pin_header_1xN(5, "U4", "LM2596-5.0",
                                      buck_x, buck_y, 0,
-                                     {1: 1, 2: 4, 3: 2, 4: 4, 5: 0}))
+                                     {1: 1, 2: 29, 3: 4, 4: 2, 5: 4},
+                                     pitch=1.7))
+    # C2: Input electrolytic 680µF 25V
+    footprints.append(capacitor_th("C2", "680uF", buck_x - 10, buck_y, 0, 1, 4, pitch=5.0))
+    # L1: 33µH power inductor
+    footprints.append(resistor_th("L1", "33uH", buck_x + 10, buck_y, 0, 29, 2, pitch=10.16))
+    # D1: 1N5825 Schottky diode (anode=GND, cathode=SW_OUT)
+    footprints.append(resistor_th("D1", "1N5825", buck_x, buck_y + 10, 0, 4, 29, pitch=10.16))
+    # C3: Output electrolytic 220µF 25V
+    footprints.append(capacitor_th("C3", "220uF", buck_x + 10, buck_y + 10, 0, 2, 4, pitch=5.0))
 
     # -- XL6009 Boost Converter Module (12V → 50V) --
     boost_x, boost_y = OX + 50, OY + 12
@@ -317,18 +330,18 @@ def generate_pcb():
                                      {1: 1, 2: 4}))
 
     # -- Phone Cord Terminal Block (3-pin screw terminal) --
-    phone_x, phone_y = OX + 92, OY + 52
+    phone_x, phone_y = OX + 92, OY + 62
     footprints.append(screw_terminal(3, "J4", "PHONE",
                                      phone_x, phone_y, 90,
                                      {1: 6, 2: 7, 3: 8}))
 
-    # -- MAX98357A I2S DAC (7-pin header) --
-    dac_x, dac_y = OX + 82, OY + 18
+    # -- MAX98357A I2S DAC Module (7-pin header) --
+    dac_x, dac_y = OX + 82, OY + 36
     footprints.append(pin_header_1xN(7, "J5", "MAX98357A",
                                      dac_x, dac_y, 0,
                                      {1: 2, 2: 4, 3: 0, 4: 0, 5: 15, 6: 13, 7: 14}))
     # DAC output (SPK+, SPK-) 2-pin header
-    dac_out_x, dac_out_y = OX + 92, OY + 18
+    dac_out_x, dac_out_y = OX + 92, OY + 36
     footprints.append(pin_header_1xN(2, "J6", "DAC_OUT",
                                      dac_out_x, dac_out_y, 0,
                                      {1: 25, 2: 26}))
@@ -378,7 +391,7 @@ def generate_pcb():
     footprints.append(capacitor_th("C1", "100nF", c1_x, c1_y, 0, 2, 4))
 
     # -- Audio Transformer --
-    xfmr_x, xfmr_y = OX + 90, OY + 38
+    xfmr_x, xfmr_y = OX + 90, OY + 50
     xfmr_nets = {1: 25, 2: 26, 3: 6, 4: 7}
     footprints.append(transformer_4pin("T1", "600R_XFMR", xfmr_x, xfmr_y, 0, xfmr_nets))
 
@@ -411,10 +424,14 @@ def generate_pcb():
     silk_pin(pwr_x + 4, pwr_y - 2.54, "+12V")
     silk_pin(pwr_x + 4, pwr_y + 2.54, "GND")
 
-    # ── J1: LM2596 Buck ──
-    silk(buck_x, buck_y - 7, "BUCK")
-    for i, lbl in enumerate(["12V+", "GND", "5V+", "GND", "ON"]):
-        silk_pin(buck_x + 3, buck_y + (i - 2) * 2.54, lbl)
+    # ── U4: LM2596-5.0 Buck Converter IC ──
+    silk(buck_x, buck_y - 7, "LM2596")
+    for i, lbl in enumerate(["VIN", "SW", "GND", "FB", "ON"]):
+        silk_pin(buck_x + 3, buck_y + (i - 2) * 1.7, lbl)
+    silk_pin(buck_x - 10, buck_y - 3, "C2 680µF")
+    silk_pin(buck_x + 10, buck_y - 3, "L1 33µH")
+    silk_pin(buck_x, buck_y + 7, "D1 1N5825")
+    silk_pin(buck_x + 10, buck_y + 7, "C3 220µF")
 
     # ── J2: XL6009 Boost ──
     silk(boost_x, boost_y - 7, "BOOST")
@@ -501,6 +518,25 @@ def generate_pcb():
     silk_pin(r2_x, r2_y - 2.5, "R2 220R")
     silk_pin(r3_x + 2, r3_y, "R3 10K")
     silk_pin(c1_x, c1_y - 2, "C1 100nF")
+
+    # ── Module clearance outlines (dashed silkscreen) ──
+    def module_zone(x1, y1, x2, y2, name):
+        """Dashed silkscreen rectangle showing where a module board sits."""
+        for cx1, cy1, cx2, cy2 in [
+            (x1, y1, x2, y1), (x2, y1, x2, y2),
+            (x2, y2, x1, y2), (x1, y2, x1, y1)
+        ]:
+            silk_labels.append(
+                f'  (gr_line (start {cx1:.3f} {cy1:.3f}) (end {cx2:.3f} {cy2:.3f}) '
+                f'(stroke (width 0.15) (type dash)) (layer "F.SilkS") (tstamp {uid()}))')
+        silk((x1 + x2) / 2, y1 + 1.5, name, size=0.6, justify="center")
+
+    # XL6009 boost module (43×21 mm) extends right from J2 header
+    module_zone(boost_x - 2, OY + 3, boost_x + 43, OY + 24, "XL6009 module")
+    # MAX98357A DAC module (19×18 mm) extends left from J5 header
+    module_zone(dac_x - 19, dac_y - 9, dac_x + 2, dac_y + 9, "MAX98357A")
+    # Micro-SD module (~25×20 mm) extends right from J7 header
+    module_zone(sd_x - 2, sd_y - 10, sd_x + 25, sd_y + 10, "µSD module")
 
     # ── Ground fill zones (both layers) ──
     zone_corners = " ".join(f"(xy {OX + dx:.3f} {OY + dy:.3f})"
@@ -670,7 +706,7 @@ def generate_schematic():
     (effects (font (size 2.54 2.54) (bold yes))))
   (text "J3: 12V DC Input (2-pin screw terminal)\\nPin 1: +12V   Pin 2: GND" (at 25.4 33.02 0)
     (effects (font (size 1.27 1.27)) (justify left)))
-  (text "J1: LM2596 Buck (12V to 5V)\\nPin 1: IN+ (+12V)   Pin 2: IN- (GND)\\nPin 3: OUT+ (+5V)   Pin 4: OUT- (GND)" (at 25.4 45.72 0)
+  (text "U4: LM2596-5.0 Buck Converter IC (TO-220-5, 12V to 5V)\\nPin 1: VIN (+12V)  Pin 2: OUTPUT (SW_OUT)  Pin 3: GND\\nPin 4: FEEDBACK (+5V)  Pin 5: ON/OFF (GND = always on)\\nC2: 680uF 25V input cap (+12V to GND)\\nL1: 33uH inductor (SW_OUT to +5V)\\nD1: 1N5825 Schottky (anode=GND, cathode=SW_OUT)\\nC3: 220uF 25V output cap (+5V to GND)" (at 25.4 45.72 0)
     (effects (font (size 1.27 1.27)) (justify left)))
   (text "J2: XL6009 Boost (12V to 50V)\\nPin 1: IN+ (+12V)   Pin 2: IN- (GND)\\nPin 3: OUT+ (+50V)  Pin 4: OUT- (GND)" (at 25.4 60.96 0)
     (effects (font (size 1.27 1.27)) (justify left)))
@@ -710,7 +746,7 @@ def generate_schematic():
 
   (text "=== NET LIST ===" (at 177.8 193.04 0)
     (effects (font (size 2.54 2.54) (bold yes))))
-  (text "+12V: J3.1, J1.1, J2.1, R1.1\\n+5V: J1.3, U1.R1(VIN), J5.1, U2.16(VSS), C1.1\\n+3V3: U1.L1(3V3), U3.4(Collector), J7.2\\n+50V: J2.3, U2.8(VS)\\nGND: J3.2, J1.2, J1.4, J2.2, J2.4, U1.L14, U1.R2, J5.2,\\n     U2.4, U2.5, U2.9, U2.12, U2.13, J7.1, J8.2, J9.2, J10.2,\\n     R3.2, C1.2\\nLINE_A: J4.1, R1.2(via JUNC_A), T1.S1\\nLINE_B: J4.2, U3.2(Cathode), U2.6(OUT2), T1.S2\\nBELL: J4.3, U2.3(OUT1)\\nLINE_SENSE: U1.L5(GPIO34), U3.3(Emitter)\\nRING_EN: U1.R13(GPIO4), U2.1(EN1,2)\\nRING_A: U1.R12(GPIO16), U2.2(IN1)\\nRING_B: U1.R11(GPIO17), U2.7(IN2)\\nI2S_BCLK: U1.L10(GPIO26), J5.6\\nI2S_LRCLK: U1.L9(GPIO25), J5.7\\nI2S_DOUT: U1.R4(GPIO22), J5.5\\nSD_CS: U1.R10(GPIO5), J7.6\\nSPI_MOSI: U1.R3(GPIO23), J7.3\\nSPI_MISO: U1.R8(GPIO19), J7.4\\nSPI_SCK: U1.R9(GPIO18), J7.5\\nBTN_RING: U1.L7(GPIO32), J8.1\\nBTN_CANCEL: U1.L8(GPIO33), J9.1\\nBTN_RESET: U1.L11(GPIO27), J10.1\\nAUDIO_P1: J6.1, T1.P1\\nAUDIO_P2: J6.2, T1.P2\\nJUNC_A: R1.2, R2.1, J4.1(LINE_A)\\nOPTO_ANODE: R2.2, U3.1\\nOPTO_EMIT: U3.3, R3.1, LINE_SENSE" (at 177.8 205.74 0)
+  (text "+12V: J3.1, U4.1(VIN), J2.1, R1.1, C2.1\\n+5V: U4.4(FB), L1.2, C3.1, U1.R1(VIN), J5.1, U2.16(VSS), C1.1\\n+3V3: U1.L1(3V3), U3.4(Collector), J7.2\\n+50V: J2.3, U2.8(VS)\\nGND: J3.2, U4.3, U4.5(ON), C2.2, D1.1(anode), C3.2,\\n     J2.2, J2.4, U1.L14, U1.R2, J5.2,\\n     U2.4, U2.5, U2.9, U2.12, U2.13, J7.1, J8.2, J9.2, J10.2,\\n     R3.2, C1.2\\nSW_OUT: U4.2(OUTPUT), D1.2(cathode), L1.1\\nLINE_A: J4.1, R1.2(via JUNC_A), T1.S1\\nLINE_B: J4.2, U3.2(Cathode), U2.6(OUT2), T1.S2\\nBELL: J4.3, U2.3(OUT1)\\nLINE_SENSE: U1.L5(GPIO34), U3.3(Emitter)\\nRING_EN: U1.R13(GPIO4), U2.1(EN1,2)\\nRING_A: U1.R12(GPIO16), U2.2(IN1)\\nRING_B: U1.R11(GPIO17), U2.7(IN2)\\nI2S_BCLK: U1.L10(GPIO26), J5.6\\nI2S_LRCLK: U1.L9(GPIO25), J5.7\\nI2S_DOUT: U1.R4(GPIO22), J5.5\\nSD_CS: U1.R10(GPIO5), J7.6\\nSPI_MOSI: U1.R3(GPIO23), J7.3\\nSPI_MISO: U1.R8(GPIO19), J7.4\\nSPI_SCK: U1.R9(GPIO18), J7.5\\nBTN_RING: U1.L7(GPIO32), J8.1\\nBTN_CANCEL: U1.L8(GPIO33), J9.1\\nBTN_RESET: U1.L11(GPIO27), J10.1\\nAUDIO_P1: J6.1, T1.P1\\nAUDIO_P2: J6.2, T1.P2\\nJUNC_A: R1.2, R2.1, J4.1(LINE_A)\\nOPTO_ANODE: R2.2, U3.1\\nOPTO_EMIT: U3.3, R3.1, LINE_SENSE" (at 177.8 205.74 0)
     (effects (font (size 1.27 1.27)) (justify left)))
 
 )"""
