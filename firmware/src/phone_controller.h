@@ -7,6 +7,7 @@
 #include "bell_driver.h"
 #include "audio_player.h"
 #include "control_panel.h"
+#include "coin_box.h"
 
 // ============================================================================
 // Phone controller — exhibit state machine
@@ -14,7 +15,9 @@
 // States:
 //   IDLE             On-hook.  Auto-ring timer ticking.
 //   RINGING          Bell ringing (auto or manual).  Awaiting pickup.
+//   AWAIT_COINS      (A+B only) Handset lifted, waiting for coins.
 //   PLAYING_HISTORY  Handset answered a ring → playing a history track.
+//   AWAIT_BTN_A      (A+B only) Called party answered, waiting for Button A.
 //   DIAL_TONE        Handset lifted without ring → dial tone plays.
 //   DIALING          Digits accumulating from rotary dial.
 //   PLAYING_NUMBER   Dialling complete → matched MP3 playing.
@@ -25,7 +28,9 @@
 enum class PhoneState : uint8_t {
     IDLE,
     RINGING,
+    AWAIT_COINS,
     PLAYING_HISTORY,
+    AWAIT_BTN_A,
     DIAL_TONE,
     DIALING,
     PLAYING_NUMBER,
@@ -64,6 +69,7 @@ public:
     AudioPlayer&    player()  { return player_; }
     RotaryDecoder&  dial()    { return dial_; }
     ControlPanel&   panel()   { return panel_; }
+    CoinBox&        coinBox() { return coin_box_; }
 
     const char* dialledNumber() const { return dialled_; }
 
@@ -77,6 +83,7 @@ private:
     BellDriver     bell_;
     AudioPlayer    player_;
     ControlPanel   panel_;
+    CoinBox        coin_box_;
 
     char           dialled_[MAX_DIALLED_DIGITS + 1] = {};
     uint8_t        dial_pos_ = 0;

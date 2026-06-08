@@ -13,6 +13,7 @@
 //   • Dialling a number plays a matching MP3 or "number not recognised"
 //   • External control box: RING / CANCEL / RESET buttons
 //   • All audio from SD card, played via I2S to MAX98357A DAC
+//   • Optional A+B coin box (auto-detected daughter board on GPIO 36/39/35)
 //
 // Serial commands (115200 baud):
 //   R   — trigger ring
@@ -64,13 +65,14 @@ static void handleSerial() {
         phone.cancelRing();
         break;
     case 'S':
-        Serial.printf("[cmd] state=%s  hook=%s  line=%d  auto_ring=%s  sd=%s\n",
+        Serial.printf("[cmd] state=%s  hook=%s  line=%d  auto_ring=%s  sd=%s  coinbox=%s\n",
                       phone.stateName(),
                       phone.line().hookState() == HookState::OFF_HOOK
                           ? "OFF_HOOK" : "ON_HOOK",
                       phone.line().lastRawReading(),
                       phone.autoRingEnabled() ? "ON" : "OFF",
-                      phone.player().sdReady() ? "OK" : "FAIL");
+                      phone.player().sdReady() ? "OK" : "FAIL",
+                      phone.coinBox().isInstalled() ? "INSTALLED" : "NONE");
         break;
     case 'A':
         phone.setAutoRing(!phone.autoRingEnabled());
@@ -115,6 +117,9 @@ void setup() {
     phone.begin();
 
     Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol");
+    if (phone.coinBox().isInstalled()) {
+        Serial.println("[app] A+B coin box detected — coin logic active");
+    }
 }
 
 void loop() {

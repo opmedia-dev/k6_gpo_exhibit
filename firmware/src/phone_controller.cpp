@@ -6,6 +6,7 @@ void PhoneController::begin() {
     dial_.begin();
     bell_.begin();
     panel_.begin();
+    coin_box_.begin();
 
     bool sdOk = player_.begin();
 
@@ -23,6 +24,7 @@ void PhoneController::update() {
     line_.update();
     bell_.update();
     player_.update();
+    coin_box_.update();
 
     if (line_.hookChanged() && hook_cb_) {
         hook_cb_(line_.hookState());
@@ -53,9 +55,13 @@ void PhoneController::update() {
             ring();
             break;
         }
-        // Handset lifted → dial tone.
+        // Handset lifted.
         if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
-            enterState(PhoneState::DIAL_TONE);
+            if (coin_box_.isInstalled() && !coin_box_.coinsReady()) {
+                enterState(PhoneState::AWAIT_COINS);
+            } else {
+                enterState(PhoneState::DIAL_TONE);
+            }
         }
         break;
 
@@ -63,7 +69,50 @@ void PhoneController::update() {
     case PhoneState::RINGING:
         if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
             bell_.stopRinging();
+            if (coin_box_.isInstalled()) {
+                enterState(PhoneState::AWAIT_BTN_A);
+            } else {
+                enterState(PhoneState::PLAYING_HISTORY);
+            }
+        }
+        break;
+
+    // ----- AWAIT_COINS (A+B only) -------------------------------------------
+    case PhoneState::AWAIT_COINS:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (coin_box_.coinsReady()) {
+            player_.stop();
+            Serial.println("[coin] coins accepted — dial tone");
+            enterState(PhoneState::DIAL_TONE);
+        }
+        break;
+
+    // ----- AWAIT_BTN_A (A+B only) -------------------------------------------
+    case PhoneState::AWAIT_BTN_A:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (coin_box_.buttonAPressed()) {
+            coin_box_.clearButtonA();
+            Serial.println("[coin] Button A — coins collected, connecting");
             enterState(PhoneState::PLAYING_HISTORY);
+            break;
+        }
+        if (coin_box_.buttonBPressed()) {
+            coin_box_.clearButtonB();
+            Serial.println("[coin] Button B — coins refunded");
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (millis() - state_enter_time_ > COIN_BTN_A_TIMEOUT_MS) {
+            Serial.println("[coin] Button A timeout");
+            enterState(PhoneState::BUSY);
         }
         break;
 
@@ -220,6 +269,16 @@ void PhoneController::enterState(PhoneState s) {
     case PhoneState::RINGING:
         break;
 
+    case PhoneState::AWAIT_COINS:
+        // Play "insert coins" prompt if available, otherwise silence.
+        if (player_.sdReady() && SD.exists(SD_FILE_INSERT)) {
+            player_.playFile(SD_FILE_INSERT, true);
+        }
+        break;
+
+    case PhoneState::AWAIT_BTN_A:
+        break;
+
     case PhoneState::PLAYING_HISTORY:
         player_.playRandomHistory();
         break;
@@ -259,7 +318,9 @@ const char* PhoneController::stateName() const {
     switch (state_) {
     case PhoneState::IDLE:            return "IDLE";
     case PhoneState::RINGING:         return "RINGING";
+    case PhoneState::AWAIT_COINS:     return "AWAIT_COINS";
     case PhoneState::PLAYING_HISTORY: return "PLAYING_HISTORY";
+    case PhoneState::AWAIT_BTN_A:     return "AWAIT_BTN_A";
     case PhoneState::DIAL_TONE:       return "DIAL_TONE";
     case PhoneState::DIALING:         return "DIALING";
     case PhoneState::PLAYING_NUMBER:  return "PLAYING_NUMBER";

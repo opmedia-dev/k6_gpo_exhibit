@@ -17,6 +17,8 @@ telephone work as an interactive exhibit in a K6 phone box.
   busy tone) loaded from a micro-SD card as MP3 files
 - **I2S audio output** — MAX98357A DAC for quality playback through the
   phone's earpiece via a coupling transformer
+- **Optional A+B coin box** — auto-detected daughter board supports classic
+  GPO pre-payment coin mechanisms (Button A/B, coin weight switch)
 
 No modifications are made to the telephone.
 
@@ -26,6 +28,10 @@ No modifications are made to the telephone.
 |-------|------|-------|
 | GPO 232 | External (Bellset No. 26) | Blue wire drives external bell, or leave unconnected |
 | GPO 332 | Internal (2 µF cap + bell coils) | Full bell ringing via blue wire |
+| GPO 332L | Internal | "Listener" variant, same 3-wire connection |
+
+Any GPO phone with a 3-wire connection (Line A, Line B, Bell) should work.
+See the hardware docs for notes on other models (706, 746, etc.).
 
 ## System Architecture
 
@@ -49,7 +55,7 @@ No modifications are made to the telephone.
 
 See [`docs/hardware/`](docs/hardware/) for:
 - [**Schematic**](docs/hardware/schematic.md) — full circuit with ASCII diagrams
-- [**Bill of Materials**](docs/hardware/bom.md) — ~£25 in components
+- [**Bill of Materials**](docs/hardware/bom.md) — ~£29 in components
 - [**Wiring Guide**](docs/hardware/wiring-guide.md) — step-by-step build + test
 
 ### PCB
@@ -127,7 +133,8 @@ main.cpp                    Arduino setup/loop, serial commands
        ├─ RotaryDecoder     Dial pulse counting → digit
        ├─ BellDriver        25 Hz H-bridge with UK ring cadence
        ├─ AudioPlayer       SD card MP3 playback via I2S
-       └─ ControlPanel      3-button debounced input
+       ├─ ControlPanel      3-button debounced input
+       └─ CoinBox           Optional A+B coin box (auto-detected)
 ```
 
 State machine:
@@ -136,14 +143,20 @@ State machine:
              auto-ring timer
                   or
 IDLE ──── BTN_RING/serial 'R' ──── RINGING ──── (answer) ──── PLAYING_HISTORY
-  │                                                                │
-  │                                                           (on-hook)
-  │                                                                │
+  │                                    │                            │
+  │                               [A+B: AWAIT_BTN_A]           (on-hook)
+  │                                 Btn A → play                    │
+  │                                 Btn B → IDLE                    │
+  │                                                                 │
+  ├── (lift, no coins) ── [A+B: AWAIT_COINS] ── (coins in) ──┐     │
+  │                                                            │     │
   └── (lift handset) ── DIAL_TONE ── DIALING ── PLAYING_NUMBER ───┘
                                         │                          │
                                         └───── PLAYING_NOT_REC ───┘
                                                      │
                                                 (playback ends) ── BUSY ── (on-hook) ── IDLE
+
+[A+B] states only active when coin box daughter board is detected.
 ```
 
 ### Callbacks
@@ -174,6 +187,9 @@ phone.onState([](PhoneState s)    { /* state transition */      });
 | 33 | Button: CANCEL (active-low) |
 | 27 | Button: RESET (active-low) |
 | 2 | Status LED |
+| 36 | Coin box: coin sense (optional, input-only) |
+| 39 | Coin box: Button A (optional, input-only) |
+| 35 | Coin box: Button B (optional, input-only) |
 
 ## Technical Reference
 
@@ -186,7 +202,7 @@ bell ringing requirements.
 - **Wi-Fi / MQTT** integration for remote exhibit control
 - **Multi-phone networking** — connect two GPO phones via ESP-NOW
 - **VoIP gateway** — bridge the GPO phone to SIP/VoIP
-- **KiCad PCB refinement** — route traces, generate production Gerbers
+- **A+B coin box daughter board** — PCB design for coin mechanism interface
 - **OLED status display** on the operator's control box
 
 ## License

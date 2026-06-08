@@ -27,6 +27,14 @@ constexpr int PIN_BTN_RING     = 32;  // trigger incoming ring
 constexpr int PIN_BTN_CANCEL   = 33;  // cancel ring / stop playback
 constexpr int PIN_BTN_RESET    = 27;  // system reset
 
+// --- A+B Coin Box (optional daughter board) ----------------------------------
+// These input-only GPIOs are active-low via optocoupler.  When no daughter
+// board is installed, the pins float high and the coin box feature is
+// automatically disabled.
+constexpr int PIN_COIN_SENSE   = 36;  // coin weight switch (coins inserted)
+constexpr int PIN_COIN_BTN_A   = 39;  // Button A (collect coins, connect call)
+constexpr int PIN_COIN_BTN_B   = 35;  // Button B (refund coins)
+
 // --- Status LED -------------------------------------------------------------
 constexpr int PIN_STATUS_LED   = 2;   // on-board LED on most dev-kits
 
@@ -62,6 +70,11 @@ constexpr unsigned long DIAL_TONE_TIMEOUT_MS  = 15000;    // idle off-hook timeo
 // Button debounce
 constexpr unsigned long BTN_DEBOUNCE_MS       = 50;
 
+// A+B coin box
+constexpr unsigned long COIN_DEBOUNCE_MS      = 100;   // debounce for coin/button inputs
+constexpr unsigned long COIN_DETECT_BOOT_MS   = 2000;  // time at boot to detect daughter board
+constexpr unsigned long COIN_BTN_A_TIMEOUT_MS = 30000; // max wait for Button A after answer
+
 // --- SD card directory layout -----------------------------------------------
 // /system/dialtone.mp3       continuous dial tone
 // /system/busy.mp3           busy / error tone
@@ -74,3 +87,4 @@ constexpr const char* SD_DIR_NUMBERS   = "/numbers";
 constexpr const char* SD_FILE_DIALTONE = "/system/dialtone.mp3";
 constexpr const char* SD_FILE_BUSY     = "/system/busy.mp3";
 constexpr const char* SD_FILE_NOT_REC  = "/system/not_recognised.mp3";
+constexpr const char* SD_FILE_INSERT   = "/system/insert_coins.mp3"; // optional A+B prompt
