@@ -392,9 +392,11 @@ def generate_pcb():
     TH_PIN = 0.10
 
     def silk(x, y, txt, size=SZ_TITLE, thickness=0.15, justify="left"):
+        # KiCad 10 has no "center" justify token — omit it (center is the default)
+        just = "" if justify == "center" else f" (justify {justify})"
         silk_labels.append(
             f'  (gr_text "{txt}" (at {x:.3f} {y:.3f}) (layer "F.SilkS")\n'
-            f'    (effects (font (size {size} {size}) (thickness {thickness})) (justify {justify}))\n'
+            f'    (effects (font (size {size} {size}) (thickness {thickness})){just})\n'
             f'    (tstamp {uid()}))')
 
     def silk_pin(x, y, txt, justify="left"):
