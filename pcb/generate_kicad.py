@@ -111,14 +111,14 @@ def make_footprint(ref, val, x, y, angle, pads_text, extra_drawing=""):
         f'  )'
     )
 
-def pin_header_1xN(n, ref, val, x, y, angle, net_map, pitch=2.54):
+def pin_header_1xN(n, ref, val, x, y, angle, net_map, pitch=2.54, drill=1.0, pad_size=1.7):
     """Single-row pin header, N pins, 2.54mm pitch."""
     pads = []
     for i in range(n):
         py = (i - (n-1)/2.0) * pitch
         nid = net_map.get(i+1, 0)
         nname = NETS.get(nid, "")
-        pads.append(fp_pad_th(i+1, 0, py, net_id=nid, net_name=nname))
+        pads.append(fp_pad_th(i+1, 0, py, drill=drill, size=pad_size, net_id=nid, net_name=nname))
     # courtyard
     cy_h = n * pitch + 1.0
     crt = (f'    (fp_rect (start {-1.5:.3f} {-(cy_h/2):.3f}) '
@@ -307,7 +307,7 @@ def generate_pcb():
     footprints.append(pin_header_1xN(5, "U4", "LM2596-5.0",
                                      buck_x, buck_y, 0,
                                      {1: 1, 2: 29, 3: 4, 4: 2, 5: 4},
-                                     pitch=1.7))
+                                     pitch=1.7, drill=0.9, pad_size=1.3))
     # C2: Input electrolytic 680µF 25V
     footprints.append(capacitor_th("C2", "680uF", buck_x - 10, buck_y, 0, 1, 4, pitch=5.0))
     # L1: 33µH power inductor
