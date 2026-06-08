@@ -5,7 +5,7 @@
 | Qty | Component | Example Part | Purpose | Approx. Cost |
 |-----|-----------|-------------|---------|-------------|
 | 1 | 12 V DC adapter | Any 12 V / 1 A barrel-jack wall-wart | Main system power | £5 |
-| 1 | Buck converter module | LM2596 or MP1584 adjustable | 12 V → 5 V for logic | £1 |
+| 1 | Buck converter IC | LM2596-5.0 (TO-220-5) | 12 V → 5 V fixed-output regulator | £1.50 |
 | 1 | Boost converter module | XL6009 adjustable | 12 V → 50 V for bell | £1-2 |
 
 > **Why 12 V?** A single 5 V → 50 V boost module is hard to source (10:1 ratio).
@@ -36,7 +36,11 @@
 | 1 | Resistor | 470 Ω, 1 W | R1 | Line current limit |
 | 1 | Resistor | 220 Ω, ¼ W | R2 | Optocoupler LED current limit |
 | 1 | Resistor | 10 kΩ, ¼ W | R3 | Pull-down for optocoupler output |
-| 1 | Capacitor (ceramic) | 100 nF | — | Decoupling for L293D |
+| 1 | Electrolytic capacitor | 680 µF, 25 V | C2 | LM2596 input filter |
+| 1 | Electrolytic capacitor | 220 µF, 25 V | C3 | LM2596 output filter |
+| 1 | Power inductor | 33 µH, ≥ 1 A saturation | L1 | LM2596 energy storage |
+| 1 | Schottky diode | 1N5825 (DO-201, 5 A / 40 V) | D1 | LM2596 freewheeling diode |
+| 1 | Capacitor (ceramic) | 100 nF | C1 | Decoupling for L293D |
 
 ## Control Panel
 
@@ -52,7 +56,7 @@
 | 1 | Barrel jack socket | 12 V power input |
 | 1 | Project box / enclosure | Houses all electronics + buttons |
 | 1 | Multi-core cable (≥ 6 conductors) | Extended lead from phone to enclosure |
-| 1 | Prototype PCB / stripboard | 80 × 60 mm minimum |
+| 1 | Custom carrier PCB | 100 × 100 mm, 2-layer (see `pcb/` folder for Gerbers) |
 | — | Hook-up wire, solder, standoffs | Assembly |
 
 ## Optional
@@ -67,17 +71,18 @@
 
 | Category | Cost |
 |----------|------|
-| Power supply (adapter + modules) | ~£7 |
+| Power supply (adapter + buck IC/passives + boost module) | ~£9 |
 | Controller + audio (ESP32 + DAC + SD) | ~£12 |
 | Phone line interface (opto + H-bridge + transformer) | ~£4 |
-| Passives + connectors | ~£2 |
-| **Total** | **~£25** |
+| Passives + connectors | ~£4 |
+| **Total** | **~£29** |
 
 *Excludes: phone, SD card content, enclosure, extended cable.*
 
 ## Where to Buy (UK)
 
-- **Amazon UK** — ESP32 DevKit, LM2596 modules, XL6009 modules, SD card modules
+- **Amazon UK** — ESP32 DevKit, XL6009 modules, SD card modules
+- **RS Components / Mouser** — LM2596-5.0, 1N5825, 33 µH inductor, electrolytic caps
 - **eBay** — PC817 optocouplers, L293D, 600 Ω audio transformers, push buttons
 - **CPC/Farnell** — Resistors, capacitors, screw terminals, stripboard
 - **AliExpress** — Cheapest for modules (longer delivery)
