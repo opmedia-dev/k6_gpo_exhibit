@@ -59,7 +59,23 @@
 | 1 | Custom carrier PCB | 100 × 100 mm, 2-layer (see `pcb/` folder for Gerbers) |
 | — | Hook-up wire, solder, standoffs | Assembly |
 
-## Optional
+## Optional — A+B Coin Box Daughter Board
+
+Small add-on board for connecting a GPO A+B coin collecting box mechanism.
+See `pcb/COINBOX_DAUGHTER.md` for full wiring guide and pinout.
+
+| Qty | Component | Value / Part | Purpose | Approx. Cost |
+|-----|-----------|-------------|---------|-------------|
+| 3 | Optocoupler (DIP-4) | PC817 / EL817 | Isolate A+B box contacts from ESP32 | £0.90 |
+| 3 | Resistor | 470 Ω, ¼ W | Optocoupler LED current limit | £0.10 |
+| 3 | Resistor | 10 kΩ, ¼ W | Pull-up for ESP32 input-only GPIOs | £0.10 |
+| 3 | Screw terminal | 2-pos, 5.08 mm pitch | A+B box contact inputs | £0.60 |
+| 1 | Pin header | 1×5, 2.54 mm | Output to carrier board GPIOs | £0.10 |
+| 1 | Daughter board PCB | 45 × 35 mm, 2-layer | See `pcb/` folder for KiCad files | £2 |
+| — | Hook-up wire | 22–26 AWG | A+B box to daughter board wiring | £1 |
+| | | | **Daughter board subtotal** | **~£5** |
+
+## Optional — Other
 
 | Qty | Component | Purpose |
 |-----|-----------|---------|

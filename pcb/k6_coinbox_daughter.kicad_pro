@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "filename": "k6_coinbox_daughter.kicad_pro",
+    "version": 2
+  },
+  "board": {
+    "design_settings": {
+      "defaults": {
+        "board_outline_line_width": 0.05
+      }
+    }
+  },
+  "schematic": {
+    "meta": {
+      "version": 1
+    }
+  }
+}
