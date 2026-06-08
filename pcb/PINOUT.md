@@ -43,7 +43,7 @@ complete mapping.
 
 ## J1 — LM2596 Buck Converter (12V → 5V)
 
-4-pin header
+5-pin header
 
 | Pin | Silk | Net | Description |
 |-----|------|-----|-------------|
@@ -51,6 +51,7 @@ complete mapping.
 | 2 | GND | GND | Input negative |
 | 3 | 5V+ | +5V | Output positive |
 | 4 | GND | GND | Output negative |
+| 5 | ON | — | ON/OFF (leave open or tie to GND for always-on) |
 
 ## J2 — XL6009 Boost Converter (12V → 50V)
 

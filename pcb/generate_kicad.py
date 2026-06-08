@@ -300,9 +300,9 @@ def generate_pcb():
 
     # -- LM2596 Buck Converter Module (12V → 5V) --
     buck_x, buck_y = OX + 28, OY + 12
-    footprints.append(pin_header_1xN(4, "J1", "LM2596_Buck",
+    footprints.append(pin_header_1xN(5, "J1", "LM2596_Buck",
                                      buck_x, buck_y, 0,
-                                     {1: 1, 2: 4, 3: 2, 4: 4}))
+                                     {1: 1, 2: 4, 3: 2, 4: 4, 5: 0}))
 
     # -- XL6009 Boost Converter Module (12V → 50V) --
     boost_x, boost_y = OX + 50, OY + 12
@@ -413,8 +413,8 @@ def generate_pcb():
 
     # ── J1: LM2596 Buck ──
     silk(buck_x, buck_y - 7, "BUCK")
-    for i, lbl in enumerate(["12V+", "GND", "5V+", "GND"]):
-        silk_pin(buck_x + 3, buck_y + (i - 1.5) * 2.54, lbl)
+    for i, lbl in enumerate(["12V+", "GND", "5V+", "GND", "ON"]):
+        silk_pin(buck_x + 3, buck_y + (i - 2) * 2.54, lbl)
 
     # ── J2: XL6009 Boost ──
     silk(boost_x, boost_y - 7, "BOOST")
