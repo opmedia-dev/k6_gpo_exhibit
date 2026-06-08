@@ -312,13 +312,13 @@ def generate_pcb():
     footprints.append(capacitor_th("C2", "680uF", buck_x - 10, buck_y, 0, 1, 4, pitch=5.0))
     # L1: 33µH power inductor
     footprints.append(resistor_th("L1", "33uH", buck_x + 10, buck_y, 0, 29, 2, pitch=10.16))
-    # D1: 1N5825 Schottky diode (anode=GND, cathode=SW_OUT)
-    footprints.append(resistor_th("D1", "1N5825", buck_x, buck_y + 10, 0, 4, 29, pitch=10.16))
-    # C3: Output electrolytic 220µF 25V
-    footprints.append(capacitor_th("C3", "220uF", buck_x + 10, buck_y + 10, 0, 2, 4, pitch=5.0))
+    # D1: 1N5825 Schottky diode (anode=GND, cathode=SW_OUT) — placed left of ESP32
+    footprints.append(resistor_th("D1", "1N5825", buck_x - 10, buck_y + 8, 0, 4, 29, pitch=10.16))
+    # C3: Output electrolytic 220µF 25V — in top row next to L1
+    footprints.append(capacitor_th("C3", "220uF", buck_x + 18, buck_y, 0, 2, 4, pitch=5.0))
 
     # -- XL6009 Boost Converter Module (12V → 50V) --
-    boost_x, boost_y = OX + 50, OY + 12
+    boost_x, boost_y = OX + 56, OY + 12
     footprints.append(pin_header_1xN(4, "J2", "XL6009_Boost",
                                      boost_x, boost_y, 0,
                                      {1: 1, 2: 4, 3: 5, 4: 4}))
@@ -330,7 +330,7 @@ def generate_pcb():
                                      {1: 1, 2: 4}))
 
     # -- Phone Cord Terminal Block (3-pin screw terminal) --
-    phone_x, phone_y = OX + 92, OY + 62
+    phone_x, phone_y = OX + 92, OY + 66
     footprints.append(screw_terminal(3, "J4", "PHONE",
                                      phone_x, phone_y, 90,
                                      {1: 6, 2: 7, 3: 8}))
@@ -341,7 +341,7 @@ def generate_pcb():
                                      dac_x, dac_y, 0,
                                      {1: 2, 2: 4, 3: 0, 4: 0, 5: 15, 6: 13, 7: 14}))
     # DAC output (SPK+, SPK-) 2-pin header
-    dac_out_x, dac_out_y = OX + 92, OY + 36
+    dac_out_x, dac_out_y = OX + 92, OY + 48
     footprints.append(pin_header_1xN(2, "J6", "DAC_OUT",
                                      dac_out_x, dac_out_y, 0,
                                      {1: 25, 2: 26}))
@@ -391,7 +391,7 @@ def generate_pcb():
     footprints.append(capacitor_th("C1", "100nF", c1_x, c1_y, 0, 2, 4))
 
     # -- Audio Transformer --
-    xfmr_x, xfmr_y = OX + 90, OY + 50
+    xfmr_x, xfmr_y = OX + 90, OY + 56
     xfmr_nets = {1: 25, 2: 26, 3: 6, 4: 7}
     footprints.append(transformer_4pin("T1", "600R_XFMR", xfmr_x, xfmr_y, 0, xfmr_nets))
 
@@ -430,8 +430,8 @@ def generate_pcb():
         silk_pin(buck_x + 3, buck_y + (i - 2) * 1.7, lbl)
     silk_pin(buck_x - 10, buck_y - 3, "C2 680µF")
     silk_pin(buck_x + 10, buck_y - 3, "L1 33µH")
-    silk_pin(buck_x, buck_y + 7, "D1 1N5825")
-    silk_pin(buck_x + 10, buck_y + 7, "C3 220µF")
+    silk_pin(buck_x - 10, buck_y + 5, "D1 1N5825")
+    silk_pin(buck_x + 18, buck_y - 3, "C3 220µF")
 
     # ── J2: XL6009 Boost ──
     silk(boost_x, boost_y - 7, "BOOST")
@@ -464,11 +464,12 @@ def generate_pcb():
         silk_pin(dac_x + 3, dac_y + (i - 3) * 2.54, lbl)
 
     # ── J6: DAC Output ──
+    silk(dac_out_x, dac_out_y - 4, "DAC OUT")
     silk_pin(dac_out_x + 3, dac_out_y - 1.27, "SPK+")
     silk_pin(dac_out_x + 3, dac_out_y + 1.27, "SPK-")
 
     # ── T1: Audio Transformer ──
-    silk(xfmr_x, xfmr_y - 7, "XFMR", justify="center")
+    silk(xfmr_x, xfmr_y - 5, "XFMR", justify="center")
     silk_pin(xfmr_x - 6, xfmr_y - 3.75, "SPK+", justify="right")
     silk_pin(xfmr_x - 6, xfmr_y + 3.75, "SPK-", justify="right")
     silk_pin(xfmr_x + 6, xfmr_y - 3.75, "LnA")
