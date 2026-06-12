@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 // ============================================================================
-// External control panel — three buttons on the operator's box
+// External control panel — four buttons on the operator's box
 //
 // All buttons are active-low with the ESP32 internal pull-up enabled.
 // Pressing a button connects the pin to GND.
@@ -11,12 +11,14 @@
 //   BTN_RING   — manually trigger the phone bell
 //   BTN_CANCEL — cancel ringing / stop current playback
 //   BTN_RESET  — full system restart
+//   BTN_MODE   — toggle auto/manual ring mode
 // ============================================================================
 
 enum class Button : uint8_t {
     RING,
     CANCEL,
     RESET,
+    MODE,
     NONE
 };
 
@@ -35,7 +37,7 @@ private:
         unsigned long last_change;
     };
 
-    BtnState btns_[3] = {};
+    BtnState btns_[4] = {};
 
     bool debounceRead(BtnState& b);
 };

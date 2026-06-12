@@ -61,8 +61,9 @@ public:
     void onState(StateCallback cb)   { state_cb_  = cb; }
 
     // Enable / disable the random auto-ring feature.
-    void setAutoRing(bool enabled) { auto_ring_enabled_ = enabled; }
+    void setAutoRing(bool enabled);
     bool autoRingEnabled() const   { return auto_ring_enabled_; }
+    void toggleAutoRing()          { setAutoRing(!auto_ring_enabled_); }
 
     PhoneLine&      line()    { return line_; }
     BellDriver&     bell()    { return bell_; }
@@ -76,6 +77,7 @@ public:
 private:
     void enterState(PhoneState s);
     void resetAutoRingTimer();
+    void updateLamp();
 
     PhoneState     state_ = PhoneState::IDLE;
     PhoneLine      line_;

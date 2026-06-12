@@ -11,6 +11,9 @@ void PhoneController::begin() {
     bool sdOk = player_.begin();
 
     pinMode(PIN_STATUS_LED, OUTPUT);
+    pinMode(PIN_AUTO_LAMP, OUTPUT);
+    updateLamp();
+
     randomSeed(analogRead(0) ^ micros());
     resetAutoRingTimer();
     enterState(PhoneState::IDLE);
@@ -42,6 +45,10 @@ void PhoneController::update() {
         Serial.println("[panel] RESET pressed — rebooting");
         delay(200);
         ESP.restart();
+    } else if (btn == Button::MODE) {
+        toggleAutoRing();
+        Serial.printf("[panel] MODE pressed — auto-ring %s\n",
+                      auto_ring_enabled_ ? "ON" : "OFF");
     }
 
     // --- state machine ------------------------------------------------------
@@ -306,6 +313,16 @@ void PhoneController::enterState(PhoneState s) {
 
     Serial.printf("[phone] → %s\n", stateName());
     if (state_cb_) state_cb_(s);
+}
+
+void PhoneController::setAutoRing(bool enabled) {
+    auto_ring_enabled_ = enabled;
+    updateLamp();
+    if (enabled) resetAutoRingTimer();
+}
+
+void PhoneController::updateLamp() {
+    digitalWrite(PIN_AUTO_LAMP, auto_ring_enabled_ ? HIGH : LOW);
 }
 
 void PhoneController::resetAutoRingTimer() {

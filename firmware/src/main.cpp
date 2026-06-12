@@ -65,12 +65,12 @@ static void handleSerial() {
         phone.cancelRing();
         break;
     case 'S':
-        Serial.printf("[cmd] state=%s  hook=%s  line=%d  auto_ring=%s  sd=%s  coinbox=%s\n",
+        Serial.printf("[cmd] state=%s  hook=%s  line=%d  mode=%s  sd=%s  coinbox=%s\n",
                       phone.stateName(),
                       phone.line().hookState() == HookState::OFF_HOOK
                           ? "OFF_HOOK" : "ON_HOOK",
                       phone.line().lastRawReading(),
-                      phone.autoRingEnabled() ? "ON" : "OFF",
+                      phone.autoRingEnabled() ? "AUTO" : "MANUAL",
                       phone.player().sdReady() ? "OK" : "FAIL",
                       phone.coinBox().isInstalled() ? "INSTALLED" : "NONE");
         break;
@@ -117,6 +117,9 @@ void setup() {
     phone.begin();
 
     Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol");
+    Serial.printf("[app] mode: %s (lamp %s)\n",
+                  phone.autoRingEnabled() ? "AUTO" : "MANUAL",
+                  phone.autoRingEnabled() ? "ON" : "OFF");
     if (phone.coinBox().isInstalled()) {
         Serial.println("[app] A+B coin box detected — coin logic active");
     }

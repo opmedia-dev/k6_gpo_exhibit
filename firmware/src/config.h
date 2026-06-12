@@ -26,6 +26,7 @@ constexpr int PIN_SD_CS        = 5;
 constexpr int PIN_BTN_RING     = 32;  // trigger incoming ring
 constexpr int PIN_BTN_CANCEL   = 33;  // cancel ring / stop playback
 constexpr int PIN_BTN_RESET    = 27;  // system reset
+constexpr int PIN_BTN_MODE     = 14;  // toggle auto/manual ring mode
 
 // --- A+B Coin Box (optional daughter board) ----------------------------------
 // These input-only GPIOs are active-low via optocoupler.  When no daughter
@@ -34,6 +35,9 @@ constexpr int PIN_BTN_RESET    = 27;  // system reset
 constexpr int PIN_COIN_SENSE   = 36;  // coin weight switch (coins inserted)
 constexpr int PIN_COIN_BTN_A   = 39;  // Button A (collect coins, connect call)
 constexpr int PIN_COIN_BTN_B   = 35;  // Button B (refund coins)
+
+// --- Auto-mode indicator lamp ------------------------------------------------
+constexpr int PIN_AUTO_LAMP    = 13;  // drives 3-6V panel lamp (active-high)
 
 // --- Status LED -------------------------------------------------------------
 constexpr int PIN_STATUS_LED   = 2;   // on-board LED on most dev-kits

@@ -120,9 +120,18 @@ pio device monitor         # serial console (115200 baud)
 | RING (GPIO 32) | Manually trigger the phone bell |
 | CANCEL (GPIO 33) | Cancel ringing / stop current playback |
 | RESET (GPIO 27) | Full system restart |
+| MODE (GPIO 14) | Toggle auto/manual ring mode |
 
 All buttons are active-low (connect to GND when pressed); the ESP32's
 internal pull-ups are enabled.
+
+### Auto-Mode Indicator Lamp
+
+GPIO 13 drives a 3–6 V panel lamp (active-high) that illuminates when
+auto-ring mode is active.  In **auto mode** the phone rings at random
+intervals (5–30 min) and the lamp is ON.  In **manual mode** the phone
+only rings when the RING button is pressed and the lamp is OFF.
+Calling (lifting the handset, dialling) works in both modes.
 
 ### Firmware Architecture
 
@@ -186,6 +195,8 @@ phone.onState([](PhoneState s)    { /* state transition */      });
 | 32 | Button: RING (active-low) |
 | 33 | Button: CANCEL (active-low) |
 | 27 | Button: RESET (active-low) |
+| 14 | Button: MODE (active-low) |
+| 13 | Auto-mode lamp (active-high, 3–6 V) |
 | 2 | Status LED |
 | 36 | Coin box: coin sense (optional, input-only) |
 | 39 | Coin box: Button A (optional, input-only) |

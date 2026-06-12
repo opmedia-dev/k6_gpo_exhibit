@@ -5,6 +5,7 @@ void ControlPanel::begin() {
     btns_[0] = { PIN_BTN_RING,   true, 0 };
     btns_[1] = { PIN_BTN_CANCEL, true, 0 };
     btns_[2] = { PIN_BTN_RESET,  true, 0 };
+    btns_[3] = { PIN_BTN_MODE,   true, 0 };
 
     for (auto& b : btns_) {
         pinMode(b.pin, INPUT_PULLUP);
@@ -14,7 +15,7 @@ void ControlPanel::begin() {
 }
 
 Button ControlPanel::update() {
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         if (debounceRead(btns_[i])) {
             return static_cast<Button>(i);
         }
