@@ -1,5 +1,6 @@
 #include "phone_controller.h"
 #include "config.h"
+#include <SD.h>
 
 void PhoneController::begin() {
     line_.begin();
@@ -62,64 +63,18 @@ void PhoneController::update() {
             ring();
             break;
         }
-        // Handset lifted.
+        // Handset lifted — always go to dial tone (no coin gate here).
         if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
-            if (coin_box_.isInstalled() && !coin_box_.coinsReady()) {
-                enterState(PhoneState::AWAIT_COINS);
-            } else {
-                enterState(PhoneState::DIAL_TONE);
-            }
+            enterState(PhoneState::DIAL_TONE);
         }
         break;
 
     // ----- RINGING -----------------------------------------------------------
     case PhoneState::RINGING:
+        // Answering an incoming ring — no A+B interaction required.
         if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
             bell_.stopRinging();
-            if (coin_box_.isInstalled()) {
-                enterState(PhoneState::AWAIT_BTN_A);
-            } else {
-                enterState(PhoneState::PLAYING_HISTORY);
-            }
-        }
-        break;
-
-    // ----- AWAIT_COINS (A+B only) -------------------------------------------
-    case PhoneState::AWAIT_COINS:
-        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
-            player_.stop();
-            enterState(PhoneState::IDLE);
-            break;
-        }
-        if (coin_box_.coinsReady()) {
-            player_.stop();
-            Serial.println("[coin] coins accepted — dial tone");
-            enterState(PhoneState::DIAL_TONE);
-        }
-        break;
-
-    // ----- AWAIT_BTN_A (A+B only) -------------------------------------------
-    case PhoneState::AWAIT_BTN_A:
-        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
-            player_.stop();
-            enterState(PhoneState::IDLE);
-            break;
-        }
-        if (coin_box_.buttonAPressed()) {
-            coin_box_.clearButtonA();
-            Serial.println("[coin] Button A — coins collected, connecting");
             enterState(PhoneState::PLAYING_HISTORY);
-            break;
-        }
-        if (coin_box_.buttonBPressed()) {
-            coin_box_.clearButtonB();
-            Serial.println("[coin] Button B — coins refunded");
-            enterState(PhoneState::IDLE);
-            break;
-        }
-        if (millis() - state_enter_time_ > COIN_BTN_A_TIMEOUT_MS) {
-            Serial.println("[coin] Button A timeout");
-            enterState(PhoneState::BUSY);
         }
         break;
 
@@ -131,7 +86,6 @@ void PhoneController::update() {
             break;
         }
         if (!player_.isPlaying()) {
-            // Track finished — return to idle.
             enterState(PhoneState::IDLE);
         }
         break;
@@ -187,15 +141,106 @@ void PhoneController::update() {
             millis() - last_digit_time_ > NUMBER_COMPLETE_MS) {
             Serial.printf("[phone] number complete: %s\n", dialled_);
             if (number_cb_) number_cb_(dialled_);
-            // Try to play the matching track.
-            char path[64];
-            snprintf(path, sizeof(path), "%s/%s.mp3", SD_DIR_NUMBERS, dialled_);
-            if (player_.sdReady() && SD.exists(path)) {
-                player_.playFile(path, false);
-                enterState(PhoneState::PLAYING_NUMBER);
+
+            // Build path and check if number is recognised.
+            snprintf(pending_path_, sizeof(pending_path_),
+                     "%s/%s.mp3", SD_DIR_NUMBERS, dialled_);
+
+            bool recognised = player_.sdReady() && SD.exists(pending_path_);
+
+            if (coin_box_.isInstalled()) {
+                if (recognised) {
+                    // Recognised — need coins then Button A before audio.
+                    if (coin_box_.coinsReady()) {
+                        // Coins already in — wait for Button A.
+                        Serial.println("[coin] coins already in — press A to connect");
+                        enterState(PhoneState::AWAIT_BTN_A);
+                    } else {
+                        enterState(PhoneState::AWAIT_COINS);
+                    }
+                } else {
+                    // Not recognised — play announcement, prompt B for refund.
+                    player_.playNotRecognised();
+                    enterState(PhoneState::AWAIT_BTN_B);
+                }
             } else {
-                player_.playNotRecognised();
-                enterState(PhoneState::PLAYING_NOT_REC);
+                // No coin box — play directly.
+                if (recognised) {
+                    player_.playFile(pending_path_, false);
+                    enterState(PhoneState::PLAYING_NUMBER);
+                } else {
+                    player_.playNotRecognised();
+                    enterState(PhoneState::PLAYING_NOT_REC);
+                }
+            }
+        }
+        break;
+
+    // ----- AWAIT_COINS (A+B only) -------------------------------------------
+    // Number was recognised; waiting for coins to be inserted.
+    case PhoneState::AWAIT_COINS:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (coin_box_.coinsReady()) {
+            player_.stop();
+            Serial.println("[coin] coins accepted — press A to connect");
+            enterState(PhoneState::AWAIT_BTN_A);
+        }
+        break;
+
+    // ----- AWAIT_BTN_A (A+B only) -------------------------------------------
+    // Coins are in.  Waiting for Button A to collect coins and connect call.
+    case PhoneState::AWAIT_BTN_A:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (coin_box_.buttonAPressed()) {
+            coin_box_.clearButtonA();
+            Serial.println("[coin] Button A — coins collected, connecting");
+            player_.playFile(pending_path_, false);
+            enterState(PhoneState::PLAYING_NUMBER);
+            break;
+        }
+        if (coin_box_.buttonBPressed()) {
+            coin_box_.clearButtonB();
+            Serial.println("[coin] Button B — coins refunded");
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (millis() - state_enter_time_ > COIN_BTN_A_TIMEOUT_MS) {
+            Serial.println("[coin] Button A timeout — busy");
+            player_.stop();
+            enterState(PhoneState::BUSY);
+        }
+        break;
+
+    // ----- AWAIT_BTN_B (A+B only) -------------------------------------------
+    // Number not recognised.  Press B to refund coins and hang up.
+    case PhoneState::AWAIT_BTN_B:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (coin_box_.buttonBPressed()) {
+            coin_box_.clearButtonB();
+            Serial.println("[coin] Button B — coins refunded");
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (!player_.isPlaying()) {
+            // "Not recognised" finished — play "press B" prompt or go to busy.
+            if (player_.sdReady() && SD.exists(SD_FILE_PRESS_B)) {
+                player_.playFile(SD_FILE_PRESS_B, true);
+            } else {
+                enterState(PhoneState::BUSY);
             }
         }
         break;
@@ -209,7 +254,6 @@ void PhoneController::update() {
             break;
         }
         if (!player_.isPlaying()) {
-            // Playback finished — go to busy tone so user hangs up.
             enterState(PhoneState::BUSY);
         }
         break;
@@ -284,6 +328,15 @@ void PhoneController::enterState(PhoneState s) {
         break;
 
     case PhoneState::AWAIT_BTN_A:
+        // Play "press Button A" prompt if available.
+        if (player_.sdReady() && SD.exists(SD_FILE_PRESS_A)) {
+            player_.playFile(SD_FILE_PRESS_A, true);
+        }
+        break;
+
+    case PhoneState::AWAIT_BTN_B:
+        // "Not recognised" is already playing from the DIALING state transition.
+        // After it finishes, play "press Button B" prompt if available.
         break;
 
     case PhoneState::PLAYING_HISTORY:
@@ -335,11 +388,12 @@ const char* PhoneController::stateName() const {
     switch (state_) {
     case PhoneState::IDLE:            return "IDLE";
     case PhoneState::RINGING:         return "RINGING";
-    case PhoneState::AWAIT_COINS:     return "AWAIT_COINS";
     case PhoneState::PLAYING_HISTORY: return "PLAYING_HISTORY";
-    case PhoneState::AWAIT_BTN_A:     return "AWAIT_BTN_A";
     case PhoneState::DIAL_TONE:       return "DIAL_TONE";
     case PhoneState::DIALING:         return "DIALING";
+    case PhoneState::AWAIT_COINS:     return "AWAIT_COINS";
+    case PhoneState::AWAIT_BTN_A:     return "AWAIT_BTN_A";
+    case PhoneState::AWAIT_BTN_B:     return "AWAIT_BTN_B";
     case PhoneState::PLAYING_NUMBER:  return "PLAYING_NUMBER";
     case PhoneState::PLAYING_NOT_REC: return "PLAYING_NOT_REC";
     case PhoneState::BUSY:            return "BUSY";

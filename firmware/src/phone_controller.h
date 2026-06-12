@@ -15,11 +15,12 @@
 // States:
 //   IDLE             On-hook.  Auto-ring timer ticking.
 //   RINGING          Bell ringing (auto or manual).  Awaiting pickup.
-//   AWAIT_COINS      (A+B only) Handset lifted, waiting for coins.
 //   PLAYING_HISTORY  Handset answered a ring → playing a history track.
-//   AWAIT_BTN_A      (A+B only) Called party answered, waiting for Button A.
 //   DIAL_TONE        Handset lifted without ring → dial tone plays.
 //   DIALING          Digits accumulating from rotary dial.
+//   AWAIT_COINS      (A+B only) Number recognised, waiting for coins.
+//   AWAIT_BTN_A      (A+B only) Call connected, waiting for Button A.
+//   AWAIT_BTN_B      (A+B only) Number not recognised, waiting for Button B.
 //   PLAYING_NUMBER   Dialling complete → matched MP3 playing.
 //   PLAYING_NOT_REC  Dialling complete → "number not recognised" playing.
 //   BUSY             Error / timeout → busy tone.
@@ -28,11 +29,12 @@
 enum class PhoneState : uint8_t {
     IDLE,
     RINGING,
-    AWAIT_COINS,
     PLAYING_HISTORY,
-    AWAIT_BTN_A,
     DIAL_TONE,
     DIALING,
+    AWAIT_COINS,
+    AWAIT_BTN_A,
+    AWAIT_BTN_B,
     PLAYING_NUMBER,
     PLAYING_NOT_REC,
     BUSY
@@ -88,6 +90,7 @@ private:
     CoinBox        coin_box_;
 
     char           dialled_[MAX_DIALLED_DIGITS + 1] = {};
+    char           pending_path_[64] = {};  // path to play after coins inserted
     uint8_t        dial_pos_ = 0;
 
     unsigned long  state_enter_time_ = 0;

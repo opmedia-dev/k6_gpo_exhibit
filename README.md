@@ -152,20 +152,23 @@ State machine:
              auto-ring timer
                   or
 IDLE ──── BTN_RING/serial 'R' ──── RINGING ──── (answer) ──── PLAYING_HISTORY
-  │                                    │                            │
-  │                               [A+B: AWAIT_BTN_A]           (on-hook)
-  │                                 Btn A → play                    │
-  │                                 Btn B → IDLE                    │
   │                                                                 │
-  ├── (lift, no coins) ── [A+B: AWAIT_COINS] ── (coins in) ──┐     │
-  │                                                            │     │
-  └── (lift handset) ── DIAL_TONE ── DIALING ── PLAYING_NUMBER ───┘
-                                        │                          │
-                                        └───── PLAYING_NOT_REC ───┘
-                                                     │
-                                                (playback ends) ── BUSY ── (on-hook) ── IDLE
+  │                                                            (on-hook)
+  │                                                                 │
+  └── (lift handset) ── DIAL_TONE ── DIALING ─┬── PLAYING_NUMBER ──┘
+                                               │         │
+                                               │    (playback ends) ── BUSY ── (on-hook) ── IDLE
+                                               │
+                              [A+B, recognised] ├── AWAIT_COINS ── (coins in) ── AWAIT_BTN_A
+                                               │                   "press A" prompt
+                              [A+B, coins in]  ├── AWAIT_BTN_A ── (Btn A) ── PLAYING_NUMBER
+                                               │                  (Btn B) ── IDLE (refund)
+                                               │
+                          [A+B, not recognised] └── AWAIT_BTN_B ── (Btn B) ── IDLE (refund)
+                                                    "not recognised" then "press B" prompt
 
-[A+B] states only active when coin box daughter board is detected.
+Without A+B: DIALING → PLAYING_NUMBER or PLAYING_NOT_REC directly.
+Incoming calls (RINGING → answer) never require A+B interaction.
 ```
 
 ### Callbacks
