@@ -1,6 +1,10 @@
 #include "bell_driver.h"
 #include "config.h"
 
+static const int LEDC_CHANNEL  = 0;
+static const int LEDC_FREQ     = 1000;  // 1 kHz PWM carrier (inaudible)
+static const int LEDC_RES_BITS = 8;     // 0-255 duty range
+
 // Cadence table: duration (ms) and whether the bell is active during that step.
 static const struct { unsigned long duration; bool active; } CADENCE[] = {
     { RING_ON_1_MS,  true  },
@@ -11,10 +15,16 @@ static const struct { unsigned long duration; bool active; } CADENCE[] = {
 static constexpr int CADENCE_STEPS = sizeof(CADENCE) / sizeof(CADENCE[0]);
 
 void BellDriver::begin() {
-    pinMode(PIN_RING_EN, OUTPUT);
+    ledcSetup(LEDC_CHANNEL, LEDC_FREQ, LEDC_RES_BITS);
+    ledcAttachPin(PIN_RING_EN, LEDC_CHANNEL);
+    ledcWrite(LEDC_CHANNEL, 0);
     pinMode(PIN_RING_A,  OUTPUT);
     pinMode(PIN_RING_B,  OUTPUT);
     setBridgeOff();
+}
+
+void BellDriver::setBellVolume(uint8_t vol) {
+    bell_volume_ = vol;
 }
 
 void BellDriver::startRinging() {
@@ -56,7 +66,7 @@ void BellDriver::update() {
 }
 
 void BellDriver::setBridgeOutput(bool phaseA) {
-    digitalWrite(PIN_RING_EN, HIGH);
+    ledcWrite(LEDC_CHANNEL, bell_volume_);
     if (phaseA) {
         digitalWrite(PIN_RING_A, HIGH);
         digitalWrite(PIN_RING_B, LOW);
@@ -67,7 +77,7 @@ void BellDriver::setBridgeOutput(bool phaseA) {
 }
 
 void BellDriver::setBridgeOff() {
-    digitalWrite(PIN_RING_EN, LOW);
+    ledcWrite(LEDC_CHANNEL, 0);
     digitalWrite(PIN_RING_A,  LOW);
     digitalWrite(PIN_RING_B,  LOW);
 }

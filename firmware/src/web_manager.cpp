@@ -4,6 +4,7 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
 #include <SD.h>
 #include <Update.h>
 
@@ -70,6 +71,7 @@ input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #55
 <div class="card">
 <h2>Controls</h2>
 <div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)"><span id="vollbl">15</span></div>
+<div class="row"><label>Bell</label><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)"><span id="belllbl">255</span></div>
 <div class="row"><label>Auto-ring</label>
 <span>Min <input type="number" id="armin" value="5" min="1" max="120"> min</span>
 <span>Max <input type="number" id="armax" value="30" min="1" max="120"> min</span>
@@ -237,6 +239,10 @@ function setVol(v){
   document.getElementById('vollbl').textContent=v;
   fetch('/api/volume?v='+v,{method:'POST'});
 }
+function setBell(v){
+  document.getElementById('belllbl').textContent=v;
+  fetch('/api/bellvol?v='+v,{method:'POST'});
+}
 function setAutoRing(){
   let mn=document.getElementById('armin').value;
   let mx=document.getElementById('armax').value;
@@ -268,6 +274,8 @@ function loadStatus(){
       'Firmware: '+d.firmware;
     document.getElementById('vol').value=d.volume;
     document.getElementById('vollbl').textContent=d.volume;
+    document.getElementById('bell').value=d.bell_vol;
+    document.getElementById('belllbl').textContent=d.bell_vol;
     document.getElementById('armin').value=Math.round(d.ar_min/60000);
     document.getElementById('armax').value=Math.round(d.ar_max/60000);
     document.getElementById('modelbl').innerHTML=d.mode=='AUTO'?'<span class="ok">AUTO</span>':'MANUAL';
@@ -493,6 +501,7 @@ static void handleStatus() {
     json += ",\"uptime\":";  json += String(millis() / 1000);
     json += ",\"firmware\":\"" FIRMWARE_VERSION "\"";
     json += ",\"volume\":";  json += String(s_phone->player().getVolume());
+    json += ",\"bell_vol\":"; json += String(s_phone->bell().bellVolume());
     json += ",\"ar_min\":";  json += String(s_phone->autoRingMinMs());
     json += ",\"ar_max\":";  json += String(s_phone->autoRingMaxMs());
     json += ",\"mode\":\"";  json += s_phone->autoRingEnabled() ? "AUTO" : "MANUAL";
@@ -586,6 +595,16 @@ static void handleVolume() {
     if (v > 21) v = 21;
     s_phone->player().setVolume(v);
     if (s_logger) s_logger->systemLog("Volume set to %d via web", v);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleBellVolume() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    s_phone->bell().setBellVolume(v);
+    if (s_logger) s_logger->systemLog("Bell volume set to %d via web", v);
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -770,6 +789,11 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     Serial.printf("[web] AP \"%s\" started — http://%s/\n",
                   WIFI_AP_SSID, ip.toString().c_str());
 
+    if (MDNS.begin("k6-exhibit")) {
+        MDNS.addService("http", "tcp", 80);
+        Serial.println("[web] mDNS: http://k6-exhibit.local/");
+    }
+
     server.on("/",                HTTP_GET,  handleIndex);
     server.on("/api/files",       HTTP_GET,  handleFileList);
     server.on("/api/upload",      HTTP_POST, handleUploadComplete, handleUpload);
@@ -781,6 +805,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/logs/calls",  HTTP_GET,  handleLogCalls);
     server.on("/api/logs/clear",  HTTP_POST, handleLogClear);
     server.on("/api/volume",      HTTP_POST, handleVolume);
+    server.on("/api/bellvol",     HTTP_POST, handleBellVolume);
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
     server.on("/api/ring",        HTTP_POST, handleRingNow);
     server.on("/api/mode",        HTTP_POST, handleToggleMode);

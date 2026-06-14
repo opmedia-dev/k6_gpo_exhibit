@@ -24,6 +24,10 @@ public:
     void startRinging();
     void stopRinging();
 
+    // Bell volume: 0 (silent) to 255 (full power). Controls H-bridge PWM duty.
+    void setBellVolume(uint8_t vol);
+    uint8_t bellVolume() const { return bell_volume_; }
+
     // Must be called from loop().  Drives the cadence state machine and
     // the 25 Hz toggle.
     void update();
@@ -39,4 +43,5 @@ private:
     unsigned long toggle_time_   = 0;
     bool          phase_         = false;
     uint8_t       cadence_step_  = 0;
+    uint8_t       bell_volume_   = 255;  // 0-255 PWM duty cycle
 };
