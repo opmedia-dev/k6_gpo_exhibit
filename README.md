@@ -109,13 +109,16 @@ The ESP32 creates a Wi-Fi access point on boot:
 | URL | `http://192.168.4.1/` |
 
 Connect with any phone or laptop, open a browser, and you can:
+- **Controls** — volume slider, auto-ring timing, mode toggle, Ring Now button
+- **Visitor stats** — call counters, most-dialled numbers, total uptime
 - **Browse** the SD card directory structure
-- **Upload** new MP3 files
+- **Upload** new MP3 files (validated as valid MP3 before saving)
 - **Delete** existing files
 - **Create** new folders
 - **View logs** — system events and call history (separate tabs)
 - **Clear logs** — wipe system or call log
 - **Flash firmware** — upload a `.bin` file for OTA update
+- **System status** — free heap, SD card space (used/total), current state
 
 ### Logs
 

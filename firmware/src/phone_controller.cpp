@@ -391,8 +391,14 @@ void PhoneController::updateLamp() {
     digitalWrite(PIN_AUTO_LAMP, auto_ring_enabled_ ? HIGH : LOW);
 }
 
+void PhoneController::setAutoRingInterval(unsigned long minMs, unsigned long maxMs) {
+    auto_ring_min_ms_ = minMs;
+    auto_ring_max_ms_ = maxMs;
+    if (auto_ring_enabled_) resetAutoRingTimer();
+}
+
 void PhoneController::resetAutoRingTimer() {
-    unsigned long interval = random(AUTO_RING_MIN_MS, AUTO_RING_MAX_MS);
+    unsigned long interval = random(auto_ring_min_ms_, auto_ring_max_ms_);
     next_ring_time_ = millis() + interval;
     Serial.printf("[phone] next auto-ring in %lu s\n", interval / 1000);
 }

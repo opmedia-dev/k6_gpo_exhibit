@@ -2,29 +2,21 @@
 
 #include <Arduino.h>
 #include "logger.h"
+#include "stats.h"
+
+class PhoneController;
 
 // ============================================================================
-// Wi-Fi AP + Web file manager + OTA firmware update + Log viewer
+// Wi-Fi AP + Web file manager + OTA firmware update + Log viewer + Controls
 //
 // The ESP32 creates a Wi-Fi access point ("K6-Exhibit") and serves a web
-// interface for SD card file management, firmware updates, and log viewing.
-//
-// Endpoints:
-//   GET  /              HTML file manager UI
-//   GET  /api/files     JSON directory listing (?path=/dir)
-//   POST /api/upload    Multipart file upload (?path=/dir)
-//   POST /api/delete    Delete a file (?path=/file)
-//   POST /api/mkdir     Create a directory (?path=/dir)
-//   GET  /api/status    System status JSON
-//   POST /api/ota       Firmware binary upload (OTA update)
-//   GET  /api/logs/system   System log contents
-//   GET  /api/logs/calls    Call log contents
-//   POST /api/logs/clear    Clear logs (?log=system|calls|all)
+// interface for SD card file management, firmware updates, log viewing,
+// volume control, auto-ring configuration, and visitor statistics.
 // ============================================================================
 
 class WebManager {
 public:
-    void begin(Logger& logger);
+    void begin(Logger& logger, StatsTracker& stats, PhoneController& phone);
     void update();
 
     bool isActive() const { return active_; }

@@ -50,6 +50,10 @@ public:
 
     // Volume 0-21
     void setVolume(uint8_t vol);
+    uint8_t getVolume() const { return volume_; }
+
+    // Currently playing file path (empty if not playing).
+    const String& currentFile() const { return loop_path_; }
 
     bool sdReady() const { return sd_ok_; }
 
@@ -57,6 +61,7 @@ private:
     Audio  audio_;
     bool   sd_ok_     = false;
     bool   looping_   = false;
+    uint8_t volume_   = 15;
     String loop_path_;
 
     int  countFilesIn(const char* dir);

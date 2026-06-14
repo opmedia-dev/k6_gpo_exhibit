@@ -114,6 +114,7 @@ void AudioPlayer::update() {
 }
 
 void AudioPlayer::setVolume(uint8_t vol) {
+    volume_ = vol;
     audio_.setVolume(vol);
 }
 

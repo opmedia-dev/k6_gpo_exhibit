@@ -67,6 +67,11 @@ public:
     bool autoRingEnabled() const   { return auto_ring_enabled_; }
     void toggleAutoRing()          { setAutoRing(!auto_ring_enabled_); }
 
+    // Configurable auto-ring interval (milliseconds).
+    void setAutoRingInterval(unsigned long minMs, unsigned long maxMs);
+    unsigned long autoRingMinMs() const { return auto_ring_min_ms_; }
+    unsigned long autoRingMaxMs() const { return auto_ring_max_ms_; }
+
     PhoneLine&      line()    { return line_; }
     BellDriver&     bell()    { return bell_; }
     AudioPlayer&    player()  { return player_; }
@@ -100,6 +105,8 @@ private:
     // Auto-ring
     bool           auto_ring_enabled_ = true;
     unsigned long  next_ring_time_    = 0;
+    unsigned long  auto_ring_min_ms_  = AUTO_RING_MIN_MS;
+    unsigned long  auto_ring_max_ms_  = AUTO_RING_MAX_MS;
 
     DigitCallback  digit_cb_  = nullptr;
     NumberCallback number_cb_ = nullptr;

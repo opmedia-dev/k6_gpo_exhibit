@@ -4,6 +4,7 @@
 #include "phone_controller.h"
 #include "web_manager.h"
 #include "logger.h"
+#include "stats.h"
 #include "config.h"
 
 // ============================================================================
@@ -32,6 +33,7 @@
 PhoneController phone;
 WebManager      web;
 Logger          logger;
+StatsTracker    stats;
 
 // --- Safe mode (crash recovery) ---------------------------------------------
 // RTC memory survives software resets but not power cycles.
@@ -60,15 +62,19 @@ static void onState(PhoneState state) {
     switch (state) {
     case PhoneState::RINGING:
         logger.callLog("INCOMING ring_start");
+        stats.recordIncomingRing();
         break;
     case PhoneState::PLAYING_HISTORY:
         logger.callLog("INCOMING answered");
+        stats.recordIncomingAnswered();
         break;
     case PhoneState::PLAYING_NUMBER:
         logger.callLog("OUTGOING connected number=%s", phone.dialledNumber());
+        stats.recordOutgoingCall(phone.dialledNumber());
         break;
     case PhoneState::PLAYING_NOT_REC:
         logger.callLog("OUTGOING not_recognised number=%s", phone.dialledNumber());
+        stats.recordNotRecognised(phone.dialledNumber());
         break;
     case PhoneState::IDLE:
         logger.callLog("IDLE");
@@ -156,7 +162,8 @@ void setup() {
         SD.begin(PIN_SD_CS);
         logger.begin();
         logger.systemLog("SAFE MODE entered after %d crashes", boot_crash_count);
-        web.begin(logger);
+        stats.begin();
+        web.begin(logger, stats, phone);
         return;
     }
 
@@ -166,6 +173,7 @@ void setup() {
     phone.onState(onState);
     phone.begin();
     logger.begin();
+    stats.begin();
 
     Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol");
     Serial.printf("[app] mode: %s (lamp %s)\n",
@@ -175,7 +183,7 @@ void setup() {
         Serial.println("[app] A+B coin box detected — coin logic active");
     }
 
-    web.begin(logger);
+    web.begin(logger, stats, phone);
     logger.systemLog("SD=%s coinbox=%s mode=%s",
                     phone.player().sdReady() ? "OK" : "FAIL",
                     phone.coinBox().isInstalled() ? "INSTALLED" : "NONE",
@@ -191,6 +199,7 @@ void loop() {
     if (!safe_mode) {
         phone.update();
     }
+    stats.update();
     web.update();
     handleSerial();
 }

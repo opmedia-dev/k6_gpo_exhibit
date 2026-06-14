@@ -1,4 +1,5 @@
 #include "web_manager.h"
+#include "phone_controller.h"
 #include "config.h"
 
 #include <WiFi.h>
@@ -8,6 +9,8 @@
 
 static WebServer server(80);
 static Logger* s_logger = nullptr;
+static StatsTracker* s_stats = nullptr;
+static PhoneController* s_phone = nullptr;
 
 // --- HTML UI (served from flash, not SD) ------------------------------------
 
@@ -41,24 +44,54 @@ button,input[type=submit]{background:#c41e1e;color:#fff;border:none;padding:8px 
 button:hover,input[type=submit]:hover{background:#d63030}
 button:disabled{background:#555;cursor:wait}
 input[type=file]{margin:8px 0;font-size:.9em}
+input[type=range]{width:100%;margin:8px 0}
+input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em}
 .status{color:#888;font-size:.85em;margin-top:8px}
 .warn{color:#fc6}
 .ok{color:#6f6}
 .err{color:#f55}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:.9em}
+.row label{min-width:80px;color:#aaa}
+.stat{display:inline-block;background:#333;border-radius:4px;padding:4px 10px;margin:2px;font-size:.85em}
+.stat b{color:#fc6}
 #prog{width:100%;height:6px;background:#333;border-radius:3px;margin-top:8px;display:none}
 #progbar{height:100%;background:#c41e1e;border-radius:3px;width:0%;transition:width .2s}
+.topnum{font-family:monospace;color:#6af}
 </style>
 </head>
 <body>
 <h1>K6 GPO Exhibit</h1>
-<p class="sub">SD Card File Manager, Logs &amp; Firmware Update</p>
+<p class="sub">Control Panel, File Manager &amp; Firmware Update</p>
+
+<div class="card">
+<h2>Controls</h2>
+<div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)"><span id="vollbl">15</span></div>
+<div class="row"><label>Auto-ring</label>
+<span>Min <input type="number" id="armin" value="5" min="1" max="120"> min</span>
+<span>Max <input type="number" id="armax" value="30" min="1" max="120"> min</span>
+<button onclick="setAutoRing()" style="margin:0">Set</button>
+</div>
+<div class="row"><label>Mode</label><span id="modelbl">—</span></div>
+<div class="row"><label>State</label><span id="statelbl">—</span></div>
+<div class="row"><label>Playing</label><span id="playlbl" style="font-family:monospace;color:#6af">—</span></div>
+<div style="margin-top:8px">
+<button onclick="ringNow()">Ring Now</button>
+<button onclick="toggleMode()" id="modebtn">Toggle Mode</button>
+</div>
+</div>
+
+<div class="card">
+<h2>Visitor Statistics</h2>
+<div id="statsbox">Loading...</div>
+<div style="margin-top:8px"><button onclick="resetStats()" style="background:#555">Reset Stats</button></div>
+</div>
 
 <div class="card">
 <h2>Files</h2>
 <div class="path" id="pathbar">/</div>
 <table id="filetbl"><tbody></tbody></table>
 <div style="margin-top:12px">
-<input type="file" id="upfile" multiple>
+<input type="file" id="upfile" multiple accept=".mp3,.MP3">
 <button onclick="upload()" id="upbtn">Upload</button>
 <button onclick="mkdirPrompt()">New Folder</button>
 </div>
@@ -77,8 +110,8 @@ input[type=file]{margin:8px 0;font-size:.9em}
 <div class="card">
 <h2>Logs</h2>
 <div style="margin-bottom:8px">
-<button onclick="loadLog('system')" id="lbsys" style="margin-right:4px">System Log</button>
-<button onclick="loadLog('calls')" id="lbcall" style="margin-right:4px">Call Log</button>
+<button onclick="loadLog('system')" style="margin-right:4px">System Log</button>
+<button onclick="loadLog('calls')" style="margin-right:4px">Call Log</button>
 <button onclick="clearLog()" style="background:#555">Clear</button>
 </div>
 <pre id="logview" style="background:#111;color:#bfb;padding:12px;border-radius:4px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
@@ -139,19 +172,21 @@ function upload(){
   let btn=document.getElementById('upbtn');
   let st=document.getElementById('upstatus');
   btn.disabled=true; st.textContent='Uploading...';
-  let done=0;
+  let done=0,errs=[];
   Array.from(files).forEach(f=>{
     let fd=new FormData(); fd.append('file',f);
     fetch('/api/upload?path='+encodeURIComponent(cwd),{method:'POST',body:fd})
     .then(r=>r.json()).then(d=>{
       done++;
+      if(!d.ok) errs.push(f.name+': '+(d.error||'failed'));
       if(done===files.length){
         btn.disabled=false;
-        st.innerHTML=d.ok?'<span class="ok">Upload complete</span>':'<span class="err">'+d.error+'</span>';
+        if(errs.length) st.innerHTML='<span class="err">'+errs.join('<br>')+'</span>';
+        else st.innerHTML='<span class="ok">Upload complete</span>';
         document.getElementById('upfile').value='';
         loadFiles();
       }
-    }).catch(e=>{btn.disabled=false;st.innerHTML='<span class="err">'+e+'</span>'});
+    }).catch(e=>{done++;btn.disabled=false;st.innerHTML='<span class="err">'+e+'</span>'});
   });
 }
 function otaUpload(){
@@ -180,13 +215,58 @@ function otaUpload(){
   let fd=new FormData(); fd.append('firmware',f);
   xhr.send(fd);
 }
+function setVol(v){
+  document.getElementById('vollbl').textContent=v;
+  fetch('/api/volume?v='+v,{method:'POST'});
+}
+function setAutoRing(){
+  let mn=document.getElementById('armin').value;
+  let mx=document.getElementById('armax').value;
+  fetch('/api/autoring?min='+mn+'&max='+mx,{method:'POST'})
+  .then(r=>r.json()).then(d=>{
+    if(d.ok) alert('Auto-ring set to '+mn+'-'+mx+' min');
+  });
+}
+function ringNow(){fetch('/api/ring',{method:'POST'})}
+function toggleMode(){fetch('/api/mode',{method:'POST'}).then(()=>loadStatus())}
+function resetStats(){
+  if(!confirm('Reset all visitor statistics?'))return;
+  fetch('/api/stats/reset',{method:'POST'}).then(()=>loadStats());
+}
 function loadStatus(){
   fetch('/api/status').then(r=>r.json()).then(d=>{
     document.getElementById('sysinfo').innerHTML=
       'Free heap: '+(d.heap/1024).toFixed(0)+'KB<br>'+
-      'SD card: '+(d.sd?'OK':'<span class="err">FAIL</span>')+'<br>'+
-      'Uptime: '+Math.floor(d.uptime/3600)+'h '+Math.floor(d.uptime%3600/60)+'m<br>'+
+      'SD card: '+(d.sd?'OK':'<span class="err">FAIL</span>')+
+      (d.sd_total?' ('+d.sd_used+'MB / '+d.sd_total+'MB)':'')+
+      '<br>Uptime: '+Math.floor(d.uptime/3600)+'h '+Math.floor(d.uptime%3600/60)+'m<br>'+
       'Firmware: '+d.firmware;
+    document.getElementById('vol').value=d.volume;
+    document.getElementById('vollbl').textContent=d.volume;
+    document.getElementById('armin').value=Math.round(d.ar_min/60000);
+    document.getElementById('armax').value=Math.round(d.ar_max/60000);
+    document.getElementById('modelbl').innerHTML=d.mode=='AUTO'?'<span class="ok">AUTO</span>':'MANUAL';
+    document.getElementById('statelbl').textContent=d.state;
+    document.getElementById('playlbl').textContent=d.playing||'—';
+  });
+}
+function loadStats(){
+  fetch('/api/stats').then(r=>r.json()).then(d=>{
+    let h='<span class="stat">Incoming: <b>'+d.incoming+'</b></span> '+
+          '<span class="stat">Answered: <b>'+d.answered+'</b></span> '+
+          '<span class="stat">Outgoing: <b>'+d.outgoing+'</b></span> '+
+          '<span class="stat">Not recognised: <b>'+d.not_recognised+'</b></span>';
+    if(d.coin_collected>0) h+=' <span class="stat">Coins collected: <b>'+d.coin_collected+'</b></span>';
+    if(d.coin_refunded>0) h+=' <span class="stat">Coins refunded: <b>'+d.coin_refunded+'</b></span>';
+    let uH=Math.floor(d.total_uptime/3600), uM=Math.floor(d.total_uptime%3600/60);
+    h+='<br><span class="stat">Total uptime: <b>'+uH+'h '+uM+'m</b></span>';
+    if(d.top_numbers&&d.top_numbers.length){
+      h+='<br><br><b style="color:#ccc">Most Dialled:</b><br>';
+      d.top_numbers.forEach((n,i)=>{
+        h+='<span class="stat"><span class="topnum">'+n.number+'</span> &times;'+n.count+'</span> ';
+      });
+    }
+    document.getElementById('statsbox').innerHTML=h;
   });
 }
 let curLog='system';
@@ -203,9 +283,9 @@ function clearLog(){
   if(!confirm('Clear '+curLog+' log?'))return;
   fetch('/api/logs/clear?log='+curLog,{method:'POST'}).then(()=>loadLog(curLog));
 }
-loadFiles();
-loadStatus();
-setInterval(loadStatus,10000);
+loadFiles();loadStatus();loadStats();
+setInterval(loadStatus,5000);
+setInterval(loadStats,30000);
 </script>
 </body>
 </html>
@@ -248,6 +328,20 @@ static void handleFileList() {
     server.send(200, "application/json", json);
 }
 
+// MP3 sync word check: valid MP3 frames start with 0xFF 0xFB/FA/F3/F2
+// (11 sync bits set).  We also accept ID3 tags (start with "ID3").
+static bool looksLikeMp3(const uint8_t* buf, size_t len) {
+    if (len < 3) return false;
+    // ID3v2 tag header
+    if (buf[0] == 'I' && buf[1] == 'D' && buf[2] == '3') return true;
+    // MPEG sync word: first byte 0xFF, second byte has upper 3 bits set (0xE0)
+    if (buf[0] == 0xFF && (buf[1] & 0xE0) == 0xE0) return true;
+    return false;
+}
+
+static bool s_upload_valid = true;
+static String s_upload_path;
+
 static void handleUpload() {
     HTTPUpload& upload = server.upload();
     static File uploadFile;
@@ -256,22 +350,43 @@ static void handleUpload() {
         String path = server.arg("path");
         if (!path.endsWith("/")) path += "/";
         path += upload.filename;
+        s_upload_path = path;
+        s_upload_valid = true;
         Serial.printf("[web] upload: %s\n", path.c_str());
         uploadFile = SD.open(path, FILE_WRITE);
     } else if (upload.status == UPLOAD_FILE_WRITE) {
         if (uploadFile) {
+            // Validate first chunk of .mp3 files.
+            if (s_upload_valid && upload.totalSize == 0 &&
+                (s_upload_path.endsWith(".mp3") || s_upload_path.endsWith(".MP3"))) {
+                if (!looksLikeMp3(upload.buf, upload.currentSize)) {
+                    s_upload_valid = false;
+                    Serial.printf("[web] REJECTED: not a valid MP3: %s\n", s_upload_path.c_str());
+                }
+            }
             uploadFile.write(upload.buf, upload.currentSize);
         }
     } else if (upload.status == UPLOAD_FILE_END) {
         if (uploadFile) {
             uploadFile.close();
-            Serial.printf("[web] upload complete: %u bytes\n", upload.totalSize);
+            if (!s_upload_valid) {
+                // Remove invalid file.
+                SD.remove(s_upload_path);
+                Serial.printf("[web] removed invalid MP3: %s\n", s_upload_path.c_str());
+            } else {
+                Serial.printf("[web] upload complete: %u bytes\n", upload.totalSize);
+            }
         }
     }
 }
 
 static void handleUploadComplete() {
-    server.send(200, "application/json", "{\"ok\":true}");
+    if (!s_upload_valid) {
+        server.send(200, "application/json",
+                    "{\"ok\":false,\"error\":\"Invalid MP3 file — not a valid audio file\"}");
+    } else {
+        server.send(200, "application/json", "{\"ok\":true}");
+    }
 }
 
 static void handleDelete() {
@@ -299,15 +414,28 @@ static void handleMkdir() {
 }
 
 static void handleStatus() {
+    if (!s_phone) {
+        server.send(200, "application/json", "{\"error\":\"not ready\"}");
+        return;
+    }
+
     String json = "{";
-    json += "\"heap\":";
-    json += String(ESP.getFreeHeap());
-    json += ",\"sd\":";
-    json += SD.cardType() != CARD_NONE ? "true" : "false";
-    json += ",\"uptime\":";
-    json += String(millis() / 1000);
+    json += "\"heap\":";     json += String(ESP.getFreeHeap());
+    json += ",\"sd\":";      json += SD.cardType() != CARD_NONE ? "true" : "false";
+    json += ",\"sd_total\":"; json += String((uint32_t)(SD.totalBytes() / (1024 * 1024)));
+    json += ",\"sd_used\":";  json += String((uint32_t)(SD.usedBytes() / (1024 * 1024)));
+    json += ",\"uptime\":";  json += String(millis() / 1000);
     json += ",\"firmware\":\"" FIRMWARE_VERSION "\"";
-    json += "}";
+    json += ",\"volume\":";  json += String(s_phone->player().getVolume());
+    json += ",\"ar_min\":";  json += String(s_phone->autoRingMinMs());
+    json += ",\"ar_max\":";  json += String(s_phone->autoRingMaxMs());
+    json += ",\"mode\":\"";  json += s_phone->autoRingEnabled() ? "AUTO" : "MANUAL";
+    json += "\",\"state\":\""; json += s_phone->stateName();
+    json += "\",\"playing\":\"";
+    if (s_phone->player().isPlaying()) {
+        json += s_phone->player().currentFile();
+    }
+    json += "\"}";
     server.send(200, "application/json", json);
 }
 
@@ -377,10 +505,94 @@ static void handleLogClear() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// --- Control API handlers ---------------------------------------------------
+
+static void handleVolume() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < 0) v = 0;
+    if (v > 21) v = 21;
+    s_phone->player().setVolume(v);
+    if (s_logger) s_logger->systemLog("Volume set to %d via web", v);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleAutoRing() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    unsigned long minMin = server.arg("min").toInt();
+    unsigned long maxMin = server.arg("max").toInt();
+    if (minMin < 1) minMin = 1;
+    if (maxMin < minMin) maxMin = minMin;
+    if (maxMin > 120) maxMin = 120;
+    s_phone->setAutoRingInterval(minMin * 60000, maxMin * 60000);
+    if (s_logger) s_logger->systemLog("Auto-ring set to %lu-%lu min via web", minMin, maxMin);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleRingNow() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    s_phone->ring();
+    if (s_logger) s_logger->systemLog("Ring triggered via web");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleToggleMode() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    s_phone->toggleAutoRing();
+    if (s_logger) s_logger->systemLog("Mode toggled to %s via web",
+                                       s_phone->autoRingEnabled() ? "AUTO" : "MANUAL");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- Stats API handlers -----------------------------------------------------
+
+static void handleStats() {
+    if (!s_stats) { server.send(200, "application/json", "{}"); return; }
+
+    const CallStats& st = s_stats->stats();
+    unsigned long session_secs = millis() / 1000;
+
+    String json = "{";
+    json += "\"incoming\":";       json += String(st.total_incoming);
+    json += ",\"outgoing\":";      json += String(st.total_outgoing);
+    json += ",\"answered\":";      json += String(st.total_answered);
+    json += ",\"not_recognised\":"; json += String(st.total_not_recognised);
+    json += ",\"coin_collected\":"; json += String(st.total_coin_collected);
+    json += ",\"coin_refunded\":";  json += String(st.total_coin_refunded);
+    json += ",\"total_uptime\":";   json += String(st.uptime_seconds + session_secs);
+
+    StatsTracker::NumberEntry top[5];
+    int n = s_stats->topNumbers(top, 5);
+    json += ",\"top_numbers\":[";
+    for (int i = 0; i < n; i++) {
+        if (i > 0) json += ",";
+        json += "{\"number\":\"";
+        json += top[i].number;
+        json += "\",\"count\":";
+        json += String(top[i].count);
+        json += "}";
+    }
+    json += "]}";
+
+    server.send(200, "application/json", json);
+}
+
+static void handleStatsReset() {
+    if (s_stats) {
+        // Remove stats file and reinitialize.
+        SD.remove("/logs/stats.json");
+        s_stats->begin();
+        if (s_logger) s_logger->systemLog("Stats reset via web");
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 // --- Public interface -------------------------------------------------------
 
-void WebManager::begin(Logger& logger) {
+void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& phone) {
     s_logger = &logger;
+    s_stats  = &stats;
+    s_phone  = &phone;
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
@@ -400,6 +612,12 @@ void WebManager::begin(Logger& logger) {
     server.on("/api/logs/system", HTTP_GET,  handleLogSystem);
     server.on("/api/logs/calls",  HTTP_GET,  handleLogCalls);
     server.on("/api/logs/clear",  HTTP_POST, handleLogClear);
+    server.on("/api/volume",      HTTP_POST, handleVolume);
+    server.on("/api/autoring",    HTTP_POST, handleAutoRing);
+    server.on("/api/ring",        HTTP_POST, handleRingNow);
+    server.on("/api/mode",        HTTP_POST, handleToggleMode);
+    server.on("/api/stats",       HTTP_GET,  handleStats);
+    server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
 
     server.begin();
     active_ = true;
