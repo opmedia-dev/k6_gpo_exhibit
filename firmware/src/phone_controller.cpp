@@ -147,9 +147,10 @@ void PhoneController::update() {
             Serial.printf("[phone] number complete: %s\n", dialled_);
             if (number_cb_) number_cb_(dialled_);
 
-            // Build path and check if number is recognised.
+            // Build path (resolving aliases) and check if number is recognised.
+            String resolved = player_.resolveAlias(dialled_);
             snprintf(pending_path_, sizeof(pending_path_),
-                     "%s/%s.mp3", SD_DIR_NUMBERS, dialled_);
+                     "%s/%s.mp3", SD_DIR_NUMBERS, resolved.c_str());
 
             bool recognised = player_.sdReady() && SD.exists(pending_path_);
 

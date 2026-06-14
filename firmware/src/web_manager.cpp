@@ -20,6 +20,10 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1a1a">
+<link rel="manifest" href="/manifest.json">
 <title>K6 GPO Exhibit</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -96,6 +100,18 @@ input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #55
 <button onclick="mkdirPrompt()">New Folder</button>
 </div>
 <div class="status" id="upstatus"></div>
+</div>
+
+<div class="card">
+<h2>Number Aliases</h2>
+<p style="font-size:.85em;color:#aaa;margin-bottom:8px">Map dialled numbers to audio file names. E.g. 999 &rarr; emergency plays /numbers/emergency.mp3</p>
+<table id="aliastbl"><thead><tr><td style="color:#aaa">Number</td><td style="color:#aaa">Alias</td><td></td></tr></thead><tbody></tbody></table>
+<div style="margin-top:8px;display:flex;gap:4px;align-items:center">
+<input type="text" id="anew_num" placeholder="Number" style="width:90px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em">
+<input type="text" id="anew_name" placeholder="Alias name" style="width:140px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em">
+<button onclick="addAlias()" style="margin:0">Add</button>
+</div>
+<div class="status" id="aliasstatus"></div>
 </div>
 
 <div class="card">
@@ -283,7 +299,43 @@ function clearLog(){
   if(!confirm('Clear '+curLog+' log?'))return;
   fetch('/api/logs/clear?log='+curLog,{method:'POST'}).then(()=>loadLog(curLog));
 }
-loadFiles();loadStatus();loadStats();
+let aliases=[];
+function loadAliases(){
+  fetch('/api/aliases').then(r=>r.json()).then(d=>{
+    aliases=d||[];
+    let tb=document.querySelector('#aliastbl tbody');
+    tb.innerHTML='';
+    aliases.forEach((a,i)=>{
+      let tr=document.createElement('tr');
+      tr.innerHTML='<td class="topnum">'+a.number+'</td><td>'+a.name+'</td><td><span class="del" onclick="delAlias('+i+')">delete</span></td>';
+      tb.appendChild(tr);
+    });
+  });
+}
+function addAlias(){
+  let num=document.getElementById('anew_num').value.trim();
+  let name=document.getElementById('anew_name').value.trim();
+  if(!num||!name)return;
+  let existing=aliases.findIndex(a=>a.number===num);
+  if(existing>=0) aliases[existing].name=name;
+  else aliases.push({number:num,name:name});
+  saveAliases();
+  document.getElementById('anew_num').value='';
+  document.getElementById('anew_name').value='';
+}
+function delAlias(i){
+  aliases.splice(i,1);
+  saveAliases();
+}
+function saveAliases(){
+  fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(aliases)})
+  .then(r=>r.json()).then(d=>{
+    document.getElementById('aliasstatus').innerHTML=d.ok?'<span class="ok">Saved</span>':'<span class="err">'+d.error+'</span>';
+    loadAliases();
+  });
+}
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
+loadFiles();loadStatus();loadStats();loadAliases();
 setInterval(loadStatus,5000);
 setInterval(loadStats,30000);
 </script>
@@ -587,6 +639,92 @@ static void handleStatsReset() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// --- Alias API handlers -----------------------------------------------------
+
+static void handleGetAliases() {
+    File f = SD.open("/system/aliases.json", FILE_READ);
+    if (!f) {
+        server.send(200, "application/json", "[]");
+        return;
+    }
+    String content = f.readString();
+    f.close();
+    server.send(200, "application/json", content);
+}
+
+static void handleSaveAliases() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+
+    String body = server.arg("plain");
+    if (!SD.exists("/system")) SD.mkdir("/system");
+
+    File f = SD.open("/system/aliases.json", FILE_WRITE);
+    if (!f) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Cannot write file\"}");
+        return;
+    }
+    f.print(body);
+    f.close();
+
+    // Reload aliases in the audio player immediately.
+    s_phone->player().loadAliases();
+    if (s_logger) s_logger->systemLog("Aliases updated via web");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- PWA manifest and service worker ----------------------------------------
+
+static const char MANIFEST_JSON[] PROGMEM = R"rawjson(
+{
+  "name": "K6 GPO Exhibit",
+  "short_name": "K6 Exhibit",
+  "description": "Control panel for K6 GPO telephone exhibit",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "icons": [{
+    "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23c41e1e'/><text x='50' y='68' text-anchor='middle' font-size='50' font-family='sans-serif' fill='white'>K6</text></svg>",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}
+)rawjson";
+
+static void handleManifest() {
+    server.send_P(200, "application/json", MANIFEST_JSON);
+}
+
+static const char SW_JS[] PROGMEM = R"rawjs(
+const CACHE='k6-v1';
+const URLS=['/'];
+self.addEventListener('install',e=>{
+  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(URLS)));
+  self.skipWaiting();
+});
+self.addEventListener('activate',e=>{
+  e.waitUntil(caches.keys().then(keys=>
+    Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
+  ));
+  self.clients.claim();
+});
+self.addEventListener('fetch',e=>{
+  if(e.request.url.includes('/api/'))return;
+  e.respondWith(
+    fetch(e.request).then(r=>{
+      let c=r.clone();
+      caches.open(CACHE).then(cache=>cache.put(e.request,c));
+      return r;
+    }).catch(()=>caches.match(e.request))
+  );
+});
+)rawjs";
+
+static void handleServiceWorker() {
+    server.send_P(200, "application/javascript", SW_JS);
+}
+
 // --- Public interface -------------------------------------------------------
 
 void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& phone) {
@@ -618,6 +756,10 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/mode",        HTTP_POST, handleToggleMode);
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
+    server.on("/api/aliases",     HTTP_GET,  handleGetAliases);
+    server.on("/api/aliases",     HTTP_POST, handleSaveAliases);
+    server.on("/manifest.json",   HTTP_GET,  handleManifest);
+    server.on("/sw.js",           HTTP_GET,  handleServiceWorker);
 
     server.begin();
     active_ = true;

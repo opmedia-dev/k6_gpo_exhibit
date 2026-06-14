@@ -39,8 +39,13 @@ public:
     bool playRandomHistory();
 
     // Look up a dialled number and play the matching file, or play
-    // "not recognised" if no match exists.
+    // "not recognised" if no match exists.  Checks aliases first.
     bool playForNumber(const char* number);
+
+    // Resolve a dialled number through the alias table.
+    // Returns the alias filename (without path/extension) if found,
+    // or the original number if no alias exists.
+    String resolveAlias(const char* number);
 
     void stop();
     bool isPlaying();
@@ -57,6 +62,9 @@ public:
 
     bool sdReady() const { return sd_ok_; }
 
+    // Reload aliases from /system/aliases.json (call after editing aliases).
+    void loadAliases();
+
 private:
     Audio  audio_;
     bool   sd_ok_     = false;
@@ -66,4 +74,8 @@ private:
 
     int  countFilesIn(const char* dir);
     bool fileExists(const char* path);
+    static const int MAX_ALIASES = 32;
+    struct Alias { char number[12]; char name[32]; };
+    Alias aliases_[MAX_ALIASES] = {};
+    int alias_count_ = 0;
 };
