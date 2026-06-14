@@ -94,3 +94,4 @@ constexpr const char* SD_FILE_NOT_REC  = "/system/not_recognised.mp3";
 constexpr const char* SD_FILE_INSERT   = "/system/insert_coins.mp3"; // optional A+B prompt
 constexpr const char* SD_FILE_PRESS_A  = "/system/press_a.mp3";     // optional A+B prompt
 constexpr const char* SD_FILE_PRESS_B  = "/system/press_b.mp3";     // optional A+B prompt
+constexpr const char* SD_FILE_REPLACE  = "/system/replace_handset.mp3"; // end-of-call reminder

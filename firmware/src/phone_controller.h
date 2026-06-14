@@ -95,6 +95,7 @@ private:
 
     unsigned long  state_enter_time_ = 0;
     unsigned long  last_digit_time_  = 0;
+    bool           replace_prompted_ = false;  // "replace handset" already played
 
     // Auto-ring
     bool           auto_ring_enabled_ = true;

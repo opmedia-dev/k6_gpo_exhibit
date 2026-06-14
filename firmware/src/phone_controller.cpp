@@ -86,7 +86,12 @@ void PhoneController::update() {
             break;
         }
         if (!player_.isPlaying()) {
-            enterState(PhoneState::IDLE);
+            if (!replace_prompted_ && player_.sdReady() && SD.exists(SD_FILE_REPLACE)) {
+                replace_prompted_ = true;
+                player_.playFile(SD_FILE_REPLACE, false);
+            } else {
+                enterState(PhoneState::BUSY);
+            }
         }
         break;
 
@@ -254,7 +259,12 @@ void PhoneController::update() {
             break;
         }
         if (!player_.isPlaying()) {
-            enterState(PhoneState::BUSY);
+            if (!replace_prompted_ && player_.sdReady() && SD.exists(SD_FILE_REPLACE)) {
+                replace_prompted_ = true;
+                player_.playFile(SD_FILE_REPLACE, false);
+            } else {
+                enterState(PhoneState::BUSY);
+            }
         }
         break;
 
@@ -340,6 +350,7 @@ void PhoneController::enterState(PhoneState s) {
         break;
 
     case PhoneState::PLAYING_HISTORY:
+        replace_prompted_ = false;
         player_.playRandomHistory();
         break;
 
@@ -354,9 +365,11 @@ void PhoneController::enterState(PhoneState s) {
         break;
 
     case PhoneState::PLAYING_NUMBER:
+        replace_prompted_ = false;
         break;
 
     case PhoneState::PLAYING_NOT_REC:
+        replace_prompted_ = false;
         break;
 
     case PhoneState::BUSY:
