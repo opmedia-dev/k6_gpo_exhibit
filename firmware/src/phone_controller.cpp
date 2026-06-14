@@ -274,7 +274,7 @@ void PhoneController::update() {
             enterState(PhoneState::IDLE);
             break;
         }
-        if (millis() - state_enter_time_ >= RING_TONE_DURATION_MS) {
+        if (millis() - state_enter_time_ >= ring_tone_target_) {
             player_.stop();
             player_.playFile(pending_path_, false);
             enterState(PhoneState::PLAYING_NUMBER);
@@ -396,6 +396,7 @@ void PhoneController::enterState(PhoneState s) {
         break;
 
     case PhoneState::RINGING_TONE:
+        ring_tone_target_ = random(ring_tone_min_ms_, ring_tone_max_ms_ + 1);
         player_.playFile(SD_FILE_RING_TONE, true);  // loop ringing tone
         break;
 
@@ -430,6 +431,14 @@ void PhoneController::setAutoRingInterval(unsigned long minMs, unsigned long max
     auto_ring_min_ms_ = minMs;
     auto_ring_max_ms_ = maxMs;
     if (auto_ring_enabled_) resetAutoRingTimer();
+}
+
+void PhoneController::setRingToneRange(int minSecs, int maxSecs) {
+    if (minSecs < 2) minSecs = 2;
+    if (maxSecs < minSecs) maxSecs = minSecs;
+    if (maxSecs > 15) maxSecs = 15;
+    ring_tone_min_ms_ = minSecs * 1000UL;
+    ring_tone_max_ms_ = maxSecs * 1000UL;
 }
 
 void PhoneController::resetAutoRingTimer() {

@@ -78,6 +78,11 @@ public:
     void setMaxRingCadences(int n) { max_ring_cadences_ = n; }
     int  maxRingCadences() const { return max_ring_cadences_; }
 
+    // Configurable ringing tone duration range (seconds) for outgoing calls.
+    void setRingToneRange(int minSecs, int maxSecs);
+    int  ringToneMinSecs() const { return ring_tone_min_ms_ / 1000; }
+    int  ringToneMaxSecs() const { return ring_tone_max_ms_ / 1000; }
+
     PhoneLine&      line()    { return line_; }
     BellDriver&     bell()    { return bell_; }
     AudioPlayer&    player()  { return player_; }
@@ -116,6 +121,9 @@ private:
     unsigned long  auto_ring_max_ms_  = AUTO_RING_MAX_MS;
     int            max_ring_cadences_ = DEFAULT_MAX_RING_CADENCES;
     int            ring_cadence_count_ = 0;
+    unsigned long  ring_tone_min_ms_ = DEFAULT_RING_TONE_MS;
+    unsigned long  ring_tone_max_ms_ = DEFAULT_RING_TONE_MS;
+    unsigned long  ring_tone_target_ = DEFAULT_RING_TONE_MS;  // randomised per call
 
     DigitCallback  digit_cb_  = nullptr;
     NumberCallback number_cb_ = nullptr;

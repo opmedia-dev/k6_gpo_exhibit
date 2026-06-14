@@ -135,7 +135,7 @@ void Logger::checkDailyRotation() {
     last_uptime_day_ = day;
 
     // Archive current logs with boot number + day suffix.
-    char src[32], dst[48];
+    char dst[48];
     const char* logs[] = { SYS_LOG, CALL_LOG };
     const char* bases[] = { "/logs/system", "/logs/calls" };
     for (int i = 0; i < 2; i++) {
