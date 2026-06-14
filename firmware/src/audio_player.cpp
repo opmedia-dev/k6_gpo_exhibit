@@ -184,3 +184,29 @@ int AudioPlayer::countFilesIn(const char* dirPath) {
 bool AudioPlayer::fileExists(const char* path) {
     return SD.exists(path);
 }
+
+bool AudioPlayer::checkSdCard() {
+    if (millis() - last_sd_check_ < 10000) return sd_ok_;
+    last_sd_check_ = millis();
+
+    if (sd_ok_) {
+        // Quick health check: try to open root.
+        File root = SD.open("/");
+        if (!root) {
+            Serial.println("[audio] SD card lost — attempting remount");
+            sd_ok_ = false;
+        } else {
+            root.close();
+            return true;
+        }
+    }
+
+    // Attempt remount.
+    SD.end();
+    if (SD.begin(PIN_SD_CS)) {
+        Serial.println("[audio] SD card remounted OK");
+        sd_ok_ = true;
+        loadAliases();
+    }
+    return sd_ok_;
+}

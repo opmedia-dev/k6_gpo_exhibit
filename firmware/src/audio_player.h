@@ -62,6 +62,9 @@ public:
 
     bool sdReady() const { return sd_ok_; }
 
+    // Attempt SD card remount if it was lost. Returns true if card is now OK.
+    bool checkSdCard();
+
     // Reload aliases from /system/aliases.json (call after editing aliases).
     void loadAliases();
 
@@ -74,6 +77,7 @@ private:
 
     int  countFilesIn(const char* dir);
     bool fileExists(const char* path);
+    unsigned long last_sd_check_ = 0;
     static const int MAX_ALIASES = 32;
     struct Alias { char number[12]; char name[32]; };
     Alias aliases_[MAX_ALIASES] = {};

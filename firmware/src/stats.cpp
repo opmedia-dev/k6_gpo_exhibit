@@ -52,6 +52,30 @@ void StatsTracker::recordCoinRefunded() {
     dirty_ = true;
 }
 
+void StatsTracker::callStarted() {
+    if (!in_call_) {
+        in_call_ = true;
+        call_start_ms_ = millis();
+    }
+}
+
+void StatsTracker::callEnded() {
+    if (in_call_) {
+        in_call_ = false;
+        uint32_t duration = (millis() - call_start_ms_) / 1000;
+        stats_.total_call_seconds += duration;
+        stats_.call_count++;
+        if (duration > stats_.longest_call_seconds) {
+            stats_.longest_call_seconds = duration;
+        }
+        dirty_ = true;
+    }
+}
+
+uint32_t StatsTracker::avgCallSeconds() const {
+    return stats_.call_count > 0 ? stats_.total_call_seconds / stats_.call_count : 0;
+}
+
 void StatsTracker::incrementNumber(const char* number) {
     // Find existing entry.
     for (int i = 0; i < num_count_; i++) {
@@ -106,6 +130,9 @@ void StatsTracker::save() {
     doc["coin_collected"]  = stats_.total_coin_collected;
     doc["coin_refunded"]   = stats_.total_coin_refunded;
     doc["uptime"]          = stats_.uptime_seconds + session_secs;
+    doc["call_seconds"]     = stats_.total_call_seconds;
+    doc["longest_call"]     = stats_.longest_call_seconds;
+    doc["call_count"]       = stats_.call_count;
 
     JsonArray nums = doc["numbers"].to<JsonArray>();
     for (int i = 0; i < num_count_; i++) {
@@ -141,6 +168,9 @@ void StatsTracker::load() {
     stats_.total_coin_collected = doc["coin_collected"]  | 0;
     stats_.total_coin_refunded  = doc["coin_refunded"]   | 0;
     stats_.uptime_seconds       = doc["uptime"]          | 0;
+    stats_.total_call_seconds    = doc["call_seconds"]     | 0;
+    stats_.longest_call_seconds  = doc["longest_call"]     | 0;
+    stats_.call_count            = doc["call_count"]       | 0;
 
     JsonArray nums = doc["numbers"].as<JsonArray>();
     num_count_ = 0;

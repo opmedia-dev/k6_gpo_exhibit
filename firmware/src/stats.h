@@ -17,6 +17,9 @@ struct CallStats {
     uint32_t total_coin_collected;   // Button A presses
     uint32_t total_coin_refunded;    // Button B presses
     uint32_t uptime_seconds;         // cumulative across boots
+    uint32_t total_call_seconds;     // total time visitors spent on calls
+    uint32_t longest_call_seconds;   // single longest call
+    uint32_t call_count;             // completed calls (for average)
 };
 
 class StatsTracker {
@@ -31,7 +34,12 @@ public:
     void recordCoinCollected();
     void recordCoinRefunded();
 
+    // Call duration tracking — call from onState when entering/leaving call.
+    void callStarted();
+    void callEnded();
+
     const CallStats& stats() const { return stats_; }
+    uint32_t avgCallSeconds() const;
 
     // Most dialled numbers (top 5). Returns count of entries filled.
     struct NumberEntry { char number[12]; uint16_t count; };
@@ -54,4 +62,7 @@ private:
     int num_count_ = 0;
 
     void incrementNumber(const char* number);
+
+    unsigned long call_start_ms_ = 0;
+    bool in_call_ = false;
 };

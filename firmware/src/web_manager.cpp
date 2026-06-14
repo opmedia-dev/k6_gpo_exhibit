@@ -7,11 +7,14 @@
 #include <ESPmDNS.h>
 #include <SD.h>
 #include <Update.h>
+#include <ArduinoJson.h>
 
 static WebServer server(80);
 static Logger* s_logger = nullptr;
 static StatsTracker* s_stats = nullptr;
 static PhoneController* s_phone = nullptr;
+
+static void saveSettings();
 
 // --- HTML UI (served from flash, not SD) ------------------------------------
 
@@ -44,6 +47,8 @@ td:first-child{font-family:monospace}
 .file{color:#e0e0e0}
 .del{color:#f55;cursor:pointer;font-size:.8em;text-decoration:underline}
 .del:hover{color:#f88}
+.play{color:#6f6;cursor:pointer;font-size:.8em;text-decoration:underline;margin-right:8px}
+.play:hover{color:#8f8}
 .sz{color:#888;text-align:right;font-size:.8em}
 button,input[type=submit]{background:#c41e1e;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:.9em;margin-top:8px}
 button:hover,input[type=submit]:hover{background:#d63030}
@@ -163,11 +168,20 @@ function loadFiles(){
         tr.innerHTML='<td class="dir" onclick="nav(\''+cwd+f.name+'/\')">'+f.name+'/</td><td class="sz">DIR</td><td></td>';
       }else{
         let sz=f.size<1024?f.size+'B':f.size<1048576?(f.size/1024).toFixed(1)+'KB':(f.size/1048576).toFixed(1)+'MB';
-        tr.innerHTML='<td class="file">'+f.name+'</td><td class="sz">'+sz+'</td><td><span class="del" onclick="del(\''+f.name+'\')">delete</span></td>';
+        let mp3=f.name.toLowerCase().endsWith('.mp3');
+        let acts=mp3?'<span class="play" onclick="preview(\''+cwd+f.name+'\')">play</span> ':'';
+        acts+='<span class="del" onclick="del(\''+f.name+'\')">delete</span>';
+        tr.innerHTML='<td class="file">'+f.name+'</td><td class="sz">'+sz+'</td><td>'+acts+'</td>';
       }
       tb.appendChild(tr);
     });
   }).catch(e=>{console.error(e)});
+}
+let previewAudio=null;
+function preview(path){
+  if(previewAudio){previewAudio.pause();previewAudio=null;}
+  previewAudio=new Audio('/api/preview?path='+encodeURIComponent(path));
+  previewAudio.play();
 }
 function del(name){
   if(!confirm('Delete '+name+'?'))return;
@@ -296,6 +310,14 @@ function loadStats(){
           '<span class="stat">Not recognised: <b>'+d.not_recognised+'</b></span>';
     if(d.coin_collected>0) h+=' <span class="stat">Coins collected: <b>'+d.coin_collected+'</b></span>';
     if(d.coin_refunded>0) h+=' <span class="stat">Coins refunded: <b>'+d.coin_refunded+'</b></span>';
+    if(d.call_count>0){
+      let avgM=Math.floor(d.avg_call/60), avgS=d.avg_call%60;
+      let lonM=Math.floor(d.longest_call/60), lonS=d.longest_call%60;
+      h+='<br><span class="stat">Avg call: <b>'+avgM+'m '+avgS+'s</b></span> ';
+      h+='<span class="stat">Longest: <b>'+lonM+'m '+lonS+'s</b></span> ';
+      let totM=Math.floor(d.call_seconds/60);
+      h+='<span class="stat">Total talk: <b>'+totM+' min</b></span>';
+    }
     let uH=Math.floor(d.total_uptime/3600), uM=Math.floor(d.total_uptime%3600/60);
     h+='<br><span class="stat">Total uptime: <b>'+uH+'h '+uM+'m</b></span>';
     if(d.top_numbers&&d.top_numbers.length){
@@ -594,6 +616,7 @@ static void handleVolume() {
     if (v < 0) v = 0;
     if (v > 21) v = 21;
     s_phone->player().setVolume(v);
+    saveSettings();
     if (s_logger) s_logger->systemLog("Volume set to %d via web", v);
     server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -604,6 +627,7 @@ static void handleBellVolume() {
     if (v < 0) v = 0;
     if (v > 255) v = 255;
     s_phone->bell().setBellVolume(v);
+    saveSettings();
     if (s_logger) s_logger->systemLog("Bell volume set to %d via web", v);
     server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -616,6 +640,7 @@ static void handleAutoRing() {
     if (maxMin < minMin) maxMin = minMin;
     if (maxMin > 120) maxMin = 120;
     s_phone->setAutoRingInterval(minMin * 60000, maxMin * 60000);
+    saveSettings();
     if (s_logger) s_logger->systemLog("Auto-ring set to %lu-%lu min via web", minMin, maxMin);
     server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -651,6 +676,10 @@ static void handleStats() {
     json += ",\"coin_collected\":"; json += String(st.total_coin_collected);
     json += ",\"coin_refunded\":";  json += String(st.total_coin_refunded);
     json += ",\"total_uptime\":";   json += String(st.uptime_seconds + session_secs);
+    json += ",\"call_seconds\":";  json += String(st.total_call_seconds);
+    json += ",\"longest_call\":";  json += String(st.longest_call_seconds);
+    json += ",\"avg_call\":";      json += String(s_stats->avgCallSeconds());
+    json += ",\"call_count\":";    json += String(st.call_count);
 
     StatsTracker::NumberEntry top[5];
     int n = s_stats->topNumbers(top, 5);
@@ -676,6 +705,64 @@ static void handleStatsReset() {
         if (s_logger) s_logger->systemLog("Stats reset via web");
     }
     server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- Audio preview handler --------------------------------------------------
+
+static void handlePreview() {
+    String path = server.arg("path");
+    if (path.length() == 0) {
+        server.send(400, "text/plain", "Missing path");
+        return;
+    }
+
+    File f = SD.open(path, FILE_READ);
+    if (!f) {
+        server.send(404, "text/plain", "File not found");
+        return;
+    }
+
+    server.streamFile(f, "audio/mpeg");
+    f.close();
+}
+
+// --- Settings persistence ---------------------------------------------------
+
+static const char* SETTINGS_FILE = "/system/settings.json";
+
+static void loadSettings() {
+    if (!s_phone) return;
+    File f = SD.open(SETTINGS_FILE, FILE_READ);
+    if (!f) return;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, f)) { f.close(); return; }
+    f.close();
+
+    if (!doc["volume"].isNull())   s_phone->player().setVolume(doc["volume"].as<uint8_t>());
+    if (!doc["bell_vol"].isNull()) s_phone->bell().setBellVolume(doc["bell_vol"].as<uint8_t>());
+    if (!doc["ar_min"].isNull() && !doc["ar_max"].isNull()) {
+        s_phone->setAutoRingInterval(
+            doc["ar_min"].as<unsigned long>(),
+            doc["ar_max"].as<unsigned long>());
+    }
+    Serial.println("[web] settings loaded");
+}
+
+static void saveSettings() {
+    if (!s_phone) return;
+    if (!SD.exists("/system")) SD.mkdir("/system");
+
+    File f = SD.open(SETTINGS_FILE, FILE_WRITE);
+    if (!f) return;
+
+    JsonDocument doc;
+    doc["volume"]   = s_phone->player().getVolume();
+    doc["bell_vol"] = s_phone->bell().bellVolume();
+    doc["ar_min"]   = s_phone->autoRingMinMs();
+    doc["ar_max"]   = s_phone->autoRingMaxMs();
+    serializeJson(doc, f);
+    f.close();
 }
 
 // --- Reboot handler ---------------------------------------------------------
@@ -813,12 +900,14 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
     server.on("/api/aliases",     HTTP_GET,  handleGetAliases);
     server.on("/api/aliases",     HTTP_POST, handleSaveAliases);
+    server.on("/api/preview",     HTTP_GET,  handlePreview);
     server.on("/api/reboot",      HTTP_POST, handleReboot);
     server.on("/manifest.json",   HTTP_GET,  handleManifest);
     server.on("/sw.js",           HTTP_GET,  handleServiceWorker);
 
     server.begin();
     active_ = true;
+    loadSettings();
     logger.systemLog("Wi-Fi AP started SSID=%s", WIFI_AP_SSID);
     Serial.println("[web] server ready");
 }

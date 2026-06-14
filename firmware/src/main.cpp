@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+#include <esp_task_wdt.h>
 #include "phone_controller.h"
 #include "web_manager.h"
 #include "logger.h"
@@ -67,17 +68,21 @@ static void onState(PhoneState state) {
     case PhoneState::PLAYING_HISTORY:
         logger.callLog("INCOMING answered");
         stats.recordIncomingAnswered();
+        stats.callStarted();
         break;
     case PhoneState::PLAYING_NUMBER:
         logger.callLog("OUTGOING connected number=%s", phone.dialledNumber());
         stats.recordOutgoingCall(phone.dialledNumber());
+        stats.callStarted();
         break;
     case PhoneState::PLAYING_NOT_REC:
         logger.callLog("OUTGOING not_recognised number=%s", phone.dialledNumber());
         stats.recordNotRecognised(phone.dialledNumber());
+        stats.callStarted();
         break;
     case PhoneState::IDLE:
         logger.callLog("IDLE");
+        stats.callEnded();
         break;
     default:
         break;
@@ -188,9 +193,15 @@ void setup() {
                     phone.player().sdReady() ? "OK" : "FAIL",
                     phone.coinBox().isInstalled() ? "INSTALLED" : "NONE",
                     phone.autoRingEnabled() ? "AUTO" : "MANUAL");
+
+    // Hardware watchdog: reboot if loop() stops for 15 seconds.
+    esp_task_wdt_init(15, true);
+    esp_task_wdt_add(NULL);
 }
 
 void loop() {
+    esp_task_wdt_reset();
+
     // Once we've been running for STABLE_BOOT_MS, clear the crash counter.
     if (boot_crash_count > 0 && millis() > STABLE_BOOT_MS) {
         boot_crash_count = 0;
@@ -198,6 +209,7 @@ void loop() {
 
     if (!safe_mode) {
         phone.update();
+        phone.player().checkSdCard();
     }
     stats.update();
     web.update();
