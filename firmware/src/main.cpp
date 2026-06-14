@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include "phone_controller.h"
+#include "web_manager.h"
+#include "logger.h"
 #include "config.h"
 
 // ============================================================================
@@ -14,6 +16,7 @@
 //   • External control box: RING / CANCEL / RESET buttons
 //   • All audio from SD card, played via I2S to MAX98357A DAC
 //   • Optional A+B coin box (auto-detected daughter board on GPIO 36/39/35)
+//   • Wi-Fi AP with web file manager and OTA firmware update
 //
 // Serial commands (115200 baud):
 //   R   — trigger ring
@@ -25,6 +28,8 @@
 // ============================================================================
 
 PhoneController phone;
+WebManager      web;
+Logger          logger;
 
 // --- Callbacks --------------------------------------------------------------
 
@@ -34,6 +39,7 @@ static void onDigit(uint8_t digit) {
 
 static void onNumber(const char* number) {
     Serial.printf("[app] number: %s\n", number);
+    logger.callLog("DIAL number=%s", number);
 }
 
 static void onHook(HookState state) {
@@ -42,7 +48,25 @@ static void onHook(HookState state) {
 }
 
 static void onState(PhoneState state) {
-    (void)state;
+    switch (state) {
+    case PhoneState::RINGING:
+        logger.callLog("INCOMING ring_start");
+        break;
+    case PhoneState::PLAYING_HISTORY:
+        logger.callLog("INCOMING answered");
+        break;
+    case PhoneState::PLAYING_NUMBER:
+        logger.callLog("OUTGOING connected number=%s", phone.dialledNumber());
+        break;
+    case PhoneState::PLAYING_NOT_REC:
+        logger.callLog("OUTGOING not_recognised number=%s", phone.dialledNumber());
+        break;
+    case PhoneState::IDLE:
+        logger.callLog("IDLE");
+        break;
+    default:
+        break;
+    }
 }
 
 // --- Serial command handler -------------------------------------------------
@@ -115,6 +139,7 @@ void setup() {
     phone.onHook(onHook);
     phone.onState(onState);
     phone.begin();
+    logger.begin();
 
     Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol");
     Serial.printf("[app] mode: %s (lamp %s)\n",
@@ -123,9 +148,16 @@ void setup() {
     if (phone.coinBox().isInstalled()) {
         Serial.println("[app] A+B coin box detected — coin logic active");
     }
+
+    web.begin(logger);
+    logger.systemLog("SD=%s coinbox=%s mode=%s",
+                    phone.player().sdReady() ? "OK" : "FAIL",
+                    phone.coinBox().isInstalled() ? "INSTALLED" : "NONE",
+                    phone.autoRingEnabled() ? "AUTO" : "MANUAL");
 }
 
 void loop() {
     phone.update();
+    web.update();
     handleSerial();
 }

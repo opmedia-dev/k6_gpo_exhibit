@@ -19,6 +19,15 @@ telephone work as an interactive exhibit in a K6 phone box.
   phone's earpiece via a coupling transformer
 - **Optional A+B coin box** — auto-detected daughter board supports classic
   GPO pre-payment coin mechanisms (Button A/B, coin weight switch)
+- **Auto/Manual mode** — 4th button toggles auto-ring on/off with panel lamp
+  indicator (GPIO 13, 3–6 V)
+- **Wi-Fi file manager** — ESP32 creates a `K6-Exhibit` Wi-Fi hotspot;
+  connect from any phone/laptop browser to upload, delete, and manage
+  SD card files without removing the card
+- **OTA firmware update** — upload a compiled `.bin` through the web
+  interface to update firmware wirelessly
+- **System & call logging** — separate logs for system events and call
+  history, viewable and clearable via the web interface
 
 No modifications are made to the telephone.
 
@@ -88,6 +97,34 @@ Format a micro-SD card as FAT32 and create this directory structure:
 - History tracks play when the phone rings and is answered
 - Number tracks are matched by filename: dialling `999` looks for `/numbers/999.mp3`
 - If no match is found, `/system/not_recognised.mp3` plays
+
+## Wi-Fi File Manager
+
+The ESP32 creates a Wi-Fi access point on boot:
+
+| Setting | Value |
+|---------|-------|
+| SSID | `K6-Exhibit` |
+| Password | `phonebox` |
+| URL | `http://192.168.4.1/` |
+
+Connect with any phone or laptop, open a browser, and you can:
+- **Browse** the SD card directory structure
+- **Upload** new MP3 files
+- **Delete** existing files
+- **Create** new folders
+- **View logs** — system events and call history (separate tabs)
+- **Clear logs** — wipe system or call log
+- **Flash firmware** — upload a `.bin` file for OTA update
+
+### Logs
+
+| Log | Path | Contents |
+|-----|------|----------|
+| System | `/logs/system.log` | Boot, Wi-Fi, SD card, mode changes, OTA, errors |
+| Calls | `/logs/calls.log` | Incoming/outgoing calls with timestamps, numbers, outcomes |
+
+Logs auto-rotate at 64 KB to avoid filling the SD card.
 
 ## Firmware
 

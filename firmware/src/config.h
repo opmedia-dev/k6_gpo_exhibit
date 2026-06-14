@@ -42,6 +42,13 @@ constexpr int PIN_AUTO_LAMP    = 13;  // drives 3-6V panel lamp (active-high)
 // --- Status LED -------------------------------------------------------------
 constexpr int PIN_STATUS_LED   = 2;   // on-board LED on most dev-kits
 
+// --- Wi-Fi access point ------------------------------------------------------
+constexpr const char* WIFI_AP_SSID = "K6-Exhibit";
+constexpr const char* WIFI_AP_PASS = "phonebox";    // min 8 chars for WPA2
+
+// --- Firmware version --------------------------------------------------------
+#define FIRMWARE_VERSION "1.1.0"
+
 // --- Timing constants -------------------------------------------------------
 
 // Hook detection
