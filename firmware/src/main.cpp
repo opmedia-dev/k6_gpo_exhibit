@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <SPI.h>
+#include <SD.h>
 #include "phone_controller.h"
 #include "web_manager.h"
 #include "logger.h"
@@ -30,6 +32,13 @@
 PhoneController phone;
 WebManager      web;
 Logger          logger;
+
+// --- Safe mode (crash recovery) ---------------------------------------------
+// RTC memory survives software resets but not power cycles.
+RTC_DATA_ATTR static int  boot_crash_count = 0;
+static bool safe_mode = false;
+static const int  SAFE_MODE_THRESHOLD = 3;
+static const unsigned long STABLE_BOOT_MS = 30000;  // 30s = considered stable
 
 // --- Callbacks --------------------------------------------------------------
 
@@ -134,6 +143,23 @@ void setup() {
     Serial.println("========================================");
     Serial.println();
 
+    // Safe mode: if the device has crashed SAFE_MODE_THRESHOLD times in a
+    // row without running for STABLE_BOOT_MS, skip phone init and only
+    // start Wi-Fi + web so the user can re-flash via OTA.
+    boot_crash_count++;
+    if (boot_crash_count >= SAFE_MODE_THRESHOLD) {
+        safe_mode = true;
+        Serial.println("*** SAFE MODE — phone logic disabled, web only ***");
+        Serial.println("*** Upload new firmware via http://192.168.4.1/ ***");
+        // Still need SD for the web file manager.
+        SPI.begin();
+        SD.begin(PIN_SD_CS);
+        logger.begin();
+        logger.systemLog("SAFE MODE entered after %d crashes", boot_crash_count);
+        web.begin(logger);
+        return;
+    }
+
     phone.onDigit(onDigit);
     phone.onNumber(onNumber);
     phone.onHook(onHook);
@@ -157,7 +183,14 @@ void setup() {
 }
 
 void loop() {
-    phone.update();
+    // Once we've been running for STABLE_BOOT_MS, clear the crash counter.
+    if (boot_crash_count > 0 && millis() > STABLE_BOOT_MS) {
+        boot_crash_count = 0;
+    }
+
+    if (!safe_mode) {
+        phone.update();
+    }
     web.update();
     handleSerial();
 }
