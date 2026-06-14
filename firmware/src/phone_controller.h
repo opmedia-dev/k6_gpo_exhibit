@@ -80,6 +80,7 @@ public:
     CoinBox&        coinBox() { return coin_box_; }
 
     const char* dialledNumber() const { return dialled_; }
+    unsigned long stateEnterTime() const { return state_enter_time_; }
 
 private:
     void enterState(PhoneState s);

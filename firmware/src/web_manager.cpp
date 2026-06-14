@@ -78,6 +78,7 @@ input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #55
 <div class="row"><label>Mode</label><span id="modelbl">—</span></div>
 <div class="row"><label>State</label><span id="statelbl">—</span></div>
 <div class="row"><label>Playing</label><span id="playlbl" style="font-family:monospace;color:#6af">—</span></div>
+<div class="row"><label>Call timer</label><span id="calltimer" style="font-family:monospace;color:#fc6">—</span></div>
 <div style="margin-top:8px">
 <button onclick="ringNow()">Ring Now</button>
 <button onclick="toggleMode()" id="modebtn">Toggle Mode</button>
@@ -136,6 +137,7 @@ input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #55
 <div class="card">
 <h2>System Status</h2>
 <div id="sysinfo" style="font-size:.85em;color:#aaa">Loading...</div>
+<div style="margin-top:8px"><button onclick="rebootDevice()" style="background:#555">Restart Device</button></div>
 </div>
 
 <script>
@@ -245,6 +247,13 @@ function setAutoRing(){
 }
 function ringNow(){fetch('/api/ring',{method:'POST'})}
 function toggleMode(){fetch('/api/mode',{method:'POST'}).then(()=>loadStatus())}
+function rebootDevice(){
+  if(!confirm('Restart the device? Active calls will be dropped.'))return;
+  fetch('/api/reboot',{method:'POST'}).then(()=>{
+    document.getElementById('sysinfo').innerHTML='<span class="warn">Rebooting...</span>';
+    setTimeout(()=>{location.reload()},8000);
+  });
+}
 function resetStats(){
   if(!confirm('Reset all visitor statistics?'))return;
   fetch('/api/stats/reset',{method:'POST'}).then(()=>loadStats());
@@ -263,7 +272,12 @@ function loadStatus(){
     document.getElementById('armax').value=Math.round(d.ar_max/60000);
     document.getElementById('modelbl').innerHTML=d.mode=='AUTO'?'<span class="ok">AUTO</span>':'MANUAL';
     document.getElementById('statelbl').textContent=d.state;
-    document.getElementById('playlbl').textContent=d.playing||'—';
+    document.getElementById('playlbl').textContent=d.playing||'\u2014';
+    let ct=document.getElementById('calltimer');
+    if(d.state!=='IDLE'&&d.call_secs>=0){
+      let m=Math.floor(d.call_secs/60),s=d.call_secs%60;
+      ct.textContent=m+':'+(s<10?'0':'')+s;
+    } else { ct.textContent='\u2014'; }
   });
 }
 function loadStats(){
@@ -487,7 +501,13 @@ static void handleStatus() {
     if (s_phone->player().isPlaying()) {
         json += s_phone->player().currentFile();
     }
-    json += "\"}";
+    json += "\",\"call_secs\":";
+    if (s_phone->state() != PhoneState::IDLE) {
+        json += String((millis() - s_phone->stateEnterTime()) / 1000);
+    } else {
+        json += "-1";
+    }
+    json += "}";
     server.send(200, "application/json", json);
 }
 
@@ -639,6 +659,16 @@ static void handleStatsReset() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// --- Reboot handler ---------------------------------------------------------
+
+static void handleReboot() {
+    if (s_logger) s_logger->systemLog("Reboot requested via web");
+    if (s_stats) s_stats->save();
+    server.send(200, "application/json", "{\"ok\":true}");
+    delay(500);
+    ESP.restart();
+}
+
 // --- Alias API handlers -----------------------------------------------------
 
 static void handleGetAliases() {
@@ -758,6 +788,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
     server.on("/api/aliases",     HTTP_GET,  handleGetAliases);
     server.on("/api/aliases",     HTTP_POST, handleSaveAliases);
+    server.on("/api/reboot",      HTTP_POST, handleReboot);
     server.on("/manifest.json",   HTTP_GET,  handleManifest);
     server.on("/sw.js",           HTTP_GET,  handleServiceWorker);
 
