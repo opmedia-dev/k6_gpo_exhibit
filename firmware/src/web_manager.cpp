@@ -82,6 +82,7 @@ input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #55
 <span>Max <input type="number" id="armax" value="30" min="1" max="120"> min</span>
 <button onclick="setAutoRing()" style="margin:0">Set</button>
 </div>
+<div class="row"><label>Ring count</label><input type="number" id="ringmax" value="10" min="0" max="60" style="width:70px"><button onclick="setRingCount()" style="margin:0">Set</button><span style="color:#888;font-size:.8em;margin-left:4px">(0=unlimited)</span></div>
 <div class="row"><label>Mode</label><span id="modelbl">—</span></div>
 <div class="row"><label>State</label><span id="statelbl">—</span></div>
 <div class="row"><label>Playing</label><span id="playlbl" style="font-family:monospace;color:#6af">—</span></div>
@@ -257,6 +258,10 @@ function setBell(v){
   document.getElementById('belllbl').textContent=v;
   fetch('/api/bellvol?v='+v,{method:'POST'});
 }
+function setRingCount(){
+  let n=document.getElementById('ringmax').value;
+  fetch('/api/ringcount?n='+n,{method:'POST'});
+}
 function setAutoRing(){
   let mn=document.getElementById('armin').value;
   let mx=document.getElementById('armax').value;
@@ -290,6 +295,7 @@ function loadStatus(){
     document.getElementById('vollbl').textContent=d.volume;
     document.getElementById('bell').value=d.bell_vol;
     document.getElementById('belllbl').textContent=d.bell_vol;
+    if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
     document.getElementById('armin').value=Math.round(d.ar_min/60000);
     document.getElementById('armax').value=Math.round(d.ar_max/60000);
     document.getElementById('modelbl').innerHTML=d.mode=='AUTO'?'<span class="ok">AUTO</span>':'MANUAL';
@@ -526,6 +532,7 @@ static void handleStatus() {
     json += ",\"bell_vol\":"; json += String(s_phone->bell().bellVolume());
     json += ",\"ar_min\":";  json += String(s_phone->autoRingMinMs());
     json += ",\"ar_max\":";  json += String(s_phone->autoRingMaxMs());
+    json += ",\"ring_max\":"; json += String(s_phone->maxRingCadences());
     json += ",\"mode\":\"";  json += s_phone->autoRingEnabled() ? "AUTO" : "MANUAL";
     json += "\",\"state\":\""; json += s_phone->stateName();
     json += "\",\"playing\":\"";
@@ -652,6 +659,17 @@ static void handleRingNow() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+static void handleRingCount() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int n = server.arg("n").toInt();
+    if (n < 0) n = 0;
+    if (n > 60) n = 60;
+    s_phone->setMaxRingCadences(n);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Ring count set to %d via web", n);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleToggleMode() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
     s_phone->toggleAutoRing();
@@ -746,6 +764,7 @@ static void loadSettings() {
             doc["ar_min"].as<unsigned long>(),
             doc["ar_max"].as<unsigned long>());
     }
+    if (!doc["ring_max"].isNull()) s_phone->setMaxRingCadences(doc["ring_max"].as<int>());
     Serial.println("[web] settings loaded");
 }
 
@@ -761,6 +780,7 @@ static void saveSettings() {
     doc["bell_vol"] = s_phone->bell().bellVolume();
     doc["ar_min"]   = s_phone->autoRingMinMs();
     doc["ar_max"]   = s_phone->autoRingMaxMs();
+    doc["ring_max"] = s_phone->maxRingCadences();
     serializeJson(doc, f);
     f.close();
 }
@@ -895,6 +915,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/bellvol",     HTTP_POST, handleBellVolume);
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
     server.on("/api/ring",        HTTP_POST, handleRingNow);
+    server.on("/api/ringcount",  HTTP_POST, handleRingCount);
     server.on("/api/mode",        HTTP_POST, handleToggleMode);
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);

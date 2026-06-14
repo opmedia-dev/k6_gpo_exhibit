@@ -21,6 +21,7 @@
 //   AWAIT_COINS      (A+B only) Number recognised, waiting for coins.
 //   AWAIT_BTN_A      (A+B only) Call connected, waiting for Button A.
 //   AWAIT_BTN_B      (A+B only) Number not recognised, waiting for Button B.
+//   RINGING_TONE    Outgoing call → playing UK ringing tone before connecting.
 //   PLAYING_NUMBER   Dialling complete → matched MP3 playing.
 //   PLAYING_NOT_REC  Dialling complete → "number not recognised" playing.
 //   BUSY             Error / timeout → busy tone.
@@ -35,6 +36,7 @@ enum class PhoneState : uint8_t {
     AWAIT_COINS,
     AWAIT_BTN_A,
     AWAIT_BTN_B,
+    RINGING_TONE,
     PLAYING_NUMBER,
     PLAYING_NOT_REC,
     BUSY
@@ -72,6 +74,10 @@ public:
     unsigned long autoRingMinMs() const { return auto_ring_min_ms_; }
     unsigned long autoRingMaxMs() const { return auto_ring_max_ms_; }
 
+    // Configurable max ring cadences (0 = unlimited).
+    void setMaxRingCadences(int n) { max_ring_cadences_ = n; }
+    int  maxRingCadences() const { return max_ring_cadences_; }
+
     PhoneLine&      line()    { return line_; }
     BellDriver&     bell()    { return bell_; }
     AudioPlayer&    player()  { return player_; }
@@ -108,6 +114,8 @@ private:
     unsigned long  next_ring_time_    = 0;
     unsigned long  auto_ring_min_ms_  = AUTO_RING_MIN_MS;
     unsigned long  auto_ring_max_ms_  = AUTO_RING_MAX_MS;
+    int            max_ring_cadences_ = DEFAULT_MAX_RING_CADENCES;
+    int            ring_cadence_count_ = 0;
 
     DigitCallback  digit_cb_  = nullptr;
     NumberCallback number_cb_ = nullptr;

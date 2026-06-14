@@ -75,6 +75,17 @@ void PhoneController::update() {
         if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
             bell_.stopRinging();
             enterState(PhoneState::PLAYING_HISTORY);
+            break;
+        }
+        // Ring count limit: one cadence cycle ≈ 3s.
+        if (max_ring_cadences_ > 0) {
+            unsigned long elapsed = millis() - state_enter_time_;
+            int cadences = elapsed / 3000;
+            if (cadences >= max_ring_cadences_) {
+                Serial.println("[phone] ring count limit reached");
+                bell_.stopRinging();
+                enterState(PhoneState::IDLE);
+            }
         }
         break;
 
@@ -172,8 +183,13 @@ void PhoneController::update() {
             } else {
                 // No coin box — play directly.
                 if (recognised) {
-                    player_.playFile(pending_path_, false);
-                    enterState(PhoneState::PLAYING_NUMBER);
+                    // Play ringing tone first if available.
+                    if (player_.sdReady() && SD.exists(SD_FILE_RING_TONE)) {
+                        enterState(PhoneState::RINGING_TONE);
+                    } else {
+                        player_.playFile(pending_path_, false);
+                        enterState(PhoneState::PLAYING_NUMBER);
+                    }
                 } else {
                     player_.playNotRecognised();
                     enterState(PhoneState::PLAYING_NOT_REC);
@@ -248,6 +264,20 @@ void PhoneController::update() {
             } else {
                 enterState(PhoneState::BUSY);
             }
+        }
+        break;
+
+    // ----- RINGING_TONE (outgoing call) --------------------------------------
+    case PhoneState::RINGING_TONE:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        if (millis() - state_enter_time_ >= RING_TONE_DURATION_MS) {
+            player_.stop();
+            player_.playFile(pending_path_, false);
+            enterState(PhoneState::PLAYING_NUMBER);
         }
         break;
 
@@ -365,6 +395,10 @@ void PhoneController::enterState(PhoneState s) {
     case PhoneState::DIALING:
         break;
 
+    case PhoneState::RINGING_TONE:
+        player_.playFile(SD_FILE_RING_TONE, true);  // loop ringing tone
+        break;
+
     case PhoneState::PLAYING_NUMBER:
         replace_prompted_ = false;
         break;
@@ -414,6 +448,7 @@ const char* PhoneController::stateName() const {
     case PhoneState::AWAIT_COINS:     return "AWAIT_COINS";
     case PhoneState::AWAIT_BTN_A:     return "AWAIT_BTN_A";
     case PhoneState::AWAIT_BTN_B:     return "AWAIT_BTN_B";
+    case PhoneState::RINGING_TONE:    return "RINGING_TONE";
     case PhoneState::PLAYING_NUMBER:  return "PLAYING_NUMBER";
     case PhoneState::PLAYING_NOT_REC: return "PLAYING_NOT_REC";
     case PhoneState::BUSY:            return "BUSY";

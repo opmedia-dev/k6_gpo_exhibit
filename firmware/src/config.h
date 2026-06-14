@@ -102,3 +102,10 @@ constexpr const char* SD_FILE_INSERT   = "/system/insert_coins.mp3"; // optional
 constexpr const char* SD_FILE_PRESS_A  = "/system/press_a.mp3";     // optional A+B prompt
 constexpr const char* SD_FILE_PRESS_B  = "/system/press_b.mp3";     // optional A+B prompt
 constexpr const char* SD_FILE_REPLACE  = "/system/replace_handset.mp3"; // end-of-call reminder
+constexpr const char* SD_FILE_RING_TONE = "/system/ringing_tone.mp3";   // UK ringing tone for outgoing calls
+
+// Outgoing call ringing tone duration (ms) before "connecting".
+constexpr unsigned long RING_TONE_DURATION_MS = 6000;  // 6 seconds = ~2 ring cycles
+
+// Default max ring cadences for incoming auto-ring (0 = unlimited).
+constexpr int DEFAULT_MAX_RING_CADENCES = 10;

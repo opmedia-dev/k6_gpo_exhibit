@@ -34,5 +34,10 @@ public:
 private:
     void appendLog(const char* path, const char* line);
     void rotateIfNeeded(const char* path);
+    void checkDailyRotation();
     String timestamp();
+
+    unsigned long boot_ms_ = 0;
+    int last_uptime_day_ = 0;
+    uint16_t boot_number_ = 0;
 };
