@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GPO — Temporarily Out of Use</title>
+<style>
+  /* Print-ready hanging sign, landscape, matching GPO T.431 style */
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    background: #e8e4da;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sign {
+    width: 280mm;
+    height: 130mm;
+    background: #f5f2ec;
+    border: 1px solid #c5c0b5;
+    position: relative;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+    display: grid;
+    grid-template-rows: 12mm 1fr 10mm;
+    grid-template-columns: 1fr;
+  }
+
+  /* --- Top white strip with hanging holes --- */
+  .top-strip {
+    position: relative;
+    border-bottom: 2pt solid #c42c2c;
+  }
+  .hole {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4mm;
+    height: 4mm;
+    border-radius: 50%;
+    border: 1px solid #999;
+    background: var(--hole-bg, #e8e4da);
+  }
+  .hole-l { left: 22mm; }
+  .hole-r { right: 22mm; }
+
+  /* --- Main body: left column + red panel --- */
+  .sign-body {
+    display: flex;
+  }
+
+  /* Left white column */
+  .left-col {
+    width: 62mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6mm 5mm;
+    gap: 2mm;
+    flex-shrink: 0;
+  }
+
+  .crown-icon {
+    width: 20mm;
+    height: auto;
+    margin-bottom: 1mm;
+  }
+
+  .org-name {
+    font-size: 11pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #1a1610;
+    text-align: center;
+    line-height: 1.3;
+    border-top: 2pt solid #1a1610;
+    border-bottom: 2pt solid #1a1610;
+    padding: 2mm 0;
+    width: 100%;
+  }
+
+  .dept-name {
+    font-size: 9.5pt;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #1a1610;
+    text-align: center;
+    line-height: 1.4;
+    margin-top: 3mm;
+  }
+
+  /* Red panel */
+  .red-panel {
+    flex: 1;
+    background: #c42c2c;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 6mm 10mm;
+    gap: 1mm;
+  }
+
+  .temporarily {
+    font-size: 16pt;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #fff;
+    margin-bottom: 1mm;
+  }
+
+  .out-of-use {
+    font-size: 54pt;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #fff;
+    line-height: 1;
+    margin-bottom: 3mm;
+  }
+
+  .translation {
+    font-size: 13pt;
+    font-style: italic;
+    color: rgba(255,255,255,0.85);
+    line-height: 1.5;
+    text-align: center;
+    letter-spacing: 0.02em;
+  }
+
+  /* --- Bottom white strip with reference codes --- */
+  .bottom-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8mm;
+  }
+
+  .ref-code {
+    font-size: 7pt;
+    color: #888;
+    letter-spacing: 0.05em;
+  }
+
+  /* --- Print overrides --- */
+  @media print {
+    body {
+      background: none;
+      min-height: auto;
+    }
+    .sign {
+      box-shadow: none;
+      border: none;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 280 / 130;
+    }
+    .hole {
+      --hole-bg: #fff;
+    }
+    .no-print { display: none; }
+  }
+
+  /* --- Screen helper bar --- */
+  .print-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: #333;
+    color: #fff;
+    text-align: center;
+    padding: 8px;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    z-index: 999;
+  }
+  .print-bar button {
+    background: #c42c2c;
+    color: #fff;
+    border: none;
+    padding: 6px 18px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-left: 12px;
+  }
+  .print-bar button:hover { background: #d63030; }
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  Print on A4 landscape, or save as PDF. Cut to size and hang with string through the holes.
+  <button onclick="window.print()">Print Now</button>
+</div>
+
+<div class="sign">
+
+  <!-- Top white strip with hanging holes -->
+  <div class="top-strip">
+    <div class="hole hole-l"></div>
+    <div class="hole hole-r"></div>
+  </div>
+
+  <!-- Main body -->
+  <div class="sign-body">
+    <!-- Left white column -->
+    <div class="left-col">
+      <!-- Tudor Crown (George VI) -->
+      <svg class="crown-icon" viewBox="0 0 200 130" xmlns="http://www.w3.org/2000/svg">
+        <g fill="#1a1610">
+          <rect x="35" y="90" width="130" height="14" rx="2"/>
+          <rect x="40" y="80" width="120" height="12" rx="1"/>
+          <path d="M50 80 Q70 40 100 32 Q130 40 150 80" fill="none" stroke="#1a1610" stroke-width="5"/>
+          <circle cx="100" cy="28" r="6"/>
+          <rect x="97" y="12" width="6" height="14" rx="1"/>
+          <rect x="93" y="16" width="14" height="5" rx="1"/>
+          <ellipse cx="50" cy="77" rx="8" ry="14"/>
+          <ellipse cx="75" cy="63" rx="6" ry="12"/>
+          <ellipse cx="100" cy="57" rx="6" ry="10"/>
+          <ellipse cx="125" cy="63" rx="6" ry="12"/>
+          <ellipse cx="150" cy="77" rx="8" ry="14"/>
+          <rect x="48" y="59" width="4" height="10" rx="0.5"/>
+          <rect x="46" y="62" width="8" height="4" rx="0.5"/>
+          <rect x="148" y="59" width="4" height="10" rx="0.5"/>
+          <rect x="146" y="62" width="8" height="4" rx="0.5"/>
+        </g>
+      </svg>
+
+      <div class="org-name">General<br>Post Office</div>
+      <div class="dept-name">Telephone<br>Department</div>
+    </div>
+
+    <!-- Red panel -->
+    <div class="red-panel">
+      <div class="temporarily">Temporarily</div>
+      <div class="out-of-use">Out of Use</div>
+      <div class="translation">
+        Provisoirement hors de service<br>
+        Zur Zeit ausser Betrieb
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom reference strip -->
+  <div class="bottom-strip">
+    <span class="ref-code">T.431G</span>
+    <span class="ref-code">Dd. 251480&ensp;9/37</span>
+    <span class="ref-code">WP</span>
+  </div>
+
+</div>
+
+</body>
+</html>
