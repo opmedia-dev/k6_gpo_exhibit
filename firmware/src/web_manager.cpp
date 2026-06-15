@@ -27,158 +27,276 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#1a1a1a">
+<meta name="theme-color" content="#1a1a1a" id="themecolor">
 <link rel="manifest" href="/manifest.json">
 <title>K6 GPO Exhibit</title>
 <style>
+:root{
+--bg:#1a1a1a;--bg2:#252525;--bg3:#333;--bg4:#111;--bg5:#1e1e1e;
+--fg:#e0e0e0;--fg2:#ccc;--fg3:#aaa;--fg4:#999;--fg5:#888;
+--border:#333;--border2:#444;--border3:#555;
+--card-border:#333;
+--input-bg:#333;--input-fg:#e0e0e0;--input-border:#555;
+--btn2:#444;--btn2h:#555;--btn-dis:#555;--btn-dis-fg:#999;
+--dir:#fc6;--file:#e0e0e0;--link:#6af;--linkh:#8cf;
+--play:#6f6;--playh:#8f8;--del:#f55;--delh:#f88;
+--ok:#6f6;--warn:#fc6;--err:#f55;--stat-b:#fc6;
+--badge-green-bg:#1a3a1a;--badge-green-fg:#6f6;--badge-green-bd:#3a5a3a;
+--badge-amber-bg:#3a2a0a;--badge-amber-fg:#fc6;--badge-amber-bd:#5a4a1a;
+--badge-red-bg:#3a1a1a;--badge-red-fg:#f55;--badge-red-bd:#5a2a2a;
+--log-bg:#111;--log-fg:#bfb;
+}
+.light{
+--bg:#f5f5f5;--bg2:#fff;--bg3:#e8e8e8;--bg4:#f0f0f0;--bg5:#f8f8f8;
+--fg:#222;--fg2:#333;--fg3:#555;--fg4:#666;--fg5:#777;
+--border:#ddd;--border2:#ccc;--border3:#bbb;
+--card-border:#ddd;
+--input-bg:#fff;--input-fg:#222;--input-border:#ccc;
+--btn2:#e0e0e0;--btn2h:#d0d0d0;--btn-dis:#ccc;--btn-dis-fg:#999;
+--dir:#b8860b;--file:#222;--link:#0066cc;--linkh:#0044aa;
+--play:#228b22;--playh:#196619;--del:#cc0000;--delh:#990000;
+--ok:#228b22;--warn:#cc8800;--err:#cc0000;--stat-b:#b8860b;
+--badge-green-bg:#e6f4e6;--badge-green-fg:#228b22;--badge-green-bd:#b3d9b3;
+--badge-amber-bg:#fff3cd;--badge-amber-fg:#856404;--badge-amber-bd:#ffc107;
+--badge-red-bg:#f8d7da;--badge-red-fg:#721c24;--badge-red-bd:#f5c6cb;
+--log-bg:#f8f8f0;--log-fg:#333;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#1a1a1a;color:#e0e0e0;padding:16px;max-width:640px;margin:0 auto}
-h1{color:#c41e1e;margin-bottom:4px;font-size:1.4em}
-h2{font-size:1.1em;margin:16px 0 8px;color:#ccc}
-.sub{color:#888;font-size:.85em;margin-bottom:16px}
-.card{background:#252525;border-radius:8px;padding:16px;margin-bottom:12px}
-.path{font-family:monospace;color:#aaa;font-size:.9em;margin-bottom:8px}
-.crumb{color:#6af;cursor:pointer;text-decoration:underline}
-.crumb:hover{color:#8cf}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:16px;max-width:640px;margin:0 auto;transition:background .3s,color .3s}
+h1{color:#c41e1e;margin-bottom:2px;font-size:1.5em}
+h2{font-size:1.1em;margin:0 0 4px;color:var(--fg2)}
+.sub{color:var(--fg4);font-size:.85em;margin-bottom:16px}
+.card{background:var(--bg2);border-radius:10px;padding:16px;margin-bottom:14px;border:1px solid var(--card-border);transition:background .3s}
+.hint{color:var(--fg4);font-size:.8em;margin:2px 0 8px;line-height:1.3}
+.path{font-family:monospace;color:var(--fg3);font-size:.9em;margin-bottom:8px}
+.crumb{color:var(--link);cursor:pointer;text-decoration:underline}
+.crumb:hover{color:var(--linkh)}
 table{width:100%;border-collapse:collapse}
-td{padding:6px 8px;border-bottom:1px solid #333;font-size:.9em}
+td{padding:8px;border-bottom:1px solid var(--border);font-size:.9em}
 td:first-child{font-family:monospace}
-.dir{color:#fc6;cursor:pointer}
+.dir{color:var(--dir);cursor:pointer}
 .dir:hover{text-decoration:underline}
-.file{color:#e0e0e0}
-.del{color:#f55;cursor:pointer;font-size:.8em;text-decoration:underline}
-.del:hover{color:#f88}
-.play{color:#6f6;cursor:pointer;font-size:.8em;text-decoration:underline;margin-right:8px}
-.play:hover{color:#8f8}
-.sz{color:#888;text-align:right;font-size:.8em}
-button,input[type=submit]{background:#c41e1e;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:.9em;margin-top:8px}
+.file{color:var(--file)}
+.del{color:var(--del);cursor:pointer;font-size:.85em;text-decoration:underline}
+.del:hover{color:var(--delh)}
+.play{color:var(--play);cursor:pointer;font-size:.85em;text-decoration:underline;margin-right:10px}
+.play:hover{color:var(--playh)}
+.sz{color:var(--fg5);text-align:right;font-size:.8em}
+button,input[type=submit]{background:#c41e1e;color:#fff;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-size:.9em;margin-top:8px;font-weight:500}
 button:hover,input[type=submit]:hover{background:#d63030}
-button:disabled{background:#555;cursor:wait}
-input[type=file]{margin:8px 0;font-size:.9em}
-input[type=range]{width:100%;margin:8px 0}
-input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em}
-.status{color:#888;font-size:.85em;margin-top:8px}
-.warn{color:#fc6}
-.ok{color:#6f6}
-.err{color:#f55}
-.row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:.9em}
-.row label{min-width:80px;color:#aaa}
-.stat{display:inline-block;background:#333;border-radius:4px;padding:4px 10px;margin:2px;font-size:.85em}
-.stat b{color:#fc6}
-#prog{width:100%;height:6px;background:#333;border-radius:3px;margin-top:8px;display:none}
-#progbar{height:100%;background:#c41e1e;border-radius:3px;width:0%;transition:width .2s}
-.topnum{font-family:monospace;color:#6af}
+button:disabled{background:var(--btn-dis);cursor:wait;color:var(--btn-dis-fg)}
+.btn-secondary{background:var(--btn2);color:var(--fg)}
+.btn-secondary:hover{background:var(--btn2h)}
+.btn-danger{background:#8b0000}
+.btn-danger:hover{background:#a00}
+.btn-theme{background:var(--bg3);color:var(--fg);border:1px solid var(--border2);padding:6px 14px;border-radius:20px;font-size:.8em;margin:0;cursor:pointer}
+.btn-theme:hover{background:var(--btn2h)}
+input[type=file]{margin:8px 0;font-size:.9em;color:var(--fg)}
+input[type=range]{width:100%;margin:8px 0;accent-color:#c41e1e}
+input[type=number],input[type=text],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:6px;padding:6px 10px;font-size:.9em}
+input[type=number]{width:70px}
+input[type=text]{width:140px}
+.status{color:var(--fg5);font-size:.85em;margin-top:8px}
+.warn{color:var(--warn)}
+.ok{color:var(--ok)}
+.err{color:var(--err)}
+.field{margin:10px 0}
+.field-label{color:var(--fg2);font-size:.9em;font-weight:500;margin-bottom:4px}
+.field-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.field-hint{color:var(--fg5);font-size:.75em;margin-top:2px}
+.stat{display:inline-block;background:var(--bg3);border-radius:6px;padding:6px 12px;margin:3px;font-size:.85em}
+.stat b{color:var(--stat-b)}
+.stat-label{color:var(--fg3);font-size:.75em;display:block;margin-bottom:1px}
+#prog{width:100%;height:8px;background:var(--bg3);border-radius:4px;margin-top:8px;display:none}
+#progbar{height:100%;background:#c41e1e;border-radius:4px;width:0%;transition:width .2s}
+.topnum{font-family:monospace;color:var(--link)}
+.live-status{display:flex;gap:16px;flex-wrap:wrap;margin:8px 0}
+.live-item{font-size:.9em}
+.live-item .label{color:var(--fg5);font-size:.8em}
+.live-item .value{font-weight:500}
+.section-icon{font-size:1.2em;margin-right:6px;vertical-align:middle}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.8em;font-weight:600}
+.badge-green{background:var(--badge-green-bg);color:var(--badge-green-fg);border:1px solid var(--badge-green-bd)}
+.badge-amber{background:var(--badge-amber-bg);color:var(--badge-amber-fg);border:1px solid var(--badge-amber-bd)}
+.divider{border:none;border-top:1px solid var(--border);margin:12px 0}
+.header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 </style>
 </head>
 <body>
-<h1>K6 GPO Exhibit</h1>
-<p class="sub">Control Panel, File Manager &amp; Firmware Update</p>
-
-<div class="card">
-<h2>Controls</h2>
-<div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)"><span id="vollbl">15</span></div>
-<div class="row"><label>Bell</label><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)"><span id="belllbl">255</span></div>
-<div class="row"><label>Auto-ring</label>
-<span>Min <input type="number" id="armin" value="5" min="1" max="120"> min</span>
-<span>Max <input type="number" id="armax" value="30" min="1" max="120"> min</span>
-<button onclick="setAutoRing()" style="margin:0">Set</button>
+<div class="header-row">
+<div><h1>K6 GPO Exhibit</h1><p class="sub">Telephone Management System</p></div>
+<button class="btn-theme" id="themebtn" onclick="toggleTheme()">Light Mode</button>
 </div>
-<div class="row"><label>Ring count</label><input type="number" id="ringmax" value="10" min="0" max="60" style="width:70px"><button onclick="setRingCount()" style="margin:0">Set</button><span style="color:#888;font-size:.8em;margin-left:4px">(0=unlimited)</span></div>
-<div class="row"><label>Ring tone</label>
-<span>Min <input type="number" id="rtmin" value="4" min="2" max="15" style="width:50px">s</span>
-<span>Max <input type="number" id="rtmax" value="8" min="2" max="15" style="width:50px">s</span>
-<button onclick="setRingTone()" style="margin:0">Set</button></div>
-<div class="row"><label>Idle alert</label><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px"><button onclick="setAlertIdle()" style="margin:0">Set</button><span style="color:#888;font-size:.8em;margin-left:4px">min (0=off)</span></div>
-<div id="alertbanner" style="display:none;background:#c41e1e;color:#fff;padding:8px 12px;border-radius:4px;margin-top:8px;font-weight:bold">&#9888; No visitor activity detected — check exhibit</div>
-<div class="row"><label>Mode</label><span id="modelbl">—</span></div>
-<div class="row"><label>State</label><span id="statelbl">—</span></div>
-<div class="row"><label>Playing</label><span id="playlbl" style="font-family:monospace;color:#6af">—</span></div>
-<div class="row"><label>Call timer</label><span id="calltimer" style="font-family:monospace;color:#fc6">—</span></div>
-<div style="margin-top:8px">
-<button onclick="ringNow()">Ring Now</button>
-<button onclick="toggleMode()" id="modebtn">Toggle Mode</button>
+
+<div class="card" style="border-color:var(--border2)">
+<h2><span class="section-icon">&#128222;</span> Phone Status</h2>
+<p class="hint">Live information about the telephone — updates every 5 seconds.</p>
+<div class="live-status">
+<div class="live-item"><div class="label">Current Mode</div><div class="value"><span id="modelbl" class="badge badge-green">AUTOMATIC</span></div></div>
+<div class="live-item"><div class="label">Phone State</div><div class="value" id="statelbl">Waiting for visitors</div></div>
+<div class="live-item"><div class="label">Now Playing</div><div class="value" id="playlbl" style="font-family:monospace;color:var(--link)">Nothing</div></div>
+<div class="live-item"><div class="label">Call Duration</div><div class="value" id="calltimer" style="font-family:monospace;color:var(--warn)">—</div></div>
+</div>
+<div id="alertbanner" style="display:none;background:#c41e1e;color:#fff;padding:10px 14px;border-radius:6px;margin-top:10px;font-weight:600;font-size:.9em">&#9888; No visitor activity detected for a while — please check the exhibit is working.</div>
+<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+<button onclick="ringNow()">Make Phone Ring</button>
+<button onclick="toggleMode()" id="modebtn" class="btn-secondary">Switch to Manual Mode</button>
 </div>
 </div>
 
 <div class="card">
-<h2>Visitor Statistics</h2>
+<h2><span class="section-icon">&#128266;</span> Sound Settings</h2>
+<p class="hint">Adjust how loud the telephone sounds through the handset and bell.</p>
+<div class="field">
+<div class="field-label">Handset Volume</div>
+<div class="field-hint">How loud audio plays through the telephone earpiece.</div>
+<div class="field-row"><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)" style="flex:1"><span id="vollbl" style="min-width:30px;text-align:right">15</span></div>
+</div>
+<div class="field">
+<div class="field-label">Bell Volume</div>
+<div class="field-hint">How loudly the telephone bell rings.</div>
+<div class="field-row"><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)" style="flex:1"><span id="belllbl" style="min-width:30px;text-align:right">255</span></div>
+</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128276;</span> Automatic Ringing</h2>
+<p class="hint">When in Automatic mode, the phone rings by itself at random intervals to attract visitors. Configure the timing here.</p>
+<div class="field">
+<div class="field-label">Time Between Rings</div>
+<div class="field-hint">The phone will ring randomly between these two times.</div>
+<div class="field-row">
+<span>Every </span><input type="number" id="armin" value="5" min="1" max="120" style="width:60px">
+<span> to </span><input type="number" id="armax" value="30" min="1" max="120" style="width:60px">
+<span> minutes</span><button onclick="setAutoRing()" style="margin:0">Save</button>
+</div>
+</div>
+<div class="field">
+<div class="field-label">How Long to Ring</div>
+<div class="field-hint">How many seconds the phone rings each time before giving up (if nobody answers).</div>
+<div class="field-row">
+<span>Ring for </span><input type="number" id="rtmin" value="4" min="2" max="15" style="width:55px">
+<span> to </span><input type="number" id="rtmax" value="8" min="2" max="15" style="width:55px">
+<span> seconds</span><button onclick="setRingTone()" style="margin:0">Save</button>
+</div>
+</div>
+<div class="field">
+<div class="field-label">Maximum Ring Cycles</div>
+<div class="field-hint">How many times the bell rings before it stops trying. Set to 0 for unlimited.</div>
+<div class="field-row">
+<input type="number" id="ringmax" value="10" min="0" max="60" style="width:70px">
+<span> cycles</span><button onclick="setRingCount()" style="margin:0">Save</button>
+</div>
+</div>
+<hr class="divider">
+<div class="field">
+<div class="field-label">Inactivity Warning</div>
+<div class="field-hint">If no visitors have used the phone for this long, flash the panel lamp and show a warning. Set to 0 to turn off.</div>
+<div class="field-row">
+<span>Warn after </span><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px">
+<span> minutes with no activity</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
+</div>
+</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128202;</span> Visitor Activity</h2>
+<p class="hint">How visitors have been interacting with the telephone.</p>
 <div id="statsbox">Loading...</div>
-<div style="margin-top:8px"><button onclick="resetStats()" style="background:#555">Reset Stats</button></div>
+<div style="margin-top:8px"><button onclick="resetStats()" class="btn-danger">Clear All Statistics</button></div>
 </div>
 
 <div class="card">
-<h2>Files</h2>
+<h2><span class="section-icon">&#128193;</span> Audio Files</h2>
+<p class="hint">Browse, upload, and manage the audio files stored on the SD card. Tap a folder name to open it.</p>
 <div class="path" id="pathbar">/</div>
 <table id="filetbl"><tbody></tbody></table>
-<div style="margin-top:12px">
+<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
 <input type="file" id="upfile" multiple accept=".mp3,.MP3">
-<button onclick="upload()" id="upbtn">Upload</button>
-<button onclick="mkdirPrompt()">New Folder</button>
+<button onclick="upload()" id="upbtn">Upload Files</button>
+<button onclick="mkdirPrompt()" class="btn-secondary">Create Folder</button>
 </div>
 <div class="status" id="upstatus"></div>
 </div>
 
 <div class="card">
-<h2>Number Aliases</h2>
-<p style="font-size:.85em;color:#aaa;margin-bottom:8px">Map dialled numbers to audio file names. E.g. 999 &rarr; emergency plays /numbers/emergency.mp3</p>
-<table id="aliastbl"><thead><tr><td style="color:#aaa">Number</td><td style="color:#aaa">Alias</td><td></td></tr></thead><tbody></tbody></table>
-<div style="margin-top:8px;display:flex;gap:4px;align-items:center">
-<input type="text" id="anew_num" placeholder="Number" style="width:90px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em">
-<input type="text" id="anew_name" placeholder="Alias name" style="width:140px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em">
+<h2><span class="section-icon">&#128214;</span> Number Directory</h2>
+<p class="hint">Link dialled numbers to audio files. When a visitor dials a number listed here, the matching audio file plays. For example, adding "999" with the name "emergency" means dialling 999 plays <b>/numbers/emergency.mp3</b>.</p>
+<table id="aliastbl"><thead><tr><td style="color:var(--fg3)">Dial Number</td><td style="color:var(--fg3)">Plays File</td><td></td></tr></thead><tbody></tbody></table>
+<div style="margin-top:10px">
+<div style="color:var(--fg2);font-size:.85em;margin-bottom:6px">Add a new number:</div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+<input type="text" id="anew_num" placeholder="e.g. 999" style="width:80px">
+<input type="text" id="anew_name" placeholder="e.g. emergency">
 <button onclick="addAlias()" style="margin:0">Add</button>
+</div>
 </div>
 <div class="status" id="aliasstatus"></div>
 </div>
 
 <div class="card">
-<h2>Audio Recorder</h2>
-<p style="font-size:.85em;color:#aaa;margin-bottom:8px">Record audio from your phone's microphone. Preview before saving to the SD card.</p>
-<div style="margin-top:8px">
-<button onclick="startRec()" id="recbtn" style="background:#c41e1e">Record</button>
-<button onclick="stopRec()" id="stopbtn" style="background:#555" disabled>Stop</button>
-<span id="rectimer" style="margin-left:8px;font-family:monospace;color:#fc6"></span>
+<h2><span class="section-icon">&#127908;</span> Record New Audio</h2>
+<p class="hint">Record audio using your phone's microphone. Listen back to check the quality before saving to the SD card.</p>
+<div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+<button onclick="startRec()" id="recbtn">Start Recording</button>
+<button onclick="stopRec()" id="stopbtn" disabled class="btn-secondary">Stop Recording</button>
+<span id="rectimer" style="margin-left:4px;font-family:monospace;color:var(--warn);font-size:.9em"></span>
 </div>
-<div id="recpreview" style="display:none;margin-top:8px;padding:8px;background:#222;border-radius:4px">
-<audio id="recaudio" controls style="width:100%;margin-bottom:8px"></audio>
-<div class="row">
-<input type="text" id="recname" placeholder="filename" style="width:140px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em">.mp3
-<span style="margin-left:8px">Save to: <select id="recdir" style="background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em"><option value="/history/">/history/</option><option value="/numbers/">/numbers/</option><option value="/system/">/system/</option></select></span>
+<div id="recpreview" style="display:none;margin-top:10px;padding:12px;background:var(--bg5);border-radius:8px;border:1px solid var(--border2)">
+<div style="color:var(--fg2);font-size:.85em;font-weight:500;margin-bottom:6px">Preview your recording:</div>
+<audio id="recaudio" controls style="width:100%;margin-bottom:10px"></audio>
+<div style="color:var(--fg2);font-size:.85em;font-weight:500;margin-bottom:4px">Save as:</div>
+<div class="field-row">
+<input type="text" id="recname" placeholder="filename">.mp3
+<span style="margin-left:8px">in <select id="recdir"><option value="/history/">/history/</option><option value="/numbers/">/numbers/</option><option value="/system/">/system/</option></select></span>
 </div>
-<div style="margin-top:8px">
-<button onclick="saveRec()" style="background:#c41e1e">Save</button>
-<button onclick="discardRec()" style="background:#555">Discard</button>
+<div style="margin-top:10px;display:flex;gap:8px">
+<button onclick="saveRec()">Save Recording</button>
+<button onclick="discardRec()" class="btn-secondary">Discard</button>
 </div>
 </div>
 <div class="status" id="recstatus"></div>
 </div>
 
 <div class="card">
-<h2>Firmware Update (OTA)</h2>
-<p style="font-size:.85em;color:#aaa;margin-bottom:8px">Upload a compiled .bin file to update the firmware. The device will reboot automatically.</p>
+<h2><span class="section-icon">&#9881;</span> Update Firmware</h2>
+<p class="hint">Upload a new firmware file (.bin) to update the telephone software. The phone will restart automatically after the update is installed.</p>
 <input type="file" id="otafile" accept=".bin">
-<button onclick="otaUpload()" id="otabtn">Flash Firmware</button>
+<button onclick="otaUpload()" id="otabtn">Install Update</button>
 <div id="prog"><div id="progbar"></div></div>
 <div class="status" id="otastatus"></div>
-<div style="margin-top:8px"><button onclick="rollbackFW()" style="background:#555">Rollback to Previous</button></div>
+<hr class="divider">
+<div class="field-hint" style="margin-bottom:4px">If a firmware update causes problems, you can go back to the previous version:</div>
+<button onclick="rollbackFW()" class="btn-danger">Restore Previous Version</button>
 </div>
 
 <div class="card">
-<h2>Logs</h2>
-<div style="margin-bottom:8px">
-<button onclick="loadLog('system')" style="margin-right:4px">System Log</button>
-<button onclick="loadLog('calls')" style="margin-right:4px">Call Log</button>
-<button onclick="clearLog()" style="background:#555">Clear</button>
+<h2><span class="section-icon">&#128196;</span> Activity Log</h2>
+<p class="hint">View a record of what the telephone has been doing. Useful for troubleshooting if something isn't working correctly.</p>
+<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
+<button onclick="loadLog('system')">System Events</button>
+<button onclick="loadLog('calls')" class="btn-secondary">Call History</button>
+<button onclick="clearLog()" class="btn-danger">Clear Log</button>
 </div>
-<pre id="logview" style="background:#111;color:#bfb;padding:12px;border-radius:4px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
+<pre id="logview" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
 </div>
 
 <div class="card">
-<h2>System Status</h2>
-<div id="sysinfo" style="font-size:.85em;color:#aaa">Loading...</div>
-<div style="margin-top:8px"><button onclick="rebootDevice()" style="background:#555">Restart Device</button></div>
+<h2><span class="section-icon">&#128295;</span> System Information</h2>
+<p class="hint">Technical details about the device. Useful for support if you need to report an issue.</p>
+<div id="sysinfo" style="font-size:.85em;color:var(--fg3);line-height:1.6">Loading...</div>
+<div style="margin-top:10px"><button onclick="rebootDevice()" class="btn-danger">Restart Telephone</button></div>
 </div>
 
 <script>
+function toggleTheme(){
+  var b=document.body;b.classList.toggle('light');
+  var isLight=b.classList.contains('light');
+  document.getElementById('themebtn').textContent=isLight?'Dark Mode':'Light Mode';
+  document.getElementById('themecolor').content=isLight?'#f5f5f5':'#1a1a1a';
+  try{localStorage.setItem('k6theme',isLight?'light':'dark')}catch(e){}
+}
+(function(){try{if(localStorage.getItem('k6theme')==='light'){document.body.classList.add('light');document.getElementById('themebtn').textContent='Dark Mode';document.getElementById('themecolor').content='#f5f5f5';}}catch(e){}})();
 let cwd='/';
 function nav(p){cwd=p;loadFiles()}
 function loadFiles(){
@@ -304,32 +422,30 @@ function setAlertIdle(){
 function setAutoRing(){
   let mn=document.getElementById('armin').value;
   let mx=document.getElementById('armax').value;
-  fetch('/api/autoring?min='+mn+'&max='+mx,{method:'POST'})
-  .then(r=>r.json()).then(d=>{
-    if(d.ok) alert('Auto-ring set to '+mn+'-'+mx+' min');
-  });
+  fetch('/api/autoring?min='+mn+'&max='+mx,{method:'POST'});
 }
 function ringNow(){fetch('/api/ring',{method:'POST'})}
 function toggleMode(){fetch('/api/mode',{method:'POST'}).then(()=>loadStatus())}
 function rebootDevice(){
-  if(!confirm('Restart the device? Active calls will be dropped.'))return;
+  if(!confirm('This will restart the telephone. Any active calls will be disconnected.'))return;
   fetch('/api/reboot',{method:'POST'}).then(()=>{
-    document.getElementById('sysinfo').innerHTML='<span class="warn">Rebooting...</span>';
+    document.getElementById('sysinfo').innerHTML='<span class="warn">Restarting...</span>';
     setTimeout(()=>{location.reload()},8000);
   });
 }
 function resetStats(){
-  if(!confirm('Reset all visitor statistics?'))return;
+  if(!confirm('This will erase all visitor statistics. Are you sure?'))return;
   fetch('/api/stats/reset',{method:'POST'}).then(()=>loadStats());
 }
 function loadStatus(){
   fetch('/api/status').then(r=>r.json()).then(d=>{
+    let uH=Math.floor(d.uptime/3600),uM=Math.floor(d.uptime%3600/60);
     document.getElementById('sysinfo').innerHTML=
-      'Free heap: '+(d.heap/1024).toFixed(0)+'KB<br>'+
-      'SD card: '+(d.sd?'OK':'<span class="err">FAIL</span>')+
-      (d.sd_total?' ('+d.sd_used+'MB / '+d.sd_total+'MB)':'')+
-      '<br>Uptime: '+Math.floor(d.uptime/3600)+'h '+Math.floor(d.uptime%3600/60)+'m<br>'+
-      'Firmware: '+d.firmware;
+      'Available memory: '+(d.heap/1024).toFixed(0)+'KB<br>'+
+      'SD card: '+(d.sd?'<span class="ok">Working</span>':'<span class="err">Not detected</span>')+
+      (d.sd_total?' ('+d.sd_used+'MB used of '+d.sd_total+'MB)':'')+
+      '<br>Running for: '+uH+' hours '+uM+' minutes<br>'+
+      'Firmware version: '+d.firmware;
     document.getElementById('vol').value=d.volume;
     document.getElementById('vollbl').textContent=d.volume;
     document.getElementById('bell').value=d.bell_vol;
@@ -340,9 +456,13 @@ function loadStatus(){
     document.getElementById('alertbanner').style.display=d.alert_on?'block':'none';
     document.getElementById('armin').value=Math.round(d.ar_min/60000);
     document.getElementById('armax').value=Math.round(d.ar_max/60000);
-    document.getElementById('modelbl').innerHTML=d.mode=='AUTO'?'<span class="ok">AUTO</span>':'MANUAL';
-    document.getElementById('statelbl').textContent=d.state;
-    document.getElementById('playlbl').textContent=d.playing||'\u2014';
+    let ml=document.getElementById('modelbl');
+    let mb=document.getElementById('modebtn');
+    if(d.mode=='AUTO'){ml.textContent='AUTOMATIC';ml.className='badge badge-green';mb.textContent='Switch to Manual Mode';}
+    else{ml.textContent='MANUAL';ml.className='badge badge-amber';mb.textContent='Switch to Automatic Mode';}
+    let states={'IDLE':'Waiting for visitors','RINGING':'Phone is ringing','PLAYING':'Playing audio','DIALLING':'Visitor is dialling'};
+    document.getElementById('statelbl').textContent=states[d.state]||d.state;
+    document.getElementById('playlbl').textContent=d.playing||'Nothing';
     let ct=document.getElementById('calltimer');
     if(d.state!=='IDLE'&&d.call_secs>=0){
       let m=Math.floor(d.call_secs/60),s=d.call_secs%60;
@@ -352,27 +472,32 @@ function loadStatus(){
 }
 function loadStats(){
   fetch('/api/stats').then(r=>r.json()).then(d=>{
-    let h='<span class="stat">Incoming: <b>'+d.incoming+'</b></span> '+
-          '<span class="stat">Answered: <b>'+d.answered+'</b></span> '+
-          '<span class="stat">Outgoing: <b>'+d.outgoing+'</b></span> '+
-          '<span class="stat">Not recognised: <b>'+d.not_recognised+'</b></span>';
-    if(d.coin_collected>0) h+=' <span class="stat">Coins collected: <b>'+d.coin_collected+'</b></span>';
-    if(d.coin_refunded>0) h+=' <span class="stat">Coins refunded: <b>'+d.coin_refunded+'</b></span>';
+    let h='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
+    h+='<span class="stat"><span class="stat-label">Times Rung</span><b>'+d.incoming+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Calls Answered</span><b>'+d.answered+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+d.outgoing+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Unknown Numbers</span><b>'+d.not_recognised+'</b></span>';
+    if(d.coin_collected>0) h+='<span class="stat"><span class="stat-label">Coins Collected</span><b>'+d.coin_collected+'</b></span>';
+    if(d.coin_refunded>0) h+='<span class="stat"><span class="stat-label">Coins Refunded</span><b>'+d.coin_refunded+'</b></span>';
+    h+='</div>';
     if(d.call_count>0){
       let avgM=Math.floor(d.avg_call/60), avgS=d.avg_call%60;
       let lonM=Math.floor(d.longest_call/60), lonS=d.longest_call%60;
-      h+='<br><span class="stat">Avg call: <b>'+avgM+'m '+avgS+'s</b></span> ';
-      h+='<span class="stat">Longest: <b>'+lonM+'m '+lonS+'s</b></span> ';
+      h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
+      h+='<span class="stat"><span class="stat-label">Average Call</span><b>'+avgM+'m '+avgS+'s</b></span>';
+      h+='<span class="stat"><span class="stat-label">Longest Call</span><b>'+lonM+'m '+lonS+'s</b></span>';
       let totM=Math.floor(d.call_seconds/60);
-      h+='<span class="stat">Total talk: <b>'+totM+' min</b></span>';
+      h+='<span class="stat"><span class="stat-label">Total Talk Time</span><b>'+totM+' min</b></span>';
+      h+='</div>';
     }
     let uH=Math.floor(d.total_uptime/3600), uM=Math.floor(d.total_uptime%3600/60);
-    h+='<br><span class="stat">Total uptime: <b>'+uH+'h '+uM+'m</b></span>';
+    h+='<span class="stat"><span class="stat-label">Total Running Time</span><b>'+uH+'h '+uM+'m</b></span>';
     if(d.top_numbers&&d.top_numbers.length){
-      h+='<br><br><b style="color:#ccc">Most Dialled:</b><br>';
-      d.top_numbers.forEach((n,i)=>{
+      h+='<div style="margin-top:12px"><div style="color:var(--fg2);font-weight:500;font-size:.9em;margin-bottom:4px">Most Popular Numbers:</div>';
+      d.top_numbers.forEach(n=>{
         h+='<span class="stat"><span class="topnum">'+n.number+'</span> &times;'+n.count+'</span> ';
       });
+      h+='</div>';
     }
     document.getElementById('statsbox').innerHTML=h;
   });
@@ -399,7 +524,7 @@ function loadAliases(){
     tb.innerHTML='';
     aliases.forEach((a,i)=>{
       let tr=document.createElement('tr');
-      tr.innerHTML='<td class="topnum">'+a.number+'</td><td>'+a.name+'</td><td><span class="del" onclick="delAlias('+i+')">delete</span></td>';
+      tr.innerHTML='<td class="topnum">'+a.number+'</td><td>'+a.name+'</td><td><span class="del" onclick="delAlias('+i+')">remove</span></td>';
       tb.appendChild(tr);
     });
   });
@@ -440,15 +565,15 @@ function startRec(){
       let url=URL.createObjectURL(recBlob);
       document.getElementById('recaudio').src=url;
       document.getElementById('recpreview').style.display='block';
-      document.getElementById('recstatus').innerHTML='<span class="ok">Preview your recording. Enter a filename and save, or discard.</span>';
+      document.getElementById('recstatus').innerHTML='<span class="ok">Recording complete. Listen back above, then save or discard.</span>';
     };
     mediaRec.start(100);
     recStart=Date.now();
     document.getElementById('recbtn').disabled=true;
     document.getElementById('stopbtn').disabled=false;
-    document.getElementById('recstatus').innerHTML='<span style="color:#f55">● Recording...</span>';
+    document.getElementById('recstatus').innerHTML='<span style="color:var(--err);font-weight:500">&#9679; Recording in progress...</span>';
     recInt=setInterval(()=>{let s=Math.floor((Date.now()-recStart)/1000);document.getElementById('rectimer').textContent=Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60)},500);
-  }).catch(e=>{document.getElementById('recstatus').innerHTML='<span class="err">Mic access denied</span>'});
+  }).catch(e=>{document.getElementById('recstatus').innerHTML='<span class="err">Microphone access denied. Please allow microphone access and try again.</span>'});
 }
 function stopRec(){
   if(mediaRec&&mediaRec.state!=='inactive')mediaRec.stop();
@@ -459,7 +584,7 @@ function stopRec(){
 function saveRec(){
   if(!recBlob){return;}
   let name=document.getElementById('recname').value.trim();
-  if(!name){document.getElementById('recstatus').innerHTML='<span class="err">Enter a filename</span>';return;}
+  if(!name){document.getElementById('recstatus').innerHTML='<span class="err">Please enter a filename</span>';return;}
   let dir=document.getElementById('recdir').value;
   let fd=new FormData();
   fd.append('file',recBlob,name+'.mp3');
@@ -480,9 +605,9 @@ function discardRec(){
   document.getElementById('rectimer').textContent='';
 }
 function rollbackFW(){
-  if(!confirm('Roll back to the previous firmware version? The device will reboot.'))return;
+  if(!confirm('Restore the previous firmware version? The telephone will restart.'))return;
   fetch('/api/rollback',{method:'POST'}).then(r=>r.json()).then(d=>{
-    if(d.ok){document.getElementById('otastatus').innerHTML='<span class="ok">Rolling back... rebooting</span>';setTimeout(()=>{location.reload()},8000);}
+    if(d.ok){document.getElementById('otastatus').innerHTML='<span class="ok">Restoring previous version... restarting</span>';setTimeout(()=>{location.reload()},8000);}
     else document.getElementById('otastatus').innerHTML='<span class="err">'+(d.error||'No previous firmware available')+'</span>';
   });
 }
