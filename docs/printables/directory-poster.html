@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GPO Telephone Directory — Call Office Notice</title>
+<style>
+  /* Print-ready: A4 portrait, period-correct GPO styling c.1937-1938 */
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+  :root {
+    --cream: #f5f0e1;
+    --ink: #1a1610;
+    --red: #8b1a1a;
+    --rule: #3a352a;
+    --faded: #5a5445;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  body {
+    font-family: 'EB Garamond', 'Georgia', 'Times New Roman', serif;
+    background: var(--cream);
+    color: var(--ink);
+    max-width: 180mm;
+    margin: 0 auto;
+    padding: 20mm 16mm;
+    line-height: 1.4;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* --- Crown and header --- */
+  .crown {
+    text-align: center;
+    margin-bottom: 4mm;
+  }
+  .crown svg {
+    width: 36mm;
+    height: auto;
+  }
+
+  .gpo-header {
+    text-align: center;
+    border-bottom: 2.5pt solid var(--ink);
+    padding-bottom: 3mm;
+    margin-bottom: 4mm;
+  }
+  .gpo-header .dept {
+    font-size: 9pt;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--faded);
+    margin-bottom: 1mm;
+  }
+  .gpo-header h1 {
+    font-size: 22pt;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0;
+    line-height: 1.1;
+  }
+  .gpo-header .sub {
+    font-size: 11pt;
+    font-style: italic;
+    color: var(--faded);
+    margin-top: 1.5mm;
+  }
+
+  /* --- Sections --- */
+  .section {
+    margin: 4mm 0;
+    page-break-inside: avoid;
+  }
+  .section-title {
+    font-size: 11pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    border-bottom: 1pt solid var(--rule);
+    padding-bottom: 1mm;
+    margin-bottom: 2.5mm;
+    color: var(--ink);
+  }
+  .section p, .section li {
+    font-size: 10.5pt;
+    margin-bottom: 1.5mm;
+    text-align: justify;
+  }
+
+  /* --- Numbered instructions --- */
+  ol.instructions {
+    padding-left: 6mm;
+    counter-reset: step;
+    list-style: none;
+  }
+  ol.instructions li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 1mm;
+    margin-bottom: 2mm;
+    font-size: 10.5pt;
+  }
+  ol.instructions li::before {
+    content: counter(step) ".";
+    position: absolute;
+    left: -6mm;
+    font-weight: 700;
+  }
+
+  /* --- Number directory table --- */
+  .dir-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2mm 0 3mm;
+    font-size: 10.5pt;
+  }
+  .dir-table th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    border-bottom: 1.5pt solid var(--ink);
+    padding: 1mm 2mm;
+    color: var(--faded);
+  }
+  .dir-table td {
+    padding: 1.5mm 2mm;
+    border-bottom: 0.5pt solid #c5bfab;
+    vertical-align: top;
+  }
+  .dir-table .num {
+    font-weight: 700;
+    font-size: 11pt;
+    width: 22mm;
+    letter-spacing: 0.1em;
+  }
+  .dir-table .service {
+    font-weight: 600;
+  }
+  .dir-table .note {
+    font-style: italic;
+    color: var(--faded);
+    font-size: 9.5pt;
+  }
+
+  /* --- Emergency box --- */
+  .emergency-box {
+    border: 2.5pt solid var(--red);
+    padding: 3mm 4mm;
+    margin: 3mm 0;
+    page-break-inside: avoid;
+  }
+  .emergency-box .emergency-title {
+    font-size: 13pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--red);
+    text-align: center;
+    margin-bottom: 2mm;
+  }
+  .emergency-box p {
+    font-size: 10pt;
+    text-align: center;
+    margin-bottom: 1mm;
+  }
+  .emergency-box .dial-num {
+    font-size: 18pt;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--red);
+  }
+  .emergency-box .no-coins {
+    font-style: italic;
+    font-size: 9.5pt;
+    color: var(--faded);
+  }
+
+  /* --- Charges box --- */
+  .charges-box {
+    border: 1.5pt solid var(--rule);
+    padding: 3mm 4mm;
+    margin: 3mm 0;
+    page-break-inside: avoid;
+  }
+  .charges-title {
+    font-size: 10pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    text-align: center;
+    margin-bottom: 2mm;
+  }
+  .charges-grid {
+    display: flex;
+    justify-content: space-around;
+    gap: 4mm;
+    text-align: center;
+  }
+  .charge-item {
+    flex: 1;
+  }
+  .charge-item .amount {
+    font-size: 16pt;
+    font-weight: 700;
+  }
+  .charge-item .desc {
+    font-size: 9pt;
+    color: var(--faded);
+    line-height: 1.2;
+    margin-top: 1mm;
+  }
+
+  /* --- Button A/B instruction --- */
+  .button-box {
+    display: flex;
+    gap: 4mm;
+    margin: 3mm 0;
+    page-break-inside: avoid;
+  }
+  .button-item {
+    flex: 1;
+    border: 1pt solid var(--rule);
+    padding: 2.5mm 3mm;
+    text-align: center;
+  }
+  .button-item .letter {
+    font-size: 16pt;
+    font-weight: 700;
+    display: block;
+    margin-bottom: 1mm;
+  }
+  .button-item p {
+    font-size: 9.5pt;
+    line-height: 1.3;
+    text-align: center;
+  }
+
+  /* --- Divider --- */
+  hr.ornament {
+    border: none;
+    border-top: 1pt solid var(--rule);
+    margin: 3mm 0;
+  }
+
+  /* --- Footer --- */
+  .footer {
+    text-align: center;
+    margin-top: 5mm;
+    padding-top: 3mm;
+    border-top: 2.5pt solid var(--ink);
+  }
+  .footer .gpo-mark {
+    font-size: 9pt;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--faded);
+  }
+  .footer .code {
+    font-size: 8pt;
+    color: #9a9485;
+    margin-top: 1mm;
+  }
+
+  /* --- Print overrides --- */
+  @media print {
+    body {
+      padding: 0;
+      max-width: none;
+    }
+    .no-print { display: none; }
+  }
+
+  /* --- Screen helper bar --- */
+  .print-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: #333;
+    color: #fff;
+    text-align: center;
+    padding: 8px;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    z-index: 999;
+  }
+  .print-bar button {
+    background: #c41e1e;
+    color: #fff;
+    border: none;
+    padding: 6px 18px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-left: 12px;
+  }
+  .print-bar button:hover { background: #d63030; }
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  Open this page in a browser and print to paper or PDF.
+  <button onclick="window.print()">Print Now</button>
+</div>
+
+<!-- GPO Tudor Crown (George VI) -->
+<div class="crown">
+  <svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg">
+    <!-- Simplified Tudor Crown silhouette -->
+    <g fill="#1a1610">
+      <!-- Base band -->
+      <rect x="35" y="85" width="130" height="14" rx="2"/>
+      <!-- Ermine band -->
+      <rect x="40" y="75" width="120" height="12" rx="1"/>
+      <!-- Arches -->
+      <path d="M50 75 Q70 35 100 28 Q130 35 150 75" fill="none" stroke="#1a1610" stroke-width="5"/>
+      <!-- Centre orb and cross -->
+      <circle cx="100" cy="24" r="6"/>
+      <rect x="97" y="8" width="6" height="14" rx="1"/>
+      <rect x="93" y="12" width="14" height="5" rx="1"/>
+      <!-- Fleur-de-lis points -->
+      <ellipse cx="50" cy="72" rx="8" ry="14"/>
+      <ellipse cx="75" cy="58" rx="6" ry="12"/>
+      <ellipse cx="100" cy="52" rx="6" ry="10"/>
+      <ellipse cx="125" cy="58" rx="6" ry="12"/>
+      <ellipse cx="150" cy="72" rx="8" ry="14"/>
+      <!-- Small crosses on points -->
+      <rect x="48" y="54" width="4" height="10" rx="0.5"/>
+      <rect x="46" y="57" width="8" height="4" rx="0.5"/>
+      <rect x="148" y="54" width="4" height="10" rx="0.5"/>
+      <rect x="146" y="57" width="8" height="4" rx="0.5"/>
+    </g>
+  </svg>
+</div>
+
+<!-- Main header -->
+<div class="gpo-header">
+  <div class="dept">General Post Office</div>
+  <h1>Telephone Directory</h1>
+  <div class="sub">Public Call Office</div>
+</div>
+
+<!-- HOW TO MAKE A CALL -->
+<div class="section">
+  <div class="section-title">How to Make a Telephone Call</div>
+  <ol class="instructions">
+    <li>Lift the receiver and listen for the dialling tone (a continuous purring note).</li>
+    <li>Insert twopence (2d.) in the coin slot at the top of the box.</li>
+    <li>Dial the number required, turning the dial fully to the finger-stop for each figure and removing the finger to allow the dial to return freely.</li>
+    <li>When the called person answers, <strong>press Button&nbsp;A</strong> firmly. The coins will drop and you may speak.</li>
+    <li>If there is no reply, or if the line is engaged, <strong>press Button&nbsp;B</strong> to recover your coins from the cup below.</li>
+    <li>When the conversation is finished, replace the receiver on its rest.</li>
+  </ol>
+</div>
+
+<!-- BUTTON A / BUTTON B -->
+<div class="button-box">
+  <div class="button-item">
+    <span class="letter">BUTTON A</span>
+    <p>Press when the called person <strong>answers</strong>.<br>Your coins will be collected and you may speak.</p>
+  </div>
+  <div class="button-item">
+    <span class="letter">BUTTON B</span>
+    <p>Press if there is <strong>no reply</strong> or the line is engaged.<br>Your coins will be returned.</p>
+  </div>
+</div>
+
+<!-- CHARGES -->
+<div class="charges-box">
+  <div class="charges-title">Scale of Charges</div>
+  <div class="charges-grid">
+    <div class="charge-item">
+      <div class="amount">2d.</div>
+      <div class="desc">Local call<br>(within 7&frac12; miles)</div>
+    </div>
+    <div class="charge-item">
+      <div class="amount">4d.</div>
+      <div class="desc">Trunk call<br>(7&frac12;&ndash;25 miles)</div>
+    </div>
+    <div class="charge-item">
+      <div class="amount">6d.</div>
+      <div class="desc">Trunk call<br>(25&ndash;50 miles)</div>
+    </div>
+    <div class="charge-item">
+      <div class="amount">1s.</div>
+      <div class="desc">Trunk call<br>(over 50 miles)</div>
+    </div>
+  </div>
+</div>
+
+<hr class="ornament">
+
+<!-- EMERGENCY -->
+<div class="emergency-box">
+  <div class="emergency-title">Emergency Calls</div>
+  <p>For <strong>Fire</strong>, <strong>Police</strong> or <strong>Ambulance</strong></p>
+  <p>Dial <span class="dial-num">9 9 9</span></p>
+  <p class="no-coins">No coins are required for emergency calls.</p>
+  <p class="no-coins">Lift the receiver, dial 999, and state which service you require.</p>
+</div>
+
+<hr class="ornament">
+
+<!-- USEFUL NUMBERS -->
+<div class="section">
+  <div class="section-title">Useful Telephone Numbers</div>
+  <table class="dir-table">
+    <thead>
+      <tr><th>Number</th><th>Service</th><th></th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="num">999</td>
+        <td><span class="service">Emergency Services</span></td>
+        <td class="note">Fire, Police or Ambulance</td>
+      </tr>
+      <tr>
+        <td class="num">0</td>
+        <td><span class="service">Operator</span></td>
+        <td class="note">For trunk calls, enquiries and assistance</td>
+      </tr>
+      <tr>
+        <td class="num">100</td>
+        <td><span class="service">Exchange</span></td>
+        <td class="note">To reach the local telephone exchange</td>
+      </tr>
+      <tr>
+        <td class="num">TIM</td>
+        <td><span class="service">Speaking Clock</span></td>
+        <td class="note">Dial 846 for the correct time</td>
+      </tr>
+      <tr>
+        <td class="num">192</td>
+        <td><span class="service">Directory Enquiries</span></td>
+        <td class="note">For any telephone number not known to you</td>
+      </tr>
+      <tr>
+        <td class="num">0</td>
+        <td><span class="service">Telegrams</span></td>
+        <td class="note">Dial 0 and ask the operator for Telegrams</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<hr class="ornament">
+
+<!-- NOTES -->
+<div class="section">
+  <div class="section-title">Important Notices</div>
+  <p>Callers requiring trunk calls should dial <strong>0</strong> for the Operator, who will connect the call and advise the charge. Insert additional coins as directed before pressing Button&nbsp;A.</p>
+  <p>The minimum charge for a trunk call from this call office is <strong>4d.</strong> Insert the required fee before the Operator connects the call.</p>
+  <p>Should the telephone be found out of order, kindly report the fault to the nearest Post Office or dial <strong>0</strong> for the Operator.</p>
+  <p style="margin-top:3mm;font-style:italic;color:var(--faded);font-size:9.5pt">Wilful damage to Post Office property is punishable by law.<br>Telegraph Act 1863, s. 37.</p>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="gpo-mark">General Post Office &middot; Telephone Department</div>
+  <div class="code">CO.95 &middot; Printed for H.M. Stationery Office &middot; 1937</div>
+</div>
+
+</body>
+</html>
