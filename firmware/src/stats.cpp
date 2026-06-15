@@ -1,0 +1,198 @@
+#include "stats.h"
+#include "config.h"
+#include <SD.h>
+#include <ArduinoJson.h>
+
+static const char* STATS_FILE = "/logs/stats.json";
+static const char* STATS_TMP  = "/logs/stats.tmp";
+static const unsigned long SAVE_INTERVAL_MS = 60000;  // save every 60s if dirty
+
+void StatsTracker::begin() {
+    boot_time_ms_ = millis();
+    load();
+}
+
+void StatsTracker::update() {
+    // Accumulate uptime.
+    stats_.uptime_seconds = stats_.uptime_seconds;  // loaded value is base
+
+    if (dirty_ && millis() - last_save_ms_ > SAVE_INTERVAL_MS) {
+        save();
+    }
+}
+
+void StatsTracker::recordIncomingRing() {
+    stats_.total_incoming++;
+    dirty_ = true;
+}
+
+void StatsTracker::recordIncomingAnswered() {
+    stats_.total_answered++;
+    dirty_ = true;
+}
+
+void StatsTracker::recordOutgoingCall(const char* number) {
+    stats_.total_outgoing++;
+    incrementNumber(number);
+    dirty_ = true;
+}
+
+void StatsTracker::recordNotRecognised(const char* number) {
+    stats_.total_not_recognised++;
+    incrementNumber(number);
+    dirty_ = true;
+}
+
+void StatsTracker::recordCoinCollected() {
+    stats_.total_coin_collected++;
+    dirty_ = true;
+}
+
+void StatsTracker::recordCoinRefunded() {
+    stats_.total_coin_refunded++;
+    dirty_ = true;
+}
+
+void StatsTracker::callStarted() {
+    if (!in_call_) {
+        in_call_ = true;
+        call_start_ms_ = millis();
+    }
+}
+
+void StatsTracker::callEnded() {
+    if (in_call_) {
+        in_call_ = false;
+        uint32_t duration = (millis() - call_start_ms_) / 1000;
+        stats_.total_call_seconds += duration;
+        stats_.call_count++;
+        if (duration > stats_.longest_call_seconds) {
+            stats_.longest_call_seconds = duration;
+        }
+        dirty_ = true;
+        save();  // flush immediately on call end for power-off safety
+    }
+}
+
+uint32_t StatsTracker::avgCallSeconds() const {
+    return stats_.call_count > 0 ? stats_.total_call_seconds / stats_.call_count : 0;
+}
+
+void StatsTracker::incrementNumber(const char* number) {
+    // Find existing entry.
+    for (int i = 0; i < num_count_; i++) {
+        if (strcmp(numbers_[i].number, number) == 0) {
+            numbers_[i].count++;
+            return;
+        }
+    }
+    // Add new entry if room.
+    if (num_count_ < MAX_NUMBERS) {
+        strncpy(numbers_[num_count_].number, number, 11);
+        numbers_[num_count_].number[11] = '\0';
+        numbers_[num_count_].count = 1;
+        num_count_++;
+    }
+}
+
+int StatsTracker::topNumbers(NumberEntry* out, int maxEntries) const {
+    // Copy and sort by count descending.
+    NumberEntry sorted[MAX_NUMBERS];
+    memcpy(sorted, numbers_, sizeof(NumberEntry) * num_count_);
+
+    for (int i = 0; i < num_count_ - 1; i++) {
+        for (int j = i + 1; j < num_count_; j++) {
+            if (sorted[j].count > sorted[i].count) {
+                NumberEntry tmp = sorted[i];
+                sorted[i] = sorted[j];
+                sorted[j] = tmp;
+            }
+        }
+    }
+
+    int n = num_count_ < maxEntries ? num_count_ : maxEntries;
+    memcpy(out, sorted, sizeof(NumberEntry) * n);
+    return n;
+}
+
+void StatsTracker::save() {
+    // Update cumulative uptime before saving.
+    unsigned long session_secs = (millis() - boot_time_ms_) / 1000;
+
+    if (!SD.exists("/logs")) SD.mkdir("/logs");
+
+    // Write to temp file first, then rename for crash-safe update.
+    File f = SD.open(STATS_TMP, FILE_WRITE);
+    if (!f) return;
+
+    JsonDocument doc;
+    doc["incoming"]        = stats_.total_incoming;
+    doc["outgoing"]        = stats_.total_outgoing;
+    doc["answered"]        = stats_.total_answered;
+    doc["not_recognised"]  = stats_.total_not_recognised;
+    doc["coin_collected"]  = stats_.total_coin_collected;
+    doc["coin_refunded"]   = stats_.total_coin_refunded;
+    doc["uptime"]          = stats_.uptime_seconds + session_secs;
+    doc["call_seconds"]     = stats_.total_call_seconds;
+    doc["longest_call"]     = stats_.longest_call_seconds;
+    doc["call_count"]       = stats_.call_count;
+
+    JsonArray nums = doc["numbers"].to<JsonArray>();
+    for (int i = 0; i < num_count_; i++) {
+        JsonObject obj = nums.add<JsonObject>();
+        obj["n"] = numbers_[i].number;
+        obj["c"] = numbers_[i].count;
+    }
+
+    serializeJson(doc, f);
+    f.flush();
+    f.close();
+
+    SD.remove(STATS_FILE);
+    SD.rename(STATS_TMP, STATS_FILE);
+
+    last_save_ms_ = millis();
+    dirty_ = false;
+    Serial.println("[stats] saved");
+}
+
+void StatsTracker::load() {
+    // If previous save was interrupted, recover from temp file.
+    if (!SD.exists(STATS_FILE) && SD.exists(STATS_TMP)) {
+        SD.rename(STATS_TMP, STATS_FILE);
+    }
+    File f = SD.open(STATS_FILE, FILE_READ);
+    if (!f) return;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, f);
+    f.close();
+    if (err) {
+        Serial.printf("[stats] parse error: %s\n", err.c_str());
+        return;
+    }
+
+    stats_.total_incoming       = doc["incoming"]       | 0;
+    stats_.total_outgoing       = doc["outgoing"]       | 0;
+    stats_.total_answered       = doc["answered"]        | 0;
+    stats_.total_not_recognised = doc["not_recognised"]  | 0;
+    stats_.total_coin_collected = doc["coin_collected"]  | 0;
+    stats_.total_coin_refunded  = doc["coin_refunded"]   | 0;
+    stats_.uptime_seconds       = doc["uptime"]          | 0;
+    stats_.total_call_seconds    = doc["call_seconds"]     | 0;
+    stats_.longest_call_seconds  = doc["longest_call"]     | 0;
+    stats_.call_count            = doc["call_count"]       | 0;
+
+    JsonArray nums = doc["numbers"].as<JsonArray>();
+    num_count_ = 0;
+    for (JsonObject obj : nums) {
+        if (num_count_ >= MAX_NUMBERS) break;
+        strncpy(numbers_[num_count_].number, obj["n"] | "", 11);
+        numbers_[num_count_].number[11] = '\0';
+        numbers_[num_count_].count = obj["c"] | 0;
+        num_count_++;
+    }
+
+    Serial.printf("[stats] loaded: %u incoming, %u outgoing, %u answered\n",
+                  stats_.total_incoming, stats_.total_outgoing, stats_.total_answered);
+}

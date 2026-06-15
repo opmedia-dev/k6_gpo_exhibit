@@ -1,0 +1,1232 @@
+#include "web_manager.h"
+#include "phone_controller.h"
+#include "config.h"
+
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <SD.h>
+#include <Update.h>
+#include <esp_ota_ops.h>
+#include <ArduinoJson.h>
+
+static WebServer server(80);
+static Logger* s_logger = nullptr;
+static StatsTracker* s_stats = nullptr;
+static PhoneController* s_phone = nullptr;
+
+static void saveSettings();
+
+// --- HTML UI (served from flash, not SD) ------------------------------------
+
+static const char INDEX_HTML[] PROGMEM = R"rawhtml(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1a1a1a" id="themecolor">
+<link rel="manifest" href="/manifest.json">
+<title>K6 GPO Exhibit</title>
+<style>
+:root{
+--bg:#1a1a1a;--bg2:#252525;--bg3:#333;--bg4:#111;--bg5:#1e1e1e;
+--fg:#e0e0e0;--fg2:#ccc;--fg3:#aaa;--fg4:#999;--fg5:#888;
+--border:#333;--border2:#444;--border3:#555;
+--card-border:#333;
+--input-bg:#333;--input-fg:#e0e0e0;--input-border:#555;
+--btn2:#444;--btn2h:#555;--btn-dis:#555;--btn-dis-fg:#999;
+--dir:#fc6;--file:#e0e0e0;--link:#6af;--linkh:#8cf;
+--play:#6f6;--playh:#8f8;--del:#f55;--delh:#f88;
+--ok:#6f6;--warn:#fc6;--err:#f55;--stat-b:#fc6;
+--badge-green-bg:#1a3a1a;--badge-green-fg:#6f6;--badge-green-bd:#3a5a3a;
+--badge-amber-bg:#3a2a0a;--badge-amber-fg:#fc6;--badge-amber-bd:#5a4a1a;
+--badge-red-bg:#3a1a1a;--badge-red-fg:#f55;--badge-red-bd:#5a2a2a;
+--log-bg:#111;--log-fg:#bfb;
+}
+.light{
+--bg:#f5f5f5;--bg2:#fff;--bg3:#e8e8e8;--bg4:#f0f0f0;--bg5:#f8f8f8;
+--fg:#222;--fg2:#333;--fg3:#555;--fg4:#666;--fg5:#777;
+--border:#ddd;--border2:#ccc;--border3:#bbb;
+--card-border:#ddd;
+--input-bg:#fff;--input-fg:#222;--input-border:#ccc;
+--btn2:#e0e0e0;--btn2h:#d0d0d0;--btn-dis:#ccc;--btn-dis-fg:#999;
+--dir:#b8860b;--file:#222;--link:#0066cc;--linkh:#0044aa;
+--play:#228b22;--playh:#196619;--del:#cc0000;--delh:#990000;
+--ok:#228b22;--warn:#cc8800;--err:#cc0000;--stat-b:#b8860b;
+--badge-green-bg:#e6f4e6;--badge-green-fg:#228b22;--badge-green-bd:#b3d9b3;
+--badge-amber-bg:#fff3cd;--badge-amber-fg:#856404;--badge-amber-bd:#ffc107;
+--badge-red-bg:#f8d7da;--badge-red-fg:#721c24;--badge-red-bd:#f5c6cb;
+--log-bg:#f8f8f0;--log-fg:#333;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:16px;max-width:640px;margin:0 auto;transition:background .3s,color .3s}
+h1{color:#c41e1e;margin-bottom:2px;font-size:1.5em}
+h2{font-size:1.1em;margin:0 0 4px;color:var(--fg2)}
+.sub{color:var(--fg4);font-size:.85em;margin-bottom:16px}
+.card{background:var(--bg2);border-radius:10px;padding:16px;margin-bottom:14px;border:1px solid var(--card-border);transition:background .3s}
+.hint{color:var(--fg4);font-size:.8em;margin:2px 0 8px;line-height:1.3}
+.path{font-family:monospace;color:var(--fg3);font-size:.9em;margin-bottom:8px}
+.crumb{color:var(--link);cursor:pointer;text-decoration:underline}
+.crumb:hover{color:var(--linkh)}
+table{width:100%;border-collapse:collapse}
+td{padding:8px;border-bottom:1px solid var(--border);font-size:.9em}
+td:first-child{font-family:monospace}
+.dir{color:var(--dir);cursor:pointer}
+.dir:hover{text-decoration:underline}
+.file{color:var(--file)}
+.del{color:var(--del);cursor:pointer;font-size:.85em;text-decoration:underline}
+.del:hover{color:var(--delh)}
+.play{color:var(--play);cursor:pointer;font-size:.85em;text-decoration:underline;margin-right:10px}
+.play:hover{color:var(--playh)}
+.sz{color:var(--fg5);text-align:right;font-size:.8em}
+button,input[type=submit]{background:#c41e1e;color:#fff;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-size:.9em;margin-top:8px;font-weight:500}
+button:hover,input[type=submit]:hover{background:#d63030}
+button:disabled{background:var(--btn-dis);cursor:wait;color:var(--btn-dis-fg)}
+.btn-secondary{background:var(--btn2);color:var(--fg)}
+.btn-secondary:hover{background:var(--btn2h)}
+.btn-danger{background:#8b0000}
+.btn-danger:hover{background:#a00}
+.btn-theme{background:var(--bg3);color:var(--fg);border:1px solid var(--border2);padding:6px 14px;border-radius:20px;font-size:.8em;margin:0;cursor:pointer}
+.btn-theme:hover{background:var(--btn2h)}
+input[type=file]{margin:8px 0;font-size:.9em;color:var(--fg)}
+input[type=range]{width:100%;margin:8px 0;accent-color:#c41e1e}
+input[type=number],input[type=text],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:6px;padding:6px 10px;font-size:.9em}
+input[type=number]{width:70px}
+input[type=text]{width:140px}
+.status{color:var(--fg5);font-size:.85em;margin-top:8px}
+.warn{color:var(--warn)}
+.ok{color:var(--ok)}
+.err{color:var(--err)}
+.field{margin:10px 0}
+.field-label{color:var(--fg2);font-size:.9em;font-weight:500;margin-bottom:4px}
+.field-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.field-hint{color:var(--fg5);font-size:.75em;margin-top:2px}
+.stat{display:inline-block;background:var(--bg3);border-radius:6px;padding:6px 12px;margin:3px;font-size:.85em}
+.stat b{color:var(--stat-b)}
+.stat-label{color:var(--fg3);font-size:.75em;display:block;margin-bottom:1px}
+#prog{width:100%;height:8px;background:var(--bg3);border-radius:4px;margin-top:8px;display:none}
+#progbar{height:100%;background:#c41e1e;border-radius:4px;width:0%;transition:width .2s}
+.topnum{font-family:monospace;color:var(--link)}
+.live-status{display:flex;gap:16px;flex-wrap:wrap;margin:8px 0}
+.live-item{font-size:.9em}
+.live-item .label{color:var(--fg5);font-size:.8em}
+.live-item .value{font-weight:500}
+.section-icon{font-size:1.2em;margin-right:6px;vertical-align:middle}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.8em;font-weight:600}
+.badge-green{background:var(--badge-green-bg);color:var(--badge-green-fg);border:1px solid var(--badge-green-bd)}
+.badge-amber{background:var(--badge-amber-bg);color:var(--badge-amber-fg);border:1px solid var(--badge-amber-bd)}
+.divider{border:none;border-top:1px solid var(--border);margin:12px 0}
+.header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+</style>
+</head>
+<body>
+<div class="header-row">
+<div><h1>K6 GPO Exhibit</h1><p class="sub">Telephone Management System</p></div>
+<button class="btn-theme" id="themebtn" onclick="toggleTheme()">Light Mode</button>
+</div>
+
+<div class="card" style="border-color:var(--border2)">
+<h2><span class="section-icon">&#128222;</span> Phone Status</h2>
+<p class="hint">Live information about the telephone — updates every 5 seconds.</p>
+<div class="live-status">
+<div class="live-item"><div class="label">Current Mode</div><div class="value"><span id="modelbl" class="badge badge-green">AUTOMATIC</span></div></div>
+<div class="live-item"><div class="label">Phone State</div><div class="value" id="statelbl">Waiting for visitors</div></div>
+<div class="live-item"><div class="label">Now Playing</div><div class="value" id="playlbl" style="font-family:monospace;color:var(--link)">Nothing</div></div>
+<div class="live-item"><div class="label">Call Duration</div><div class="value" id="calltimer" style="font-family:monospace;color:var(--warn)">—</div></div>
+</div>
+<div id="alertbanner" style="display:none;background:#c41e1e;color:#fff;padding:10px 14px;border-radius:6px;margin-top:10px;font-weight:600;font-size:.9em">&#9888; No visitor activity detected for a while — please check the exhibit is working.</div>
+<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+<button onclick="ringNow()">Make Phone Ring</button>
+<button onclick="toggleMode()" id="modebtn" class="btn-secondary">Switch to Manual Mode</button>
+</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128266;</span> Sound Settings</h2>
+<p class="hint">Adjust how loud the telephone sounds through the handset and bell.</p>
+<div class="field">
+<div class="field-label">Handset Volume</div>
+<div class="field-hint">How loud audio plays through the telephone earpiece.</div>
+<div class="field-row"><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)" style="flex:1"><span id="vollbl" style="min-width:30px;text-align:right">15</span></div>
+</div>
+<div class="field">
+<div class="field-label">Bell Volume</div>
+<div class="field-hint">How loudly the telephone bell rings.</div>
+<div class="field-row"><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)" style="flex:1"><span id="belllbl" style="min-width:30px;text-align:right">255</span></div>
+</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128276;</span> Automatic Ringing</h2>
+<p class="hint">When in Automatic mode, the phone rings by itself at random intervals to attract visitors. Configure the timing here.</p>
+<div class="field">
+<div class="field-label">Time Between Rings</div>
+<div class="field-hint">The phone will ring randomly between these two times.</div>
+<div class="field-row">
+<span>Every </span><input type="number" id="armin" value="5" min="1" max="120" style="width:60px">
+<span> to </span><input type="number" id="armax" value="30" min="1" max="120" style="width:60px">
+<span> minutes</span><button onclick="setAutoRing()" style="margin:0">Save</button>
+</div>
+</div>
+<div class="field">
+<div class="field-label">How Long to Ring</div>
+<div class="field-hint">How many seconds the phone rings each time before giving up (if nobody answers).</div>
+<div class="field-row">
+<span>Ring for </span><input type="number" id="rtmin" value="4" min="2" max="15" style="width:55px">
+<span> to </span><input type="number" id="rtmax" value="8" min="2" max="15" style="width:55px">
+<span> seconds</span><button onclick="setRingTone()" style="margin:0">Save</button>
+</div>
+</div>
+<div class="field">
+<div class="field-label">Maximum Ring Cycles</div>
+<div class="field-hint">How many times the bell rings before it stops trying. Set to 0 for unlimited.</div>
+<div class="field-row">
+<input type="number" id="ringmax" value="10" min="0" max="60" style="width:70px">
+<span> cycles</span><button onclick="setRingCount()" style="margin:0">Save</button>
+</div>
+</div>
+<hr class="divider">
+<div class="field">
+<div class="field-label">Inactivity Warning</div>
+<div class="field-hint">If no visitors have used the phone for this long, flash the panel lamp and show a warning. Set to 0 to turn off.</div>
+<div class="field-row">
+<span>Warn after </span><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px">
+<span> minutes with no activity</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
+</div>
+</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128202;</span> Visitor Activity</h2>
+<p class="hint">How visitors have been interacting with the telephone.</p>
+<div id="statsbox">Loading...</div>
+<div style="margin-top:8px"><button onclick="resetStats()" class="btn-danger">Clear All Statistics</button></div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128193;</span> Audio Files</h2>
+<p class="hint">Browse, upload, and manage the audio files stored on the SD card. Tap a folder name to open it.</p>
+<div class="path" id="pathbar">/</div>
+<table id="filetbl"><tbody></tbody></table>
+<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+<input type="file" id="upfile" multiple accept=".mp3,.MP3">
+<button onclick="upload()" id="upbtn">Upload Files</button>
+<button onclick="mkdirPrompt()" class="btn-secondary">Create Folder</button>
+</div>
+<div class="status" id="upstatus"></div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128214;</span> Number Directory</h2>
+<p class="hint">Link dialled numbers to audio files. When a visitor dials a number listed here, the matching audio file plays. For example, adding "999" with the name "emergency" means dialling 999 plays <b>/numbers/emergency.mp3</b>.</p>
+<table id="aliastbl"><thead><tr><td style="color:var(--fg3)">Dial Number</td><td style="color:var(--fg3)">Plays File</td><td></td></tr></thead><tbody></tbody></table>
+<div style="margin-top:10px">
+<div style="color:var(--fg2);font-size:.85em;margin-bottom:6px">Add a new number:</div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+<input type="text" id="anew_num" placeholder="e.g. 999" style="width:80px">
+<input type="text" id="anew_name" placeholder="e.g. emergency">
+<button onclick="addAlias()" style="margin:0">Add</button>
+</div>
+</div>
+<div class="status" id="aliasstatus"></div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#127908;</span> Record New Audio</h2>
+<p class="hint">Record audio using your phone's microphone. Listen back to check the quality before saving to the SD card.</p>
+<div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+<button onclick="startRec()" id="recbtn">Start Recording</button>
+<button onclick="stopRec()" id="stopbtn" disabled class="btn-secondary">Stop Recording</button>
+<span id="rectimer" style="margin-left:4px;font-family:monospace;color:var(--warn);font-size:.9em"></span>
+</div>
+<div id="recpreview" style="display:none;margin-top:10px;padding:12px;background:var(--bg5);border-radius:8px;border:1px solid var(--border2)">
+<div style="color:var(--fg2);font-size:.85em;font-weight:500;margin-bottom:6px">Preview your recording:</div>
+<audio id="recaudio" controls style="width:100%;margin-bottom:10px"></audio>
+<div style="color:var(--fg2);font-size:.85em;font-weight:500;margin-bottom:4px">Save as:</div>
+<div class="field-row">
+<input type="text" id="recname" placeholder="filename">.mp3
+<span style="margin-left:8px">in <select id="recdir"><option value="/history/">/history/</option><option value="/numbers/">/numbers/</option><option value="/system/">/system/</option></select></span>
+</div>
+<div style="margin-top:10px;display:flex;gap:8px">
+<button onclick="saveRec()">Save Recording</button>
+<button onclick="discardRec()" class="btn-secondary">Discard</button>
+</div>
+</div>
+<div class="status" id="recstatus"></div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#9881;</span> Update Firmware</h2>
+<p class="hint">Upload a new firmware file (.bin) to update the telephone software. The phone will restart automatically after the update is installed.</p>
+<input type="file" id="otafile" accept=".bin">
+<button onclick="otaUpload()" id="otabtn">Install Update</button>
+<div id="prog"><div id="progbar"></div></div>
+<div class="status" id="otastatus"></div>
+<hr class="divider">
+<div class="field-hint" style="margin-bottom:4px">If a firmware update causes problems, you can go back to the previous version:</div>
+<button onclick="rollbackFW()" class="btn-danger">Restore Previous Version</button>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128196;</span> Activity Log</h2>
+<p class="hint">View a record of what the telephone has been doing. Useful for troubleshooting if something isn't working correctly.</p>
+<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
+<button onclick="loadLog('system')">System Events</button>
+<button onclick="loadLog('calls')" class="btn-secondary">Call History</button>
+<button onclick="clearLog()" class="btn-danger">Clear Log</button>
+</div>
+<pre id="logview" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128295;</span> System Information</h2>
+<p class="hint">Technical details about the device. Useful for support if you need to report an issue.</p>
+<div id="sysinfo" style="font-size:.85em;color:var(--fg3);line-height:1.6">Loading...</div>
+<div style="margin-top:10px"><button onclick="rebootDevice()" class="btn-danger">Restart Telephone</button></div>
+</div>
+
+<script>
+function toggleTheme(){
+  var b=document.body;b.classList.toggle('light');
+  var isLight=b.classList.contains('light');
+  document.getElementById('themebtn').textContent=isLight?'Dark Mode':'Light Mode';
+  document.getElementById('themecolor').content=isLight?'#f5f5f5':'#1a1a1a';
+  try{localStorage.setItem('k6theme',isLight?'light':'dark')}catch(e){}
+}
+(function(){try{if(localStorage.getItem('k6theme')==='light'){document.body.classList.add('light');document.getElementById('themebtn').textContent='Dark Mode';document.getElementById('themecolor').content='#f5f5f5';}}catch(e){}})();
+let cwd='/';
+function nav(p){cwd=p;loadFiles()}
+function loadFiles(){
+  fetch('/api/files?path='+encodeURIComponent(cwd))
+  .then(r=>r.json()).then(d=>{
+    let pb=document.getElementById('pathbar');
+    let parts=cwd.split('/').filter(Boolean);
+    let html='<span class="crumb" onclick="nav(\'/\')">/</span>';
+    let acc='/';
+    parts.forEach(p=>{acc+= p+'/';html+=' <span class="crumb" onclick="nav(\''+acc+'\')">'+p+'/</span>'});
+    pb.innerHTML=html;
+    let tb=document.querySelector('#filetbl tbody');
+    tb.innerHTML='';
+    d.sort((a,b)=>(b.dir-a.dir)||a.name.localeCompare(b.name));
+    d.forEach(f=>{
+      let tr=document.createElement('tr');
+      if(f.dir){
+        tr.innerHTML='<td class="dir" onclick="nav(\''+cwd+f.name+'/\')">'+f.name+'/</td><td class="sz">DIR</td><td></td>';
+      }else{
+        let sz=f.size<1024?f.size+'B':f.size<1048576?(f.size/1024).toFixed(1)+'KB':(f.size/1048576).toFixed(1)+'MB';
+        let mp3=f.name.toLowerCase().endsWith('.mp3');
+        let acts=mp3?'<span class="play" onclick="preview(\''+cwd+f.name+'\')">play</span> ':'';
+        acts+='<span class="del" onclick="del(\''+f.name+'\')">delete</span>';
+        tr.innerHTML='<td class="file">'+f.name+'</td><td class="sz">'+sz+'</td><td>'+acts+'</td>';
+      }
+      tb.appendChild(tr);
+    });
+  }).catch(e=>{console.error(e)});
+}
+let previewAudio=null;
+function preview(path){
+  if(previewAudio){previewAudio.pause();previewAudio=null;}
+  previewAudio=new Audio('/api/preview?path='+encodeURIComponent(path));
+  previewAudio.play();
+}
+function del(name){
+  if(!confirm('Delete '+name+'?'))return;
+  fetch('/api/delete?path='+encodeURIComponent(cwd+name),{method:'POST'})
+  .then(r=>r.json()).then(d=>{
+    document.getElementById('upstatus').innerHTML=d.ok?'<span class="ok">Deleted</span>':'<span class="err">'+d.error+'</span>';
+    loadFiles();
+  });
+}
+function mkdirPrompt(){
+  let n=prompt('Folder name:');
+  if(!n)return;
+  fetch('/api/mkdir?path='+encodeURIComponent(cwd+n),{method:'POST'})
+  .then(r=>r.json()).then(d=>{
+    document.getElementById('upstatus').innerHTML=d.ok?'<span class="ok">Created</span>':'<span class="err">'+d.error+'</span>';
+    loadFiles();
+  });
+}
+function upload(){
+  let files=document.getElementById('upfile').files;
+  if(!files.length)return;
+  let btn=document.getElementById('upbtn');
+  let st=document.getElementById('upstatus');
+  btn.disabled=true; st.textContent='Uploading...';
+  let done=0,errs=[];
+  Array.from(files).forEach(f=>{
+    let fd=new FormData(); fd.append('file',f);
+    fetch('/api/upload?path='+encodeURIComponent(cwd),{method:'POST',body:fd})
+    .then(r=>r.json()).then(d=>{
+      done++;
+      if(!d.ok) errs.push(f.name+': '+(d.error||'failed'));
+      if(done===files.length){
+        btn.disabled=false;
+        if(errs.length) st.innerHTML='<span class="err">'+errs.join('<br>')+'</span>';
+        else st.innerHTML='<span class="ok">Upload complete</span>';
+        document.getElementById('upfile').value='';
+        loadFiles();
+      }
+    }).catch(e=>{done++;btn.disabled=false;st.innerHTML='<span class="err">'+e+'</span>'});
+  });
+}
+function otaUpload(){
+  let f=document.getElementById('otafile').files[0];
+  if(!f)return;
+  let btn=document.getElementById('otabtn');
+  let st=document.getElementById('otastatus');
+  let prog=document.getElementById('prog');
+  let bar=document.getElementById('progbar');
+  btn.disabled=true; prog.style.display='block'; bar.style.width='0%';
+  st.innerHTML='<span class="warn">Uploading firmware... do not disconnect.</span>';
+  let xhr=new XMLHttpRequest();
+  xhr.open('POST','/api/ota');
+  xhr.upload.onprogress=function(e){if(e.lengthComputable)bar.style.width=(e.loaded/e.total*100)+'%'};
+  xhr.onload=function(){
+    let d=JSON.parse(xhr.responseText);
+    if(d.ok){
+      st.innerHTML='<span class="ok">Firmware updated! Rebooting...</span>';
+      setTimeout(()=>{location.reload()},8000);
+    }else{
+      st.innerHTML='<span class="err">'+d.error+'</span>';
+      btn.disabled=false;
+    }
+  };
+  xhr.onerror=function(){st.innerHTML='<span class="err">Upload failed</span>';btn.disabled=false};
+  let fd=new FormData(); fd.append('firmware',f);
+  xhr.send(fd);
+}
+function setVol(v){
+  document.getElementById('vollbl').textContent=v;
+  fetch('/api/volume?v='+v,{method:'POST'});
+}
+function setBell(v){
+  document.getElementById('belllbl').textContent=v;
+  fetch('/api/bellvol?v='+v,{method:'POST'});
+}
+function setRingCount(){
+  let n=document.getElementById('ringmax').value;
+  fetch('/api/ringcount?n='+n,{method:'POST'});
+}
+function setRingTone(){
+  let mn=document.getElementById('rtmin').value;
+  let mx=document.getElementById('rtmax').value;
+  fetch('/api/ringtone?min='+mn+'&max='+mx,{method:'POST'});
+}
+function setAlertIdle(){
+  let v=document.getElementById('alertidle').value;
+  fetch('/api/alertidle?v='+v,{method:'POST'});
+}
+function setAutoRing(){
+  let mn=document.getElementById('armin').value;
+  let mx=document.getElementById('armax').value;
+  fetch('/api/autoring?min='+mn+'&max='+mx,{method:'POST'});
+}
+function ringNow(){fetch('/api/ring',{method:'POST'})}
+function toggleMode(){fetch('/api/mode',{method:'POST'}).then(()=>loadStatus())}
+function rebootDevice(){
+  if(!confirm('This will restart the telephone. Any active calls will be disconnected.'))return;
+  fetch('/api/reboot',{method:'POST'}).then(()=>{
+    document.getElementById('sysinfo').innerHTML='<span class="warn">Restarting...</span>';
+    setTimeout(()=>{location.reload()},8000);
+  });
+}
+function resetStats(){
+  if(!confirm('This will erase all visitor statistics. Are you sure?'))return;
+  fetch('/api/stats/reset',{method:'POST'}).then(()=>loadStats());
+}
+function loadStatus(){
+  fetch('/api/status').then(r=>r.json()).then(d=>{
+    let uH=Math.floor(d.uptime/3600),uM=Math.floor(d.uptime%3600/60);
+    document.getElementById('sysinfo').innerHTML=
+      'Available memory: '+(d.heap/1024).toFixed(0)+'KB<br>'+
+      'SD card: '+(d.sd?'<span class="ok">Working</span>':'<span class="err">Not detected</span>')+
+      (d.sd_total?' ('+d.sd_used+'MB used of '+d.sd_total+'MB)':'')+
+      '<br>Running for: '+uH+' hours '+uM+' minutes<br>'+
+      'Firmware version: '+d.firmware;
+    document.getElementById('vol').value=d.volume;
+    document.getElementById('vollbl').textContent=d.volume;
+    document.getElementById('bell').value=d.bell_vol;
+    document.getElementById('belllbl').textContent=d.bell_vol;
+    if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
+    if(d.rt_min!==undefined){document.getElementById('rtmin').value=d.rt_min;document.getElementById('rtmax').value=d.rt_max;}
+    if(d.alert_idle!==undefined) document.getElementById('alertidle').value=d.alert_idle;
+    document.getElementById('alertbanner').style.display=d.alert_on?'block':'none';
+    document.getElementById('armin').value=Math.round(d.ar_min/60000);
+    document.getElementById('armax').value=Math.round(d.ar_max/60000);
+    let ml=document.getElementById('modelbl');
+    let mb=document.getElementById('modebtn');
+    if(d.mode=='AUTO'){ml.textContent='AUTOMATIC';ml.className='badge badge-green';mb.textContent='Switch to Manual Mode';}
+    else{ml.textContent='MANUAL';ml.className='badge badge-amber';mb.textContent='Switch to Automatic Mode';}
+    let states={'IDLE':'Waiting for visitors','RINGING':'Phone is ringing','PLAYING':'Playing audio','DIALLING':'Visitor is dialling'};
+    document.getElementById('statelbl').textContent=states[d.state]||d.state;
+    document.getElementById('playlbl').textContent=d.playing||'Nothing';
+    let ct=document.getElementById('calltimer');
+    if(d.state!=='IDLE'&&d.call_secs>=0){
+      let m=Math.floor(d.call_secs/60),s=d.call_secs%60;
+      ct.textContent=m+':'+(s<10?'0':'')+s;
+    } else { ct.textContent='\u2014'; }
+  });
+}
+function loadStats(){
+  fetch('/api/stats').then(r=>r.json()).then(d=>{
+    let h='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
+    h+='<span class="stat"><span class="stat-label">Times Rung</span><b>'+d.incoming+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Calls Answered</span><b>'+d.answered+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+d.outgoing+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Unknown Numbers</span><b>'+d.not_recognised+'</b></span>';
+    if(d.coin_collected>0) h+='<span class="stat"><span class="stat-label">Coins Collected</span><b>'+d.coin_collected+'</b></span>';
+    if(d.coin_refunded>0) h+='<span class="stat"><span class="stat-label">Coins Refunded</span><b>'+d.coin_refunded+'</b></span>';
+    h+='</div>';
+    if(d.call_count>0){
+      let avgM=Math.floor(d.avg_call/60), avgS=d.avg_call%60;
+      let lonM=Math.floor(d.longest_call/60), lonS=d.longest_call%60;
+      h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
+      h+='<span class="stat"><span class="stat-label">Average Call</span><b>'+avgM+'m '+avgS+'s</b></span>';
+      h+='<span class="stat"><span class="stat-label">Longest Call</span><b>'+lonM+'m '+lonS+'s</b></span>';
+      let totM=Math.floor(d.call_seconds/60);
+      h+='<span class="stat"><span class="stat-label">Total Talk Time</span><b>'+totM+' min</b></span>';
+      h+='</div>';
+    }
+    let uH=Math.floor(d.total_uptime/3600), uM=Math.floor(d.total_uptime%3600/60);
+    h+='<span class="stat"><span class="stat-label">Total Running Time</span><b>'+uH+'h '+uM+'m</b></span>';
+    if(d.top_numbers&&d.top_numbers.length){
+      h+='<div style="margin-top:12px"><div style="color:var(--fg2);font-weight:500;font-size:.9em;margin-bottom:4px">Most Popular Numbers:</div>';
+      d.top_numbers.forEach(n=>{
+        h+='<span class="stat"><span class="topnum">'+n.number+'</span> &times;'+n.count+'</span> ';
+      });
+      h+='</div>';
+    }
+    document.getElementById('statsbox').innerHTML=h;
+  });
+}
+let curLog='system';
+function loadLog(which){
+  curLog=which;
+  document.getElementById('logview').textContent='Loading...';
+  fetch('/api/logs/'+which).then(r=>r.text()).then(t=>{
+    let el=document.getElementById('logview');
+    el.textContent=t||'(empty)';
+    el.scrollTop=el.scrollHeight;
+  });
+}
+function clearLog(){
+  if(!confirm('Clear '+curLog+' log?'))return;
+  fetch('/api/logs/clear?log='+curLog,{method:'POST'}).then(()=>loadLog(curLog));
+}
+let aliases=[];
+function loadAliases(){
+  fetch('/api/aliases').then(r=>r.json()).then(d=>{
+    aliases=d||[];
+    let tb=document.querySelector('#aliastbl tbody');
+    tb.innerHTML='';
+    aliases.forEach((a,i)=>{
+      let tr=document.createElement('tr');
+      tr.innerHTML='<td class="topnum">'+a.number+'</td><td>'+a.name+'</td><td><span class="del" onclick="delAlias('+i+')">remove</span></td>';
+      tb.appendChild(tr);
+    });
+  });
+}
+function addAlias(){
+  let num=document.getElementById('anew_num').value.trim();
+  let name=document.getElementById('anew_name').value.trim();
+  if(!num||!name)return;
+  let existing=aliases.findIndex(a=>a.number===num);
+  if(existing>=0) aliases[existing].name=name;
+  else aliases.push({number:num,name:name});
+  saveAliases();
+  document.getElementById('anew_num').value='';
+  document.getElementById('anew_name').value='';
+}
+function delAlias(i){
+  aliases.splice(i,1);
+  saveAliases();
+}
+function saveAliases(){
+  fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(aliases)})
+  .then(r=>r.json()).then(d=>{
+    document.getElementById('aliasstatus').innerHTML=d.ok?'<span class="ok">Saved</span>':'<span class="err">'+d.error+'</span>';
+    loadAliases();
+  });
+}
+let mediaRec=null,recChunks=[],recInt=null,recStart=0,recBlob=null;
+function startRec(){
+  document.getElementById('recpreview').style.display='none';
+  recBlob=null;
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+    recChunks=[];
+    mediaRec=new MediaRecorder(stream,{mimeType:'audio/webm;codecs=opus'});
+    mediaRec.ondataavailable=e=>{if(e.data.size>0)recChunks.push(e.data)};
+    mediaRec.onstop=()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      recBlob=new Blob(recChunks,{type:'audio/webm'});
+      let url=URL.createObjectURL(recBlob);
+      document.getElementById('recaudio').src=url;
+      document.getElementById('recpreview').style.display='block';
+      document.getElementById('recstatus').innerHTML='<span class="ok">Recording complete. Listen back above, then save or discard.</span>';
+    };
+    mediaRec.start(100);
+    recStart=Date.now();
+    document.getElementById('recbtn').disabled=true;
+    document.getElementById('stopbtn').disabled=false;
+    document.getElementById('recstatus').innerHTML='<span style="color:var(--err);font-weight:500">&#9679; Recording in progress...</span>';
+    recInt=setInterval(()=>{let s=Math.floor((Date.now()-recStart)/1000);document.getElementById('rectimer').textContent=Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60)},500);
+  }).catch(e=>{document.getElementById('recstatus').innerHTML='<span class="err">Microphone access denied. Please allow microphone access and try again.</span>'});
+}
+function stopRec(){
+  if(mediaRec&&mediaRec.state!=='inactive')mediaRec.stop();
+  clearInterval(recInt);
+  document.getElementById('recbtn').disabled=false;
+  document.getElementById('stopbtn').disabled=true;
+}
+function saveRec(){
+  if(!recBlob){return;}
+  let name=document.getElementById('recname').value.trim();
+  if(!name){document.getElementById('recstatus').innerHTML='<span class="err">Please enter a filename</span>';return;}
+  let dir=document.getElementById('recdir').value;
+  let fd=new FormData();
+  fd.append('file',recBlob,name+'.mp3');
+  document.getElementById('recstatus').innerHTML='<span class="ok">Saving...</span>';
+  fetch('/api/upload?path='+encodeURIComponent(dir),{method:'POST',body:fd})
+  .then(r=>r.json()).then(d=>{
+    document.getElementById('recstatus').innerHTML=d.ok?'<span class="ok">Saved to '+dir+name+'.mp3</span>':'<span class="err">'+d.error+'</span>';
+    document.getElementById('rectimer').textContent='';
+    document.getElementById('recpreview').style.display='none';
+    recBlob=null;
+    loadFiles();
+  });
+}
+function discardRec(){
+  recBlob=null;
+  document.getElementById('recpreview').style.display='none';
+  document.getElementById('recstatus').innerHTML='Recording discarded.';
+  document.getElementById('rectimer').textContent='';
+}
+function rollbackFW(){
+  if(!confirm('Restore the previous firmware version? The telephone will restart.'))return;
+  fetch('/api/rollback',{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.ok){document.getElementById('otastatus').innerHTML='<span class="ok">Restoring previous version... restarting</span>';setTimeout(()=>{location.reload()},8000);}
+    else document.getElementById('otastatus').innerHTML='<span class="err">'+(d.error||'No previous firmware available')+'</span>';
+  });
+}
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
+loadFiles();loadStatus();loadStats();loadAliases();
+setInterval(loadStatus,5000);
+setInterval(loadStats,30000);
+</script>
+</body>
+</html>
+)rawhtml";
+
+// --- API handlers -----------------------------------------------------------
+
+static void handleIndex() {
+    server.send_P(200, "text/html", INDEX_HTML);
+}
+
+static void handleFileList() {
+    String path = server.arg("path");
+    if (path.isEmpty()) path = "/";
+    if (!path.endsWith("/")) path += "/";
+
+    File dir = SD.open(path);
+    if (!dir || !dir.isDirectory()) {
+        server.send(200, "application/json", "[]");
+        return;
+    }
+
+    String json = "[";
+    bool first = true;
+    File entry;
+    while ((entry = dir.openNextFile())) {
+        if (!first) json += ",";
+        first = false;
+        json += "{\"name\":\"";
+        json += entry.name();
+        json += "\",\"size\":";
+        json += String(entry.size());
+        json += ",\"dir\":";
+        json += entry.isDirectory() ? "true" : "false";
+        json += "}";
+        entry.close();
+    }
+    dir.close();
+    json += "]";
+    server.send(200, "application/json", json);
+}
+
+// MP3 sync word check: valid MP3 frames start with 0xFF 0xFB/FA/F3/F2
+// (11 sync bits set).  We also accept ID3 tags (start with "ID3").
+static bool looksLikeMp3(const uint8_t* buf, size_t len) {
+    if (len < 3) return false;
+    // ID3v2 tag header
+    if (buf[0] == 'I' && buf[1] == 'D' && buf[2] == '3') return true;
+    // MPEG sync word: first byte 0xFF, second byte has upper 3 bits set (0xE0)
+    if (buf[0] == 0xFF && (buf[1] & 0xE0) == 0xE0) return true;
+    return false;
+}
+
+static bool s_upload_valid = true;
+static String s_upload_path;
+
+static void handleUpload() {
+    HTTPUpload& upload = server.upload();
+    static File uploadFile;
+
+    if (upload.status == UPLOAD_FILE_START) {
+        String path = server.arg("path");
+        if (!path.endsWith("/")) path += "/";
+        path += upload.filename;
+        s_upload_path = path;
+        s_upload_valid = true;
+        Serial.printf("[web] upload: %s\n", path.c_str());
+        uploadFile = SD.open(path, FILE_WRITE);
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (uploadFile) {
+            // Validate first chunk of .mp3 files.
+            if (s_upload_valid && upload.totalSize == 0 &&
+                (s_upload_path.endsWith(".mp3") || s_upload_path.endsWith(".MP3"))) {
+                if (!looksLikeMp3(upload.buf, upload.currentSize)) {
+                    s_upload_valid = false;
+                    Serial.printf("[web] REJECTED: not a valid MP3: %s\n", s_upload_path.c_str());
+                }
+            }
+            uploadFile.write(upload.buf, upload.currentSize);
+        }
+    } else if (upload.status == UPLOAD_FILE_END) {
+        if (uploadFile) {
+            uploadFile.close();
+            if (!s_upload_valid) {
+                // Remove invalid file.
+                SD.remove(s_upload_path);
+                Serial.printf("[web] removed invalid MP3: %s\n", s_upload_path.c_str());
+            } else {
+                Serial.printf("[web] upload complete: %u bytes\n", upload.totalSize);
+            }
+        }
+    }
+}
+
+static void handleUploadComplete() {
+    if (!s_upload_valid) {
+        server.send(200, "application/json",
+                    "{\"ok\":false,\"error\":\"Invalid MP3 file — not a valid audio file\"}");
+    } else {
+        server.send(200, "application/json", "{\"ok\":true}");
+    }
+}
+
+static void handleDelete() {
+    String path = server.arg("path");
+    if (path.isEmpty() || path == "/") {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Invalid path\"}");
+        return;
+    }
+    if (SD.exists(path)) {
+        SD.remove(path);
+        server.send(200, "application/json", "{\"ok\":true}");
+    } else {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"File not found\"}");
+    }
+}
+
+static void handleMkdir() {
+    String path = server.arg("path");
+    if (path.isEmpty()) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Invalid path\"}");
+        return;
+    }
+    SD.mkdir(path);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleStatus() {
+    if (!s_phone) {
+        server.send(200, "application/json", "{\"error\":\"not ready\"}");
+        return;
+    }
+
+    String json = "{";
+    json += "\"heap\":";     json += String(ESP.getFreeHeap());
+    json += ",\"sd\":";      json += SD.cardType() != CARD_NONE ? "true" : "false";
+    json += ",\"sd_total\":"; json += String((uint32_t)(SD.totalBytes() / (1024 * 1024)));
+    json += ",\"sd_used\":";  json += String((uint32_t)(SD.usedBytes() / (1024 * 1024)));
+    json += ",\"uptime\":";  json += String(millis() / 1000);
+    json += ",\"firmware\":\"" FIRMWARE_VERSION "\"";
+    json += ",\"volume\":";  json += String(s_phone->player().getVolume());
+    json += ",\"bell_vol\":"; json += String(s_phone->bell().bellVolume());
+    json += ",\"ar_min\":";  json += String(s_phone->autoRingMinMs());
+    json += ",\"ar_max\":";  json += String(s_phone->autoRingMaxMs());
+    json += ",\"ring_max\":"; json += String(s_phone->maxRingCadences());
+    json += ",\"rt_min\":"; json += String(s_phone->ringToneMinSecs());
+    json += ",\"rt_max\":"; json += String(s_phone->ringToneMaxSecs());
+    json += ",\"alert_idle\":"; json += String(s_phone->alertIdleMinutes());
+    json += ",\"alert_on\":"; json += s_phone->isAlertActive() ? "true" : "false";
+    json += ",\"mode\":\"";  json += s_phone->autoRingEnabled() ? "AUTO" : "MANUAL";
+    json += "\",\"state\":\""; json += s_phone->stateName();
+    json += "\",\"playing\":\"";
+    if (s_phone->player().isPlaying()) {
+        json += s_phone->player().currentFile();
+    }
+    json += "\",\"call_secs\":";
+    if (s_phone->state() != PhoneState::IDLE) {
+        json += String((millis() - s_phone->stateEnterTime()) / 1000);
+    } else {
+        json += "-1";
+    }
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
+static void handleRollback() {
+    const esp_partition_t* prev = esp_ota_get_last_invalid_partition();
+    if (!prev) {
+        // Try the non-running OTA partition as fallback.
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        const esp_partition_t* other = esp_ota_get_next_update_partition(running);
+        if (other && other != running) prev = other;
+    }
+    if (!prev) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"No previous firmware available\"}");
+        return;
+    }
+    esp_err_t err = esp_ota_set_boot_partition(prev);
+    if (err != ESP_OK) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Rollback failed\"}");
+        return;
+    }
+    if (s_logger) s_logger->systemLog("Firmware rollback to %s via web", prev->label);
+    server.send(200, "application/json", "{\"ok\":true}");
+    delay(500);
+    ESP.restart();
+}
+
+static void handleOTA() {
+    server.send(200, "application/json",
+                Update.hasError()
+                    ? "{\"ok\":false,\"error\":\"Update failed\"}"
+                    : "{\"ok\":true}");
+    if (!Update.hasError()) {
+        delay(500);
+        ESP.restart();
+    }
+}
+
+static void handleOTAUpload() {
+    HTTPUpload& upload = server.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+        Serial.printf("[web] OTA start: %s\n", upload.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            Update.printError(Serial);
+        }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            Update.printError(Serial);
+        }
+    } else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+            Serial.printf("[web] OTA complete: %u bytes\n", upload.totalSize);
+        } else {
+            Update.printError(Serial);
+        }
+    }
+}
+
+// --- Log API handlers -------------------------------------------------------
+
+static void handleLogSystem() {
+    if (!s_logger) { server.send(200, "text/plain", ""); return; }
+    size_t len;
+    char* buf = s_logger->readSystemLog(&len);
+    if (buf) {
+        server.send(200, "text/plain", buf);
+        free(buf);
+    } else {
+        server.send(200, "text/plain", "(empty)");
+    }
+}
+
+static void handleLogCalls() {
+    if (!s_logger) { server.send(200, "text/plain", ""); return; }
+    size_t len;
+    char* buf = s_logger->readCallLog(&len);
+    if (buf) {
+        server.send(200, "text/plain", buf);
+        free(buf);
+    } else {
+        server.send(200, "text/plain", "(empty)");
+    }
+}
+
+static void handleLogClear() {
+    if (!s_logger) { server.send(200, "application/json", "{\"ok\":true}"); return; }
+    String which = server.arg("log");
+    if (which == "system" || which == "all") s_logger->clearSystemLog();
+    if (which == "calls"  || which == "all") s_logger->clearCallLog();
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- Control API handlers ---------------------------------------------------
+
+static void handleVolume() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < 0) v = 0;
+    if (v > 21) v = 21;
+    s_phone->player().setVolume(v);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Volume set to %d via web", v);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleBellVolume() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    s_phone->bell().setBellVolume(v);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Bell volume set to %d via web", v);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleAutoRing() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    unsigned long minMin = server.arg("min").toInt();
+    unsigned long maxMin = server.arg("max").toInt();
+    if (minMin < 1) minMin = 1;
+    if (maxMin < minMin) maxMin = minMin;
+    if (maxMin > 120) maxMin = 120;
+    s_phone->setAutoRingInterval(minMin * 60000, maxMin * 60000);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Auto-ring set to %lu-%lu min via web", minMin, maxMin);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleRingNow() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    s_phone->ring();
+    if (s_logger) s_logger->systemLog("Ring triggered via web");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleAlertIdle() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < 0) v = 0;
+    if (v > 1440) v = 1440;
+    s_phone->setAlertIdleMinutes(v);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Alert idle set to %d min via web", v);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleRingTone() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int mn = server.arg("min").toInt();
+    int mx = server.arg("max").toInt();
+    s_phone->setRingToneRange(mn, mx);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Ring tone set to %d-%ds via web", s_phone->ringToneMinSecs(), s_phone->ringToneMaxSecs());
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleRingCount() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int n = server.arg("n").toInt();
+    if (n < 0) n = 0;
+    if (n > 60) n = 60;
+    s_phone->setMaxRingCadences(n);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Ring count set to %d via web", n);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleToggleMode() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    s_phone->toggleAutoRing();
+    if (s_logger) s_logger->systemLog("Mode toggled to %s via web",
+                                       s_phone->autoRingEnabled() ? "AUTO" : "MANUAL");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- Stats API handlers -----------------------------------------------------
+
+static void handleStats() {
+    if (!s_stats) { server.send(200, "application/json", "{}"); return; }
+
+    const CallStats& st = s_stats->stats();
+    unsigned long session_secs = millis() / 1000;
+
+    String json = "{";
+    json += "\"incoming\":";       json += String(st.total_incoming);
+    json += ",\"outgoing\":";      json += String(st.total_outgoing);
+    json += ",\"answered\":";      json += String(st.total_answered);
+    json += ",\"not_recognised\":"; json += String(st.total_not_recognised);
+    json += ",\"coin_collected\":"; json += String(st.total_coin_collected);
+    json += ",\"coin_refunded\":";  json += String(st.total_coin_refunded);
+    json += ",\"total_uptime\":";   json += String(st.uptime_seconds + session_secs);
+    json += ",\"call_seconds\":";  json += String(st.total_call_seconds);
+    json += ",\"longest_call\":";  json += String(st.longest_call_seconds);
+    json += ",\"avg_call\":";      json += String(s_stats->avgCallSeconds());
+    json += ",\"call_count\":";    json += String(st.call_count);
+
+    StatsTracker::NumberEntry top[5];
+    int n = s_stats->topNumbers(top, 5);
+    json += ",\"top_numbers\":[";
+    for (int i = 0; i < n; i++) {
+        if (i > 0) json += ",";
+        json += "{\"number\":\"";
+        json += top[i].number;
+        json += "\",\"count\":";
+        json += String(top[i].count);
+        json += "}";
+    }
+    json += "]}";
+
+    server.send(200, "application/json", json);
+}
+
+static void handleStatsReset() {
+    if (s_stats) {
+        // Remove stats file and reinitialize.
+        SD.remove("/logs/stats.json");
+        s_stats->begin();
+        if (s_logger) s_logger->systemLog("Stats reset via web");
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- Audio preview handler --------------------------------------------------
+
+static void handlePreview() {
+    String path = server.arg("path");
+    if (path.length() == 0) {
+        server.send(400, "text/plain", "Missing path");
+        return;
+    }
+
+    File f = SD.open(path, FILE_READ);
+    if (!f) {
+        server.send(404, "text/plain", "File not found");
+        return;
+    }
+
+    server.streamFile(f, "audio/mpeg");
+    f.close();
+}
+
+// --- Settings persistence ---------------------------------------------------
+
+static const char* SETTINGS_FILE = "/system/settings.json";
+static const char* SETTINGS_TMP  = "/system/settings.tmp";
+
+static void loadSettings() {
+    if (!s_phone) return;
+    // Recover from interrupted save.
+    if (!SD.exists(SETTINGS_FILE) && SD.exists(SETTINGS_TMP)) {
+        SD.rename(SETTINGS_TMP, SETTINGS_FILE);
+    }
+    File f = SD.open(SETTINGS_FILE, FILE_READ);
+    if (!f) return;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, f)) { f.close(); return; }
+    f.close();
+
+    if (!doc["volume"].isNull())   s_phone->player().setVolume(doc["volume"].as<uint8_t>());
+    if (!doc["bell_vol"].isNull()) s_phone->bell().setBellVolume(doc["bell_vol"].as<uint8_t>());
+    if (!doc["ar_min"].isNull() && !doc["ar_max"].isNull()) {
+        s_phone->setAutoRingInterval(
+            doc["ar_min"].as<unsigned long>(),
+            doc["ar_max"].as<unsigned long>());
+    }
+    if (!doc["ring_max"].isNull()) s_phone->setMaxRingCadences(doc["ring_max"].as<int>());
+    if (!doc["rt_min"].isNull() && !doc["rt_max"].isNull())
+        s_phone->setRingToneRange(doc["rt_min"].as<int>(), doc["rt_max"].as<int>());
+    if (!doc["alert_idle"].isNull()) s_phone->setAlertIdleMinutes(doc["alert_idle"].as<int>());
+    Serial.println("[web] settings loaded");
+}
+
+static void saveSettings() {
+    if (!s_phone) return;
+    if (!SD.exists("/system")) SD.mkdir("/system");
+
+    // Write to temp file first, then rename for crash-safe update.
+    File f = SD.open(SETTINGS_TMP, FILE_WRITE);
+    if (!f) return;
+
+    JsonDocument doc;
+    doc["volume"]   = s_phone->player().getVolume();
+    doc["bell_vol"] = s_phone->bell().bellVolume();
+    doc["ar_min"]   = s_phone->autoRingMinMs();
+    doc["ar_max"]   = s_phone->autoRingMaxMs();
+    doc["ring_max"] = s_phone->maxRingCadences();
+    doc["rt_min"] = s_phone->ringToneMinSecs();
+    doc["rt_max"] = s_phone->ringToneMaxSecs();
+    doc["alert_idle"] = s_phone->alertIdleMinutes();
+    serializeJson(doc, f);
+    f.flush();
+    f.close();
+
+    SD.remove(SETTINGS_FILE);
+    SD.rename(SETTINGS_TMP, SETTINGS_FILE);
+}
+
+// --- Reboot handler ---------------------------------------------------------
+
+static void handleReboot() {
+    if (s_logger) s_logger->systemLog("Reboot requested via web");
+    if (s_stats) s_stats->save();
+    server.send(200, "application/json", "{\"ok\":true}");
+    delay(500);
+    ESP.restart();
+}
+
+// --- Alias API handlers -----------------------------------------------------
+
+static void handleGetAliases() {
+    File f = SD.open("/system/aliases.json", FILE_READ);
+    if (!f) {
+        server.send(200, "application/json", "[]");
+        return;
+    }
+    String content = f.readString();
+    f.close();
+    server.send(200, "application/json", content);
+}
+
+static void handleSaveAliases() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+
+    String body = server.arg("plain");
+    if (!SD.exists("/system")) SD.mkdir("/system");
+
+    File f = SD.open("/system/aliases.json", FILE_WRITE);
+    if (!f) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Cannot write file\"}");
+        return;
+    }
+    f.print(body);
+    f.close();
+
+    // Reload aliases in the audio player immediately.
+    s_phone->player().loadAliases();
+    if (s_logger) s_logger->systemLog("Aliases updated via web");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- PWA manifest and service worker ----------------------------------------
+
+static const char MANIFEST_JSON[] PROGMEM = R"rawjson(
+{
+  "name": "K6 GPO Exhibit",
+  "short_name": "K6 Exhibit",
+  "description": "Control panel for K6 GPO telephone exhibit",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "icons": [{
+    "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23c41e1e'/><text x='50' y='68' text-anchor='middle' font-size='50' font-family='sans-serif' fill='white'>K6</text></svg>",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}
+)rawjson";
+
+static void handleManifest() {
+    server.send_P(200, "application/json", MANIFEST_JSON);
+}
+
+static const char SW_JS[] PROGMEM = R"rawjs(
+const CACHE='k6-v1';
+const URLS=['/'];
+self.addEventListener('install',e=>{
+  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(URLS)));
+  self.skipWaiting();
+});
+self.addEventListener('activate',e=>{
+  e.waitUntil(caches.keys().then(keys=>
+    Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
+  ));
+  self.clients.claim();
+});
+self.addEventListener('fetch',e=>{
+  if(e.request.url.includes('/api/'))return;
+  e.respondWith(
+    fetch(e.request).then(r=>{
+      let c=r.clone();
+      caches.open(CACHE).then(cache=>cache.put(e.request,c));
+      return r;
+    }).catch(()=>caches.match(e.request))
+  );
+});
+)rawjs";
+
+static void handleServiceWorker() {
+    server.send_P(200, "application/javascript", SW_JS);
+}
+
+// --- Public interface -------------------------------------------------------
+
+void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& phone) {
+    s_logger = &logger;
+    s_stats  = &stats;
+    s_phone  = &phone;
+
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
+    delay(100);
+
+    IPAddress ip = WiFi.softAPIP();
+    Serial.printf("[web] AP \"%s\" started — http://%s/\n",
+                  WIFI_AP_SSID, ip.toString().c_str());
+
+    if (MDNS.begin("k6-exhibit")) {
+        MDNS.addService("http", "tcp", 80);
+        Serial.println("[web] mDNS: http://k6-exhibit.local/");
+    }
+
+    server.on("/",                HTTP_GET,  handleIndex);
+    server.on("/api/files",       HTTP_GET,  handleFileList);
+    server.on("/api/upload",      HTTP_POST, handleUploadComplete, handleUpload);
+    server.on("/api/delete",      HTTP_POST, handleDelete);
+    server.on("/api/mkdir",       HTTP_POST, handleMkdir);
+    server.on("/api/status",      HTTP_GET,  handleStatus);
+    server.on("/api/ota",         HTTP_POST, handleOTA, handleOTAUpload);
+    server.on("/api/rollback",    HTTP_POST, handleRollback);
+    server.on("/api/logs/system", HTTP_GET,  handleLogSystem);
+    server.on("/api/logs/calls",  HTTP_GET,  handleLogCalls);
+    server.on("/api/logs/clear",  HTTP_POST, handleLogClear);
+    server.on("/api/volume",      HTTP_POST, handleVolume);
+    server.on("/api/bellvol",     HTTP_POST, handleBellVolume);
+    server.on("/api/autoring",    HTTP_POST, handleAutoRing);
+    server.on("/api/ring",        HTTP_POST, handleRingNow);
+    server.on("/api/ringcount",  HTTP_POST, handleRingCount);
+    server.on("/api/ringtone",   HTTP_POST, handleRingTone);
+    server.on("/api/alertidle",  HTTP_POST, handleAlertIdle);
+    server.on("/api/mode",        HTTP_POST, handleToggleMode);
+    server.on("/api/stats",       HTTP_GET,  handleStats);
+    server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
+    server.on("/api/aliases",     HTTP_GET,  handleGetAliases);
+    server.on("/api/aliases",     HTTP_POST, handleSaveAliases);
+    server.on("/api/preview",     HTTP_GET,  handlePreview);
+    server.on("/api/reboot",      HTTP_POST, handleReboot);
+    server.on("/manifest.json",   HTTP_GET,  handleManifest);
+    server.on("/sw.js",           HTTP_GET,  handleServiceWorker);
+
+    server.begin();
+    active_ = true;
+    loadSettings();
+    logger.systemLog("Wi-Fi AP started SSID=%s", WIFI_AP_SSID);
+    Serial.println("[web] server ready");
+}
+
+void WebManager::update() {
+    if (active_) server.handleClient();
+}
