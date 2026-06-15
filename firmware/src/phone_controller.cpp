@@ -1,6 +1,7 @@
 #include "phone_controller.h"
 #include "config.h"
 #include <SD.h>
+#include <ArduinoJson.h>
 
 void PhoneController::begin() {
     line_.begin();
@@ -16,6 +17,7 @@ void PhoneController::begin() {
     updateLamp();
 
     randomSeed(analogRead(0) ^ micros());
+    last_activity_ms_ = millis();
     resetAutoRingTimer();
     enterState(PhoneState::IDLE);
 
@@ -158,6 +160,9 @@ void PhoneController::update() {
             Serial.printf("[phone] number complete: %s\n", dialled_);
             if (number_cb_) number_cb_(dialled_);
 
+            // Check for a plugin script first.
+            if (tryPlugin(dialled_)) break;
+
             // Build path (resolving aliases) and check if number is recognised.
             String resolved = player_.resolveAlias(dialled_);
             snprintf(pending_path_, sizeof(pending_path_),
@@ -299,6 +304,58 @@ void PhoneController::update() {
         }
         break;
 
+    // ----- PLUGIN_SEQUENCE ----------------------------------------------------
+    case PhoneState::PLUGIN_SEQUENCE:
+        if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
+            player_.stop();
+            enterState(PhoneState::IDLE);
+            break;
+        }
+        // Advance through plugin steps.
+        if (plugin_index_ < plugin_count_) {
+            auto& step = plugin_steps_[plugin_index_];
+            if (step.action == 'P') {
+                // Play: start file, advance when it finishes.
+                if (!player_.isPlaying() && plugin_step_time_ == 0) {
+                    player_.playFile(step.path, false);
+                    plugin_step_time_ = millis();
+                } else if (!player_.isPlaying() && plugin_step_time_ > 0) {
+                    plugin_index_++;
+                    plugin_step_time_ = 0;
+                }
+            } else if (step.action == 'D') {
+                // Delay: wait ms then advance.
+                if (plugin_step_time_ == 0) {
+                    plugin_step_time_ = millis();
+                } else if (millis() - plugin_step_time_ >= step.ms) {
+                    plugin_index_++;
+                    plugin_step_time_ = 0;
+                }
+            } else if (step.action == 'L') {
+                // Loop: play file in a loop, advance after ms.
+                if (plugin_step_time_ == 0) {
+                    player_.playFile(step.path, true);
+                    plugin_step_time_ = millis();
+                } else if (millis() - plugin_step_time_ >= step.ms) {
+                    player_.stop();
+                    plugin_index_++;
+                    plugin_step_time_ = 0;
+                }
+            } else {
+                plugin_index_++;  // unknown action, skip
+            }
+        } else {
+            // All steps done — replace handset prompt or busy.
+            if (!replace_prompted_ && player_.sdReady() && SD.exists(SD_FILE_REPLACE)) {
+                replace_prompted_ = true;
+                player_.playFile(SD_FILE_REPLACE, false);
+                enterState(PhoneState::PLAYING_NUMBER);  // reuse for hangup handling
+            } else {
+                enterState(PhoneState::BUSY);
+            }
+        }
+        break;
+
     // ----- BUSY --------------------------------------------------------------
     case PhoneState::BUSY:
         if (line_.hookState() == HookState::ON_HOOK && line_.hookChanged()) {
@@ -315,6 +372,9 @@ void PhoneController::update() {
         digitalWrite(PIN_STATUS_LED,
                      line_.hookState() == HookState::OFF_HOOK ? HIGH : LOW);
     }
+
+    // --- Auto-mode lamp (update continuously for flash pattern) -------------
+    updateLamp();
 }
 
 void PhoneController::ring() {
@@ -382,10 +442,12 @@ void PhoneController::enterState(PhoneState s) {
 
     case PhoneState::PLAYING_HISTORY:
         replace_prompted_ = false;
+        last_activity_ms_ = millis();
         player_.playRandomHistory();
         break;
 
     case PhoneState::DIAL_TONE:
+        last_activity_ms_ = millis();
         dial_.reset();
         dial_pos_   = 0;
         dialled_[0] = '\0';
@@ -408,6 +470,13 @@ void PhoneController::enterState(PhoneState s) {
         replace_prompted_ = false;
         break;
 
+    case PhoneState::PLUGIN_SEQUENCE:
+        replace_prompted_ = false;
+        last_activity_ms_ = millis();
+        plugin_index_ = 0;
+        plugin_step_time_ = 0;
+        break;
+
     case PhoneState::BUSY:
         player_.playBusyTone();
         break;
@@ -424,7 +493,18 @@ void PhoneController::setAutoRing(bool enabled) {
 }
 
 void PhoneController::updateLamp() {
-    digitalWrite(PIN_AUTO_LAMP, auto_ring_enabled_ ? HIGH : LOW);
+    if (isAlertActive()) {
+        // Flash lamp: 500ms on, 500ms off warning pattern.
+        digitalWrite(PIN_AUTO_LAMP, (millis() / 500) % 2 ? HIGH : LOW);
+    } else {
+        digitalWrite(PIN_AUTO_LAMP, auto_ring_enabled_ ? HIGH : LOW);
+    }
+}
+
+bool PhoneController::isAlertActive() const {
+    if (alert_idle_ms_ == 0) return false;
+    if (state_ != PhoneState::IDLE) return false;
+    return (millis() - last_activity_ms_) > alert_idle_ms_;
 }
 
 void PhoneController::setAutoRingInterval(unsigned long minMs, unsigned long maxMs) {
@@ -447,6 +527,53 @@ void PhoneController::resetAutoRingTimer() {
     Serial.printf("[phone] next auto-ring in %lu s\n", interval / 1000);
 }
 
+bool PhoneController::tryPlugin(const char* number) {
+    if (!player_.sdReady()) return false;
+
+    char path[48];
+    snprintf(path, sizeof(path), "%s/%s.json", SD_DIR_PLUGINS, number);
+    if (!SD.exists(path)) return false;
+
+    File f = SD.open(path, FILE_READ);
+    if (!f) return false;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, f)) { f.close(); return false; }
+    f.close();
+
+    JsonArray steps = doc["steps"].as<JsonArray>();
+    if (steps.isNull() || steps.size() == 0) return false;
+
+    plugin_count_ = 0;
+    for (JsonObject step : steps) {
+        if (plugin_count_ >= MAX_PLUGIN_STEPS) break;
+        auto& ps = plugin_steps_[plugin_count_];
+        const char* action = step["action"] | "";
+        if (strcmp(action, "play") == 0) {
+            ps.action = 'P';
+            strlcpy(ps.path, step["file"] | "", sizeof(ps.path));
+            ps.ms = 0;
+        } else if (strcmp(action, "delay") == 0) {
+            ps.action = 'D';
+            ps.path[0] = '\0';
+            ps.ms = step["ms"] | 1000;
+        } else if (strcmp(action, "loop") == 0) {
+            ps.action = 'L';
+            strlcpy(ps.path, step["file"] | "", sizeof(ps.path));
+            ps.ms = step["ms"] | 5000;
+        } else {
+            continue;
+        }
+        plugin_count_++;
+    }
+
+    if (plugin_count_ == 0) return false;
+
+    Serial.printf("[phone] plugin loaded: %s (%d steps)\n", path, plugin_count_);
+    enterState(PhoneState::PLUGIN_SEQUENCE);
+    return true;
+}
+
 const char* PhoneController::stateName() const {
     switch (state_) {
     case PhoneState::IDLE:            return "IDLE";
@@ -460,6 +587,7 @@ const char* PhoneController::stateName() const {
     case PhoneState::RINGING_TONE:    return "RINGING_TONE";
     case PhoneState::PLAYING_NUMBER:  return "PLAYING_NUMBER";
     case PhoneState::PLAYING_NOT_REC: return "PLAYING_NOT_REC";
+    case PhoneState::PLUGIN_SEQUENCE: return "PLUGIN_SEQUENCE";
     case PhoneState::BUSY:            return "BUSY";
     default:                          return "UNKNOWN";
     }

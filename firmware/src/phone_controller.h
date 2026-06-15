@@ -25,6 +25,7 @@
 //   PLAYING_NUMBER   Dialling complete → matched MP3 playing.
 //   PLAYING_NOT_REC  Dialling complete → "number not recognised" playing.
 //   BUSY             Error / timeout → busy tone.
+//   PLUGIN_SEQUENCE  Executing a JSON plugin script (multi-step).
 // ============================================================================
 
 enum class PhoneState : uint8_t {
@@ -39,6 +40,7 @@ enum class PhoneState : uint8_t {
     RINGING_TONE,
     PLAYING_NUMBER,
     PLAYING_NOT_REC,
+    PLUGIN_SEQUENCE,
     BUSY
 };
 
@@ -83,6 +85,14 @@ public:
     int  ringToneMinSecs() const { return ring_tone_min_ms_ / 1000; }
     int  ringToneMaxSecs() const { return ring_tone_max_ms_ / 1000; }
 
+    // Usage alert: lamp flashes if no activity for this many minutes (0=disabled).
+    void setAlertIdleMinutes(int mins) { alert_idle_ms_ = mins * 60000UL; }
+    int  alertIdleMinutes() const { return alert_idle_ms_ / 60000; }
+    bool isAlertActive() const;
+
+    // Plugin system.
+    bool tryPlugin(const char* number);
+
     PhoneLine&      line()    { return line_; }
     BellDriver&     bell()    { return bell_; }
     AudioPlayer&    player()  { return player_; }
@@ -124,6 +134,18 @@ private:
     unsigned long  ring_tone_min_ms_ = DEFAULT_RING_TONE_MS;
     unsigned long  ring_tone_max_ms_ = DEFAULT_RING_TONE_MS;
     unsigned long  ring_tone_target_ = DEFAULT_RING_TONE_MS;  // randomised per call
+
+    // Usage alert
+    unsigned long  last_activity_ms_  = 0;   // last hook/call activity
+    unsigned long  alert_idle_ms_     = 7200000;  // 2 hours default
+
+    // Plugin sequencer
+    static const int MAX_PLUGIN_STEPS = 10;
+    struct PluginStep { char action; char path[48]; unsigned long ms; };
+    PluginStep     plugin_steps_[MAX_PLUGIN_STEPS];
+    int            plugin_count_     = 0;
+    int            plugin_index_     = 0;
+    unsigned long  plugin_step_time_ = 0;
 
     DigitCallback  digit_cb_  = nullptr;
     NumberCallback number_cb_ = nullptr;

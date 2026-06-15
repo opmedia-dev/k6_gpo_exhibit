@@ -104,6 +104,8 @@ constexpr const char* SD_FILE_PRESS_B  = "/system/press_b.mp3";     // optional 
 constexpr const char* SD_FILE_REPLACE  = "/system/replace_handset.mp3"; // end-of-call reminder
 constexpr const char* SD_FILE_RING_TONE = "/system/ringing_tone.mp3";   // UK ringing tone for outgoing calls
 
+constexpr const char* SD_DIR_PLUGINS   = "/plugins";   // JSON dial sequence scripts
+
 // Default outgoing call ringing tone duration (ms) before "connecting".
 constexpr unsigned long DEFAULT_RING_TONE_MS = 6000;  // 6 seconds = ~2 ring cycles
 

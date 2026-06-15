@@ -2,6 +2,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <esp_task_wdt.h>
+#include <esp_ota_ops.h>
 #include "phone_controller.h"
 #include "web_manager.h"
 #include "logger.h"
@@ -162,11 +163,21 @@ void setup() {
         safe_mode = true;
         Serial.println("*** SAFE MODE — phone logic disabled, web only ***");
         Serial.println("*** Upload new firmware via http://192.168.4.1/ ***");
+
+        // Attempt automatic rollback to previous firmware if available.
+        const esp_partition_t* prev = esp_ota_get_last_invalid_partition();
+        if (prev) {
+            Serial.printf("[app] rolling back to previous firmware on %s\n", prev->label);
+            esp_ota_set_boot_partition(prev);
+            delay(500);
+            ESP.restart();
+        }
+
         // Still need SD for the web file manager.
         SPI.begin();
         SD.begin(PIN_SD_CS);
         logger.begin();
-        logger.systemLog("SAFE MODE entered after %d crashes", boot_crash_count);
+        logger.systemLog("SAFE MODE entered after %d crashes (no rollback available)", boot_crash_count);
         stats.begin();
         web.begin(logger, stats, phone);
         return;
@@ -193,6 +204,10 @@ void setup() {
                     phone.player().sdReady() ? "OK" : "FAIL",
                     phone.coinBox().isInstalled() ? "INSTALLED" : "NONE",
                     phone.autoRingEnabled() ? "AUTO" : "MANUAL");
+
+    // Mark current firmware as valid (A/B rollback support).
+    esp_ota_mark_app_valid_cancel_rollback();
+    Serial.println("[app] firmware marked valid");
 
     // Hardware watchdog: reboot if loop() stops for 15 seconds.
     esp_task_wdt_init(15, true);

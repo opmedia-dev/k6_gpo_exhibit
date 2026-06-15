@@ -7,6 +7,7 @@
 #include <ESPmDNS.h>
 #include <SD.h>
 #include <Update.h>
+#include <esp_ota_ops.h>
 #include <ArduinoJson.h>
 
 static WebServer server(80);
@@ -87,6 +88,8 @@ input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #55
 <span>Min <input type="number" id="rtmin" value="4" min="2" max="15" style="width:50px">s</span>
 <span>Max <input type="number" id="rtmax" value="8" min="2" max="15" style="width:50px">s</span>
 <button onclick="setRingTone()" style="margin:0">Set</button></div>
+<div class="row"><label>Idle alert</label><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px"><button onclick="setAlertIdle()" style="margin:0">Set</button><span style="color:#888;font-size:.8em;margin-left:4px">min (0=off)</span></div>
+<div id="alertbanner" style="display:none;background:#c41e1e;color:#fff;padding:8px 12px;border-radius:4px;margin-top:8px;font-weight:bold">&#9888; No visitor activity detected — check exhibit</div>
 <div class="row"><label>Mode</label><span id="modelbl">—</span></div>
 <div class="row"><label>State</label><span id="statelbl">—</span></div>
 <div class="row"><label>Playing</label><span id="playlbl" style="font-family:monospace;color:#6af">—</span></div>
@@ -128,12 +131,35 @@ input[type=number]{width:70px;background:#333;color:#e0e0e0;border:1px solid #55
 </div>
 
 <div class="card">
+<h2>Audio Recorder</h2>
+<p style="font-size:.85em;color:#aaa;margin-bottom:8px">Record audio from your phone's microphone. Preview before saving to the SD card.</p>
+<div style="margin-top:8px">
+<button onclick="startRec()" id="recbtn" style="background:#c41e1e">Record</button>
+<button onclick="stopRec()" id="stopbtn" style="background:#555" disabled>Stop</button>
+<span id="rectimer" style="margin-left:8px;font-family:monospace;color:#fc6"></span>
+</div>
+<div id="recpreview" style="display:none;margin-top:8px;padding:8px;background:#222;border-radius:4px">
+<audio id="recaudio" controls style="width:100%;margin-bottom:8px"></audio>
+<div class="row">
+<input type="text" id="recname" placeholder="filename" style="width:140px;background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em">.mp3
+<span style="margin-left:8px">Save to: <select id="recdir" style="background:#333;color:#e0e0e0;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:.9em"><option value="/history/">/history/</option><option value="/numbers/">/numbers/</option><option value="/system/">/system/</option></select></span>
+</div>
+<div style="margin-top:8px">
+<button onclick="saveRec()" style="background:#c41e1e">Save</button>
+<button onclick="discardRec()" style="background:#555">Discard</button>
+</div>
+</div>
+<div class="status" id="recstatus"></div>
+</div>
+
+<div class="card">
 <h2>Firmware Update (OTA)</h2>
 <p style="font-size:.85em;color:#aaa;margin-bottom:8px">Upload a compiled .bin file to update the firmware. The device will reboot automatically.</p>
 <input type="file" id="otafile" accept=".bin">
 <button onclick="otaUpload()" id="otabtn">Flash Firmware</button>
 <div id="prog"><div id="progbar"></div></div>
 <div class="status" id="otastatus"></div>
+<div style="margin-top:8px"><button onclick="rollbackFW()" style="background:#555">Rollback to Previous</button></div>
 </div>
 
 <div class="card">
@@ -271,6 +297,10 @@ function setRingTone(){
   let mx=document.getElementById('rtmax').value;
   fetch('/api/ringtone?min='+mn+'&max='+mx,{method:'POST'});
 }
+function setAlertIdle(){
+  let v=document.getElementById('alertidle').value;
+  fetch('/api/alertidle?v='+v,{method:'POST'});
+}
 function setAutoRing(){
   let mn=document.getElementById('armin').value;
   let mx=document.getElementById('armax').value;
@@ -306,6 +336,8 @@ function loadStatus(){
     document.getElementById('belllbl').textContent=d.bell_vol;
     if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
     if(d.rt_min!==undefined){document.getElementById('rtmin').value=d.rt_min;document.getElementById('rtmax').value=d.rt_max;}
+    if(d.alert_idle!==undefined) document.getElementById('alertidle').value=d.alert_idle;
+    document.getElementById('alertbanner').style.display=d.alert_on?'block':'none';
     document.getElementById('armin').value=Math.round(d.ar_min/60000);
     document.getElementById('armax').value=Math.round(d.ar_max/60000);
     document.getElementById('modelbl').innerHTML=d.mode=='AUTO'?'<span class="ok">AUTO</span>':'MANUAL';
@@ -392,6 +424,66 @@ function saveAliases(){
   .then(r=>r.json()).then(d=>{
     document.getElementById('aliasstatus').innerHTML=d.ok?'<span class="ok">Saved</span>':'<span class="err">'+d.error+'</span>';
     loadAliases();
+  });
+}
+let mediaRec=null,recChunks=[],recInt=null,recStart=0,recBlob=null;
+function startRec(){
+  document.getElementById('recpreview').style.display='none';
+  recBlob=null;
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+    recChunks=[];
+    mediaRec=new MediaRecorder(stream,{mimeType:'audio/webm;codecs=opus'});
+    mediaRec.ondataavailable=e=>{if(e.data.size>0)recChunks.push(e.data)};
+    mediaRec.onstop=()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      recBlob=new Blob(recChunks,{type:'audio/webm'});
+      let url=URL.createObjectURL(recBlob);
+      document.getElementById('recaudio').src=url;
+      document.getElementById('recpreview').style.display='block';
+      document.getElementById('recstatus').innerHTML='<span class="ok">Preview your recording. Enter a filename and save, or discard.</span>';
+    };
+    mediaRec.start(100);
+    recStart=Date.now();
+    document.getElementById('recbtn').disabled=true;
+    document.getElementById('stopbtn').disabled=false;
+    document.getElementById('recstatus').innerHTML='<span style="color:#f55">● Recording...</span>';
+    recInt=setInterval(()=>{let s=Math.floor((Date.now()-recStart)/1000);document.getElementById('rectimer').textContent=Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60)},500);
+  }).catch(e=>{document.getElementById('recstatus').innerHTML='<span class="err">Mic access denied</span>'});
+}
+function stopRec(){
+  if(mediaRec&&mediaRec.state!=='inactive')mediaRec.stop();
+  clearInterval(recInt);
+  document.getElementById('recbtn').disabled=false;
+  document.getElementById('stopbtn').disabled=true;
+}
+function saveRec(){
+  if(!recBlob){return;}
+  let name=document.getElementById('recname').value.trim();
+  if(!name){document.getElementById('recstatus').innerHTML='<span class="err">Enter a filename</span>';return;}
+  let dir=document.getElementById('recdir').value;
+  let fd=new FormData();
+  fd.append('file',recBlob,name+'.mp3');
+  document.getElementById('recstatus').innerHTML='<span class="ok">Saving...</span>';
+  fetch('/api/upload?path='+encodeURIComponent(dir),{method:'POST',body:fd})
+  .then(r=>r.json()).then(d=>{
+    document.getElementById('recstatus').innerHTML=d.ok?'<span class="ok">Saved to '+dir+name+'.mp3</span>':'<span class="err">'+d.error+'</span>';
+    document.getElementById('rectimer').textContent='';
+    document.getElementById('recpreview').style.display='none';
+    recBlob=null;
+    loadFiles();
+  });
+}
+function discardRec(){
+  recBlob=null;
+  document.getElementById('recpreview').style.display='none';
+  document.getElementById('recstatus').innerHTML='Recording discarded.';
+  document.getElementById('rectimer').textContent='';
+}
+function rollbackFW(){
+  if(!confirm('Roll back to the previous firmware version? The device will reboot.'))return;
+  fetch('/api/rollback',{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.ok){document.getElementById('otastatus').innerHTML='<span class="ok">Rolling back... rebooting</span>';setTimeout(()=>{location.reload()},8000);}
+    else document.getElementById('otastatus').innerHTML='<span class="err">'+(d.error||'No previous firmware available')+'</span>';
   });
 }
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
@@ -545,6 +637,8 @@ static void handleStatus() {
     json += ",\"ring_max\":"; json += String(s_phone->maxRingCadences());
     json += ",\"rt_min\":"; json += String(s_phone->ringToneMinSecs());
     json += ",\"rt_max\":"; json += String(s_phone->ringToneMaxSecs());
+    json += ",\"alert_idle\":"; json += String(s_phone->alertIdleMinutes());
+    json += ",\"alert_on\":"; json += s_phone->isAlertActive() ? "true" : "false";
     json += ",\"mode\":\"";  json += s_phone->autoRingEnabled() ? "AUTO" : "MANUAL";
     json += "\",\"state\":\""; json += s_phone->stateName();
     json += "\",\"playing\":\"";
@@ -559,6 +653,29 @@ static void handleStatus() {
     }
     json += "}";
     server.send(200, "application/json", json);
+}
+
+static void handleRollback() {
+    const esp_partition_t* prev = esp_ota_get_last_invalid_partition();
+    if (!prev) {
+        // Try the non-running OTA partition as fallback.
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        const esp_partition_t* other = esp_ota_get_next_update_partition(running);
+        if (other && other != running) prev = other;
+    }
+    if (!prev) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"No previous firmware available\"}");
+        return;
+    }
+    esp_err_t err = esp_ota_set_boot_partition(prev);
+    if (err != ESP_OK) {
+        server.send(200, "application/json", "{\"ok\":false,\"error\":\"Rollback failed\"}");
+        return;
+    }
+    if (s_logger) s_logger->systemLog("Firmware rollback to %s via web", prev->label);
+    server.send(200, "application/json", "{\"ok\":true}");
+    delay(500);
+    ESP.restart();
 }
 
 static void handleOTA() {
@@ -668,6 +785,17 @@ static void handleRingNow() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
     s_phone->ring();
     if (s_logger) s_logger->systemLog("Ring triggered via web");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleAlertIdle() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < 0) v = 0;
+    if (v > 1440) v = 1440;
+    s_phone->setAlertIdleMinutes(v);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Alert idle set to %d min via web", v);
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -789,6 +917,7 @@ static void loadSettings() {
     if (!doc["ring_max"].isNull()) s_phone->setMaxRingCadences(doc["ring_max"].as<int>());
     if (!doc["rt_min"].isNull() && !doc["rt_max"].isNull())
         s_phone->setRingToneRange(doc["rt_min"].as<int>(), doc["rt_max"].as<int>());
+    if (!doc["alert_idle"].isNull()) s_phone->setAlertIdleMinutes(doc["alert_idle"].as<int>());
     Serial.println("[web] settings loaded");
 }
 
@@ -807,6 +936,7 @@ static void saveSettings() {
     doc["ring_max"] = s_phone->maxRingCadences();
     doc["rt_min"] = s_phone->ringToneMinSecs();
     doc["rt_max"] = s_phone->ringToneMaxSecs();
+    doc["alert_idle"] = s_phone->alertIdleMinutes();
     serializeJson(doc, f);
     f.close();
 }
@@ -934,6 +1064,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/mkdir",       HTTP_POST, handleMkdir);
     server.on("/api/status",      HTTP_GET,  handleStatus);
     server.on("/api/ota",         HTTP_POST, handleOTA, handleOTAUpload);
+    server.on("/api/rollback",    HTTP_POST, handleRollback);
     server.on("/api/logs/system", HTTP_GET,  handleLogSystem);
     server.on("/api/logs/calls",  HTTP_GET,  handleLogCalls);
     server.on("/api/logs/clear",  HTTP_POST, handleLogClear);
@@ -943,6 +1074,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/ring",        HTTP_POST, handleRingNow);
     server.on("/api/ringcount",  HTTP_POST, handleRingCount);
     server.on("/api/ringtone",   HTTP_POST, handleRingTone);
+    server.on("/api/alertidle",  HTTP_POST, handleAlertIdle);
     server.on("/api/mode",        HTTP_POST, handleToggleMode);
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
