@@ -148,6 +148,11 @@ static void handleSerial() {
 void setup() {
     Serial.begin(115200);
     delay(500);
+
+    // Start boot indication immediately — fast lamp flash.
+    pinMode(PIN_AUTO_LAMP, OUTPUT);
+    digitalWrite(PIN_AUTO_LAMP, HIGH);
+
     Serial.println();
     Serial.println("========================================");
     Serial.println("  K6 GPO Exhibit — ESP32 Phone Interface");
@@ -183,6 +188,11 @@ void setup() {
         return;
     }
 
+    // Blink lamp during init (100ms on/off = fast flash).
+    digitalWrite(PIN_AUTO_LAMP, LOW);
+    delay(100);
+    digitalWrite(PIN_AUTO_LAMP, HIGH);
+
     phone.onDigit(onDigit);
     phone.onNumber(onNumber);
     phone.onHook(onHook);
@@ -208,6 +218,11 @@ void setup() {
     // Mark current firmware as valid (A/B rollback support).
     esp_ota_mark_app_valid_cancel_rollback();
     Serial.println("[app] firmware marked valid");
+
+    // Boot complete — single bell strike and steady lamp.
+    phone.bell().strike(150);
+    digitalWrite(PIN_AUTO_LAMP, phone.autoRingEnabled() ? HIGH : LOW);
+    Serial.println("[app] boot complete — ready");
 
     // Hardware watchdog: reboot if loop() stops for 15 seconds.
     esp_task_wdt_init(15, true);

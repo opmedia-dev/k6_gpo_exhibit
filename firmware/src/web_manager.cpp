@@ -897,9 +897,14 @@ static void handlePreview() {
 // --- Settings persistence ---------------------------------------------------
 
 static const char* SETTINGS_FILE = "/system/settings.json";
+static const char* SETTINGS_TMP  = "/system/settings.tmp";
 
 static void loadSettings() {
     if (!s_phone) return;
+    // Recover from interrupted save.
+    if (!SD.exists(SETTINGS_FILE) && SD.exists(SETTINGS_TMP)) {
+        SD.rename(SETTINGS_TMP, SETTINGS_FILE);
+    }
     File f = SD.open(SETTINGS_FILE, FILE_READ);
     if (!f) return;
 
@@ -925,7 +930,8 @@ static void saveSettings() {
     if (!s_phone) return;
     if (!SD.exists("/system")) SD.mkdir("/system");
 
-    File f = SD.open(SETTINGS_FILE, FILE_WRITE);
+    // Write to temp file first, then rename for crash-safe update.
+    File f = SD.open(SETTINGS_TMP, FILE_WRITE);
     if (!f) return;
 
     JsonDocument doc;
@@ -938,7 +944,11 @@ static void saveSettings() {
     doc["rt_max"] = s_phone->ringToneMaxSecs();
     doc["alert_idle"] = s_phone->alertIdleMinutes();
     serializeJson(doc, f);
+    f.flush();
     f.close();
+
+    SD.remove(SETTINGS_FILE);
+    SD.rename(SETTINGS_TMP, SETTINGS_FILE);
 }
 
 // --- Reboot handler ---------------------------------------------------------

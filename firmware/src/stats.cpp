@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 
 static const char* STATS_FILE = "/logs/stats.json";
+static const char* STATS_TMP  = "/logs/stats.tmp";
 static const unsigned long SAVE_INTERVAL_MS = 60000;  // save every 60s if dirty
 
 void StatsTracker::begin() {
@@ -69,6 +70,7 @@ void StatsTracker::callEnded() {
             stats_.longest_call_seconds = duration;
         }
         dirty_ = true;
+        save();  // flush immediately on call end for power-off safety
     }
 }
 
@@ -119,7 +121,8 @@ void StatsTracker::save() {
 
     if (!SD.exists("/logs")) SD.mkdir("/logs");
 
-    File f = SD.open(STATS_FILE, FILE_WRITE);
+    // Write to temp file first, then rename for crash-safe update.
+    File f = SD.open(STATS_TMP, FILE_WRITE);
     if (!f) return;
 
     JsonDocument doc;
@@ -142,7 +145,11 @@ void StatsTracker::save() {
     }
 
     serializeJson(doc, f);
+    f.flush();
     f.close();
+
+    SD.remove(STATS_FILE);
+    SD.rename(STATS_TMP, STATS_FILE);
 
     last_save_ms_ = millis();
     dirty_ = false;
@@ -150,6 +157,10 @@ void StatsTracker::save() {
 }
 
 void StatsTracker::load() {
+    // If previous save was interrupted, recover from temp file.
+    if (!SD.exists(STATS_FILE) && SD.exists(STATS_TMP)) {
+        SD.rename(STATS_TMP, STATS_FILE);
+    }
     File f = SD.open(STATS_FILE, FILE_READ);
     if (!f) return;
 

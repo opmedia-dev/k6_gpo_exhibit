@@ -24,6 +24,9 @@ public:
     void startRinging();
     void stopRinging();
 
+    // Single brief bell strike (boot-ready signal).
+    void strike(unsigned long durationMs = 150);
+
     // Bell volume: 0 (silent) to 255 (full power). Controls H-bridge PWM duty.
     void setBellVolume(uint8_t vol);
     uint8_t bellVolume() const { return bell_volume_; }

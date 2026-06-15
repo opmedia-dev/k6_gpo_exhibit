@@ -65,6 +65,21 @@ void BellDriver::update() {
     }
 }
 
+void BellDriver::strike(unsigned long durationMs) {
+    unsigned long start = millis();
+    bool ph = false;
+    unsigned long halfPeriod = 500 / RING_FREQ_HZ;
+    unsigned long lastToggle = start;
+    while (millis() - start < durationMs) {
+        if (millis() - lastToggle >= halfPeriod) {
+            lastToggle = millis();
+            ph = !ph;
+            setBridgeOutput(ph);
+        }
+    }
+    setBridgeOff();
+}
+
 void BellDriver::setBridgeOutput(bool phaseA) {
     ledcWrite(LEDC_CHANNEL, bell_volume_);
     if (phaseA) {

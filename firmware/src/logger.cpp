@@ -89,6 +89,7 @@ void Logger::appendLog(const char* path, const char* line) {
     if (!f) return;
     String ts = timestamp();
     f.printf("[%s] %s\n", ts.c_str(), line);
+    f.flush();
     f.close();
 }
 
