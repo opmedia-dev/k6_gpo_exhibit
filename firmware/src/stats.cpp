@@ -5,11 +5,14 @@
 
 static const char* STATS_FILE = "/logs/stats.json";
 static const char* STATS_TMP  = "/logs/stats.tmp";
+static const char* DISC_FILE  = "/logs/discovery.json";
+static const char* DISC_TMP   = "/logs/discovery.tmp";
 static const unsigned long SAVE_INTERVAL_MS = 60000;  // save every 60s if dirty
 
 void StatsTracker::begin() {
     boot_time_ms_ = millis();
     load();
+    loadDiscovery();
 }
 
 void StatsTracker::update() {
@@ -41,6 +44,10 @@ void StatsTracker::recordNotRecognised(const char* number) {
     stats_.total_not_recognised++;
     incrementNumber(number);
     dirty_ = true;
+}
+
+void StatsTracker::recordDiscovery(const char* number) {
+    incrementDiscovery(number);
 }
 
 void StatsTracker::recordCoinCollected() {
@@ -195,4 +202,97 @@ void StatsTracker::load() {
 
     Serial.printf("[stats] loaded: %u incoming, %u outgoing, %u answered\n",
                   stats_.total_incoming, stats_.total_outgoing, stats_.total_answered);
+}
+
+// --- Discovery log persistence -----------------------------------------------
+
+void StatsTracker::incrementDiscovery(const char* number) {
+    for (int i = 0; i < disc_count_; i++) {
+        if (strcmp(discovery_[i].number, number) == 0) {
+            discovery_[i].count++;
+            disc_dirty_ = true;
+            saveDiscovery();
+            return;
+        }
+    }
+    if (disc_count_ < MAX_DISCOVERY) {
+        strncpy(discovery_[disc_count_].number, number, 11);
+        discovery_[disc_count_].number[11] = '\0';
+        discovery_[disc_count_].count = 1;
+        disc_count_++;
+        disc_dirty_ = true;
+        saveDiscovery();
+    }
+}
+
+void StatsTracker::clearDiscovery() {
+    disc_count_ = 0;
+    memset(discovery_, 0, sizeof(discovery_));
+    SD.remove(DISC_FILE);
+    SD.remove(DISC_TMP);
+    Serial.println("[stats] discovery log cleared");
+}
+
+void StatsTracker::removeDiscovery(const char* number) {
+    for (int i = 0; i < disc_count_; i++) {
+        if (strcmp(discovery_[i].number, number) == 0) {
+            for (int j = i; j < disc_count_ - 1; j++) {
+                discovery_[j] = discovery_[j + 1];
+            }
+            disc_count_--;
+            saveDiscovery();
+            return;
+        }
+    }
+}
+
+void StatsTracker::saveDiscovery() {
+    if (!SD.exists("/logs")) SD.mkdir("/logs");
+
+    File f = SD.open(DISC_TMP, FILE_WRITE);
+    if (!f) return;
+
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (int i = 0; i < disc_count_; i++) {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["n"] = discovery_[i].number;
+        obj["c"] = discovery_[i].count;
+    }
+
+    serializeJson(doc, f);
+    f.flush();
+    f.close();
+
+    SD.remove(DISC_FILE);
+    SD.rename(DISC_TMP, DISC_FILE);
+    disc_dirty_ = false;
+    Serial.println("[stats] discovery saved");
+}
+
+void StatsTracker::loadDiscovery() {
+    if (!SD.exists(DISC_FILE) && SD.exists(DISC_TMP)) {
+        SD.rename(DISC_TMP, DISC_FILE);
+    }
+    File f = SD.open(DISC_FILE, FILE_READ);
+    if (!f) return;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, f);
+    f.close();
+    if (err) {
+        Serial.printf("[stats] discovery parse error: %s\n", err.c_str());
+        return;
+    }
+
+    JsonArray arr = doc.as<JsonArray>();
+    disc_count_ = 0;
+    for (JsonObject obj : arr) {
+        if (disc_count_ >= MAX_DISCOVERY) break;
+        strncpy(discovery_[disc_count_].number, obj["n"] | "", 11);
+        discovery_[disc_count_].number[11] = '\0';
+        discovery_[disc_count_].count = obj["c"] | 0;
+        disc_count_++;
+    }
+    Serial.printf("[stats] discovery loaded: %d entries\n", disc_count_);
 }

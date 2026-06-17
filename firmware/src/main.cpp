@@ -79,7 +79,13 @@ static void onState(PhoneState state) {
     case PhoneState::PLAYING_NOT_REC:
         logger.callLog("OUTGOING not_recognised number=%s", phone.dialledNumber());
         stats.recordNotRecognised(phone.dialledNumber());
+        stats.recordDiscovery(phone.dialledNumber());
         stats.callStarted();
+        break;
+    case PhoneState::AWAIT_BTN_B:
+        logger.callLog("OUTGOING not_recognised (coinbox) number=%s", phone.dialledNumber());
+        stats.recordNotRecognised(phone.dialledNumber());
+        stats.recordDiscovery(phone.dialledNumber());
         break;
     case PhoneState::IDLE:
         logger.callLog("IDLE");

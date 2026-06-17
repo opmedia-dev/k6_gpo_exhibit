@@ -207,6 +207,13 @@ input[type=text]{width:140px}
 </div>
 
 <div class="card">
+<h2><span class="section-icon">&#128270;</span> Numbers Tried</h2>
+<p class="hint">Numbers that visitors tried to dial but weren't in the directory. Use this to see what content visitors expect and decide what to add next.</p>
+<div id="discbox">Loading...</div>
+<div style="margin-top:8px"><button onclick="clearDiscovery()" class="btn-danger">Clear All</button></div>
+</div>
+
+<div class="card">
 <h2><span class="section-icon">&#128193;</span> Audio Files</h2>
 <p class="hint">Browse, upload, and manage the audio files stored on the SD card. Tap a folder name to open it.</p>
 <div class="path" id="pathbar">/</div>
@@ -502,6 +509,24 @@ function loadStats(){
     document.getElementById('statsbox').innerHTML=h;
   });
 }
+function loadDiscovery(){
+  fetch('/api/discovery').then(r=>r.json()).then(d=>{
+    if(!d||!d.length){document.getElementById('discbox').innerHTML='<span style="color:var(--fg4)">No unrecognised numbers yet. When visitors dial numbers that aren\'t in the directory, they\'ll appear here.</span>';return;}
+    let h='<table style="width:100%;border-collapse:collapse"><thead><tr><td style="color:var(--fg3);padding:4px 8px">Number Dialled</td><td style="color:var(--fg3);padding:4px 8px">Times Tried</td><td></td></tr></thead><tbody>';
+    d.forEach(e=>{
+      h+='<tr><td style="padding:4px 8px"><span class="topnum">'+e.number+'</span></td><td style="padding:4px 8px">'+e.count+'</td><td style="padding:4px 8px"><span class="del" onclick="removeDiscovery(\''+e.number+'\')">remove</span></td></tr>';
+    });
+    h+='</tbody></table>';
+    document.getElementById('discbox').innerHTML=h;
+  });
+}
+function clearDiscovery(){
+  if(!confirm('Clear the numbers tried log?'))return;
+  fetch('/api/discovery/clear',{method:'POST'}).then(()=>loadDiscovery());
+}
+function removeDiscovery(num){
+  fetch('/api/discovery/remove?number='+encodeURIComponent(num),{method:'POST'}).then(()=>loadDiscovery());
+}
 let curLog='system';
 function loadLog(which){
   curLog=which;
@@ -612,9 +637,10 @@ function rollbackFW(){
   });
 }
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
-loadFiles();loadStatus();loadStats();loadAliases();
+loadFiles();loadStatus();loadStats();loadAliases();loadDiscovery();
 setInterval(loadStatus,5000);
 setInterval(loadStats,30000);
+setInterval(loadDiscovery,30000);
 </script>
 </body>
 </html>
@@ -1000,6 +1026,46 @@ static void handleStatsReset() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// --- Discovery log API handlers ---------------------------------------------
+
+static void handleDiscovery() {
+    if (!s_stats) { server.send(200, "application/json", "[]"); return; }
+
+    int count = s_stats->discoveryCount();
+    const StatsTracker::NumberEntry* entries = s_stats->discoveryEntries();
+
+    String json = "[";
+    for (int i = 0; i < count; i++) {
+        if (i > 0) json += ",";
+        json += "{\"number\":\"";
+        json += entries[i].number;
+        json += "\",\"count\":";
+        json += String(entries[i].count);
+        json += "}";
+    }
+    json += "]";
+    server.send(200, "application/json", json);
+}
+
+static void handleDiscoveryClear() {
+    if (s_stats) {
+        s_stats->clearDiscovery();
+        if (s_logger) s_logger->systemLog("Discovery log cleared via web");
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleDiscoveryRemove() {
+    if (s_stats) {
+        String number = server.arg("number");
+        if (number.length() > 0) {
+            s_stats->removeDiscovery(number.c_str());
+            if (s_logger) s_logger->systemLog("Discovery entry removed: %s", number.c_str());
+        }
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 // --- Audio preview handler --------------------------------------------------
 
 static void handlePreview() {
@@ -1213,6 +1279,9 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/mode",        HTTP_POST, handleToggleMode);
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
+    server.on("/api/discovery",       HTTP_GET,  handleDiscovery);
+    server.on("/api/discovery/clear",  HTTP_POST, handleDiscoveryClear);
+    server.on("/api/discovery/remove", HTTP_POST, handleDiscoveryRemove);
     server.on("/api/aliases",     HTTP_GET,  handleGetAliases);
     server.on("/api/aliases",     HTTP_POST, handleSaveAliases);
     server.on("/api/preview",     HTTP_GET,  handlePreview);
