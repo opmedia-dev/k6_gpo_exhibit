@@ -413,11 +413,12 @@ interference and make assembly/debugging easier:
     ├─────────────────────────────────────────────────────────────┤
     │  ZONE B: ESP32 + DEV ACCESS                                 │
     │  ┌──────────────────────────────────────────────┐           │
-    │  │  ESP32 DevKit V1 (2×19 pin headers)          │           │
-    │  │  ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○     │           │
-    │  │  █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █     │  ← ESP32  │
-    │  │  █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █ █     │  module   │
-    │  │  ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○     │           │
+    │  │  ESP32 DevKit V1 (30-pin, 2×15 headers)      │           │
+    │  │  ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○              │           │
+    │  │  █ █ █ █ █ █ █ █ █ █ █ █ █ █ █              │  ← ESP32  │
+    │  │  █ █ █ █ █ █ █ █ █ █ █ █ █ █ █              │  module   │
+    │  │  ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○              │           │
+    │  │           USB port → board edge               │           │
     │  └──────────────────────────────────────────────┘           │
     │  ○ = dev access hole (1 per pin, adjacent to each ESP32 pin)│
     ├─────────────────────────────────────────────────────────────┤
@@ -515,9 +516,14 @@ firmware and available via the development access holes.
 | 3V3 | — | +3.3 V out | Power | For optocoupler + pull-ups |
 | GND | — | Ground | Power | Common ground bus |
 | EN | — | Enable (reset) | — | Leave unconnected (has on-board pull-up) |
-| D0 | 0 | DEV | — | Boot button on devkit (avoid for outputs) |
 | D12 | 12 | DEV | — | Boot-sensitive (avoid pull-high at boot) |
 | D15 | 15 | DEV | — | Outputs PWM at boot (may cause brief pulse) |
 | D21 | 21 | DEV | — | Available |
 | TX0 | 1 | Serial TX | Output | USB serial (debug) |
 | RX0 | 3 | Serial RX | Input | USB serial (debug) |
+
+> **Note:** This project uses the **30-pin** ESP32 DevKit V1 (2×15 pin
+> headers). GPIO 0 is on the module but not broken out as a header pin —
+> it is accessible via the on-board BOOT button. All GPIOs used by the
+> firmware are available on the 30-pin version. Position the ESP32 with
+> the **USB port facing the board edge** for easy cable access.

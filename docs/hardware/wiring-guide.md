@@ -22,7 +22,7 @@
 
 | # | Part | Notes |
 |---|------|-------|
-| 1 | ESP32 DevKit V1 | Main controller |
+| 1 | ESP32 DevKit V1 (30-pin) | Main controller, USB port faces board edge |
 | 2 | 12 V DC adapter (≥ 1 A) | Barrel jack, logic power |
 | 3 | 48 V DC adapter (≥ 1 A) | Barrel jack, bell power |
 | 4 | LM2596 buck converter module | Adjustable, set to 5 V output |
@@ -208,12 +208,15 @@ nearest GND pin, as close to the IC as possible.
 ## Step 7: Wire the SD Card Module
 
 ```
-    GPIO 5  ──── SD module CS
-    GPIO 23 ──── SD module MOSI (DI)
-    GPIO 19 ──── SD module MISO (DO)
-    GPIO 18 ──── SD module SCK (CLK)
-    +3.3 V  ──── SD module VCC
-    GND     ──── SD module GND
+    SD module pin order (left to right, facing pins):
+    CS  SCK  MOSI  MISO  VCC  GND
+
+    GPIO 5  ──── CS
+    GPIO 18 ──── SCK (CLK)
+    GPIO 23 ──── MOSI (DI)
+    GPIO 19 ──── MISO (DO)
+    +3.3 V  ──── VCC
+    GND     ──── GND
 ```
 
 > Most SD card modules have an on-board 3.3 V regulator, so you can

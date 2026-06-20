@@ -65,7 +65,7 @@
 | 1 | 3-way screw terminal block | Phone cord connection (Line A, Line B, Bell) |
 | 2 | Barrel jack sockets (2.1 mm) | 12 V and 48 V power inputs |
 | 1 | 6-pin header (2.54 mm) | A+B coin box daughter board connector |
-| 2 | 19-pin female headers | ESP32 DevKit sockets (allows removal) |
+| 2 | 15-pin female headers | ESP32 DevKit V1 (30-pin) sockets (allows removal) |
 | 1 | Project box / enclosure | Houses all electronics + buttons |
 | 1 | Multi-core cable (≥ 6 conductors) | Extended lead from phone to enclosure |
 | 1 | Custom carrier PCB | 100 × 80 mm, 2-layer |
@@ -135,5 +135,5 @@ Plugs into the 6-pin header on the carrier board.
 | — | Panel lamp + driver components | Auto-mode status indicator |
 | — | 2nd barrel jack socket | Separate 48 V power input |
 | — | 6-pin header | Standardised daughter board connector |
-| — | 2× 19-pin female headers | ESP32 socket (allows removal for dev) |
+| — | 2× 15-pin female headers | ESP32 30-pin DevKit V1 socket (allows removal for dev) |
 | — | 100 nF decoupling cap (C2) | Noise filtering at ESP32 VIN |
