@@ -78,12 +78,14 @@ def main():
         line(board, x1, y1, x2, y2, pcbnew.Edge_Cuts, 0.1)
 
     # ── Nets ──
-    for i, n in enumerate(["", "GND", "+5V", "+3V3", "+12V", "+48V",
+    net_names = ["", "GND", "+5V", "+3V3", "+12V", "+48V",
         "GPIO4", "GPIO16", "GPIO17", "GPIO26", "GPIO25", "GPIO22",
         "GPIO5", "GPIO23", "GPIO19", "GPIO18",
         "GPIO32", "GPIO33", "GPIO27", "GPIO14",
         "GPIO36", "GPIO39", "GPIO35", "GPIO13", "GPIO34", "GPIO2",
-        "LINE_A", "LINE_B", "BELL", "OPTO_E"]):
+        "LINE_A", "LINE_B", "BELL", "OPTO_A", "DAC_LP", "DAC_LN",
+        "GPIO12", "GPIO15", "GPIO21"]
+    for i, n in enumerate(net_names):
         board.Add(pcbnew.NETINFO_ITEM(board, n, i))
 
     S = pcbnew.F_SilkS
@@ -296,6 +298,222 @@ def main():
         o.Append(mm(OX+BOARD_W-1), mm(OY+BOARD_H-1))
         o.Append(mm(OX+1), mm(OY+BOARD_H-1))
         board.Add(zone)
+
+    # ═══════════════════════════════════════════════════════════
+    # NET ASSIGNMENTS — complete ratsnest/netlist
+    # Every component pad gets its correct net so the ratsnest
+    # shows all connections.  GND pads connect to the B_Cu pour
+    # automatically through their plated through-holes.
+    # ═══════════════════════════════════════════════════════════
+
+    def set_pad_net(ref, pad_number, net_name):
+        """Assign a net to a specific pad on a footprint."""
+        net = board.FindNet(net_name)
+        if not net:
+            return
+        for fp in board.GetFootprints():
+            if fp.GetReference() == ref:
+                for pad in fp.Pads():
+                    if pad.GetName() == str(pad_number):
+                        pad.SetNet(net)
+                        return
+
+    # ── J1 (12V barrel jack) ──
+    # pad 1 = centre pin (+12V), pad 2 = sleeve (GND)
+    set_pad_net("J1", 1, "+12V")
+    set_pad_net("J1", 2, "GND")
+
+    # ── J2 (48V barrel jack) ──
+    set_pad_net("J2", 1, "+48V")
+    set_pad_net("J2", 2, "GND")
+
+    # ── U_BUCK (LM2596 4-pin header: IN+ IN- OUT+ OUT-) ──
+    set_pad_net("U_BUCK", 1, "+12V")   # IN+
+    set_pad_net("U_BUCK", 2, "GND")    # IN-
+    set_pad_net("U_BUCK", 3, "+5V")    # OUT+
+    set_pad_net("U_BUCK", 4, "GND")    # OUT-
+
+    # ── ESP32 Left Socket (bottom=pin1 to top=pin15) ──
+    # Pin order: VIN, GND, D13, D12, D14, D27, D26, D25,
+    #            D33, D32, D35, D34, VN(39), VP(36), EN
+    esp_l_nets = {
+        1: "+5V",      # VIN
+        2: "GND",
+        3: "GPIO13",
+        4: "GPIO12",
+        5: "GPIO14",
+        6: "GPIO27",
+        7: "GPIO26",
+        8: "GPIO25",
+        9: "GPIO33",
+        10: "GPIO32",
+        11: "GPIO35",
+        12: "GPIO34",
+        13: "GPIO39",   # VN
+        14: "GPIO36",   # VP
+        # 15: EN — no net
+    }
+    for p, n in esp_l_nets.items():
+        set_pad_net("J_ESP_L", p, n)
+        set_pad_net("J_DEV_L", p, n)   # dev holes mirror ESP32
+
+    # ── ESP32 Right Socket (bottom=pin1 to top=pin15) ──
+    # Pin order: 3V3, GND, D15, D2, D4, RX2(16), TX2(17), D5,
+    #            D18, D19, D21, RX0, TX0, D22, D23
+    esp_r_nets = {
+        1: "+3V3",
+        2: "GND",
+        3: "GPIO15",
+        4: "GPIO2",
+        5: "GPIO4",
+        6: "GPIO16",   # RX2
+        7: "GPIO17",   # TX2
+        8: "GPIO5",
+        9: "GPIO18",
+        10: "GPIO19",
+        11: "GPIO21",
+        # 12: RX0 — no net (serial debug)
+        # 13: TX0 — no net (serial debug)
+        14: "GPIO22",
+        15: "GPIO23",
+    }
+    for p, n in esp_r_nets.items():
+        set_pad_net("J_ESP_R", p, n)
+        set_pad_net("J_DEV_R", p, n)
+
+    # ── U1 (PC817 optocoupler DIP-4) ──
+    # Pin 1=Anode (from R2), Pin 2=Cathode (to Line B),
+    # Pin 3=Emitter (GPIO34+R3), Pin 4=Collector (+3.3V)
+    set_pad_net("U1", 1, "OPTO_A")
+    set_pad_net("U1", 2, "LINE_B")
+    set_pad_net("U1", 3, "GPIO34")
+    set_pad_net("U1", 4, "+3V3")
+
+    # ── R1 (470Ω) ──  pad 1 = +12V, pad 2 = LINE_A
+    set_pad_net("R1", 1, "+12V")
+    set_pad_net("R1", 2, "LINE_A")
+
+    # ── R2 (220Ω) ──  pad 1 = LINE_A, pad 2 = OPTO_A
+    set_pad_net("R2", 1, "LINE_A")
+    set_pad_net("R2", 2, "OPTO_A")
+
+    # ── R3 (10kΩ) ──  pad 1 = GPIO34 (opto emitter), pad 2 = GND
+    set_pad_net("R3", 1, "GPIO34")
+    set_pad_net("R3", 2, "GND")
+
+    # ── U_DAC (MAX98357A 7-pin header) ──
+    # Pin order: VIN, GND, SD, GAIN, DIN, BCLK, LRC
+    set_pad_net("U_DAC", 1, "+5V")     # VIN
+    set_pad_net("U_DAC", 2, "GND")
+    # pin 3 (SD) — leave unconnected (floats high = always on)
+    # pin 4 (GAIN) — leave unconnected (default 9dB)
+    set_pad_net("U_DAC", 5, "GPIO22")  # DIN
+    set_pad_net("U_DAC", 6, "GPIO26")  # BCLK
+    set_pad_net("U_DAC", 7, "GPIO25")  # LRC
+
+    # ── J_SPK (speaker screw terminal 2-pin) ──
+    # Connects DAC speaker output to transformer primary
+    set_pad_net("J_SPK", 1, "DAC_LP")  # L+
+    set_pad_net("J_SPK", 2, "DAC_LN")  # L-
+
+    # ── T1 (audio transformer EI-14, 2×2 header) ──
+    # Pad 1=Primary1(L+), Pad 2=Secondary1(LINE_A),
+    # Pad 3=Primary2(L-), Pad 4=Secondary2(LINE_B)
+    set_pad_net("T1", 1, "DAC_LP")
+    set_pad_net("T1", 2, "LINE_A")
+    set_pad_net("T1", 3, "DAC_LN")
+    set_pad_net("T1", 4, "LINE_B")
+
+    # ── U_SD (SD card 6-pin header: CS SCK MOSI MISO VCC GND) ──
+    set_pad_net("U_SD", 1, "GPIO5")    # CS
+    set_pad_net("U_SD", 2, "GPIO18")   # SCK
+    set_pad_net("U_SD", 3, "GPIO23")   # MOSI
+    set_pad_net("U_SD", 4, "GPIO19")   # MISO
+    set_pad_net("U_SD", 5, "+3V3")     # VCC
+    set_pad_net("U_SD", 6, "GND")
+
+    # ── U2 (L293D H-bridge DIP-16) ──
+    set_pad_net("U2", 1, "GPIO4")      # EN1,2
+    set_pad_net("U2", 2, "GPIO16")     # IN1
+    set_pad_net("U2", 3, "BELL")       # OUT1 → Terminal 3 (Bell)
+    set_pad_net("U2", 4, "GND")
+    set_pad_net("U2", 5, "GND")
+    set_pad_net("U2", 6, "LINE_B")     # OUT2 → Terminal 2 (Line B)
+    set_pad_net("U2", 7, "GPIO17")     # IN2
+    set_pad_net("U2", 8, "+48V")       # VS (motor supply)
+    set_pad_net("U2", 9, "GND")
+    set_pad_net("U2", 12, "GND")
+    set_pad_net("U2", 13, "GND")
+    set_pad_net("U2", 16, "+5V")       # VSS (logic supply)
+
+    # ── C1 (100nF decoupling near L293D) ──
+    set_pad_net("C1", 1, "+5V")
+    set_pad_net("C1", 2, "GND")
+
+    # ── C2 (100nF decoupling near ESP32 VIN) ──
+    set_pad_net("C2", 1, "+5V")
+    set_pad_net("C2", 2, "GND")
+
+    # ── J_PHONE (3-way phone terminal) ──
+    set_pad_net("J_PHONE", 1, "LINE_A")  # Terminal 1 (Red / Line A)
+    set_pad_net("J_PHONE", 2, "LINE_B")  # Terminal 2 (White / Line B)
+    set_pad_net("J_PHONE", 3, "BELL")    # Terminal 3 (Blue / Bell)
+
+    # ── SW1-4 (buttons: pin 1 = GPIO, pin 2 = GND) ──
+    set_pad_net("SW1", 1, "GPIO32"); set_pad_net("SW1", 2, "GND")
+    set_pad_net("SW2", 1, "GPIO33"); set_pad_net("SW2", 2, "GND")
+    set_pad_net("SW3", 1, "GPIO27"); set_pad_net("SW3", 2, "GND")
+    set_pad_net("SW4", 1, "GPIO14"); set_pad_net("SW4", 2, "GND")
+
+    # ── J_LAMP (panel lamp 2-pin: GPIO13 + GND) ──
+    set_pad_net("J_LAMP", 1, "GPIO13")
+    set_pad_net("J_LAMP", 2, "GND")
+
+    # ── R4/R5/R6 (10kΩ pull-ups: pad 1 = +3V3, pad 2 = GPIO) ──
+    set_pad_net("R4", 1, "+3V3");  set_pad_net("R4", 2, "GPIO36")
+    set_pad_net("R5", 1, "+3V3");  set_pad_net("R5", 2, "GPIO39")
+    set_pad_net("R6", 1, "+3V3");  set_pad_net("R6", 2, "GPIO35")
+
+    # ── J_COIN (daughter board 6-pin header) ──
+    set_pad_net("J_COIN", 1, "GPIO36")   # COIN_SENSE
+    set_pad_net("J_COIN", 2, "GPIO39")   # BTN_A
+    set_pad_net("J_COIN", 3, "GPIO35")   # BTN_B
+    set_pad_net("J_COIN", 4, "+3V3")     # Power
+    set_pad_net("J_COIN", 5, "GND")
+    set_pad_net("J_COIN", 6, "+5V")      # Optional 5V
+
+    # ═══════════════════════════════════════════════════════════
+    # GROUND VIAS — stitching vias connect F_Cu to B_Cu pour
+    # Placed near component clusters for solid ground reference
+    # ═══════════════════════════════════════════════════════════
+    gnd = board.FindNet("GND")
+    if gnd:
+        via_positions = [
+            # Zone A power area
+            (OX+20, OY+13), (OX+50, OY+13), (OX+80, OY+13),
+            # ESP32 area — between sockets and dev holes
+            (esp_cx, OY+20), (esp_cx, OY+30),
+            (esp_cx, OY+40), (esp_cx, OY+50),
+            # Left peripherals
+            (OX+5, OY+25), (OX+5, OY+40), (OX+5, OY+50),
+            # Right peripherals (near L293D GND pins)
+            (OX+95, OY+30), (OX+95, OY+40),
+            # Zone E connectors
+            (OX+20, OY+70), (OX+40, OY+70), (OX+60, OY+70),
+            (OX+80, OY+70), (OX+95, OY+70),
+            # Board edges / corners for pour connectivity
+            (OX+10, OY+5), (OX+90, OY+5),
+            (OX+10, OY+75), (OX+90, OY+75),
+        ]
+        for vx, vy in via_positions:
+            v = pcbnew.PCB_VIA(board)
+            v.SetPosition(pcbnew.wxPointMM(vx, vy))
+            v.SetWidth(mm(0.8))
+            v.SetDrill(mm(0.4))
+            v.SetNet(gnd)
+            v.SetViaType(pcbnew.VIATYPE_THROUGH)
+            v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+            board.Add(v)
 
     # ═══════════════════════════════════════════════════════════
     # SAVE
