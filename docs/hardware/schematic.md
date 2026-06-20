@@ -349,6 +349,55 @@ a lower impedance (~1 kΩ), overriding the pull-ups cleanly.
 
 ---
 
+## 9. Protection Diodes
+
+The LINE_B net is shared between the L293D output (48 V during ringing),
+the PC817 cathode, and the transformer secondary. Without protection,
+the ring voltage damages the optocoupler and can back-feed into the DAC.
+
+### D1 — PC817 reverse voltage clamp
+
+```
+    PC817 pin 1 (Anode)  ──── OPTO_A net
+                               │
+    PC817 pin 2 (Cathode) ── LINE_B net
+                               │
+                          ┌────┴────┐
+                          │  D1     │  1N4007
+                          │ Anode   │──── LINE_B
+                          │ Cathode │──── OPTO_A
+                          └─────────┘
+```
+
+D1 is wired anti-parallel to the PC817 LED. When LINE_B rises above
+OPTO_A (during ringing), D1 conducts and clamps the reverse voltage
+across the LED to ~0.7 V instead of the destructive 36 V.
+
+### D2–D5 — DAC overvoltage clamps
+
+```
+    +5V ──────────┬──────────────┐
+                  │              │
+              D2 cathode    D4 cathode
+              D2 anode      D4 anode
+                  │              │
+              DAC_LP          DAC_LN
+              (J_SPK pin 1)   (J_SPK pin 2)
+                  │              │
+              D3 cathode    D5 cathode
+              D3 anode      D4 anode
+                  │              │
+    GND ──────────┴──────────────┘
+```
+
+These four diodes clamp the transformer primary voltage to between
+−0.7 V and +5.7 V. During normal audio playback the DAC output stays
+within 0–5 V, so the diodes do not conduct. During ringing, any
+coupled voltage that exceeds these limits is safely shunted to the
++5 V or GND rail.
+
+---
+
 ## Master Interconnect Table
 
 Every wire in the system, listed by destination:
@@ -388,6 +437,16 @@ Every wire in the system, listed by destination:
 | GPIO 36 | Header pin 1 (+ R4 to 3.3 V) | Coin sense |
 | GPIO 39 | Header pin 2 (+ R5 to 3.3 V) | Button A |
 | GPIO 35 | Header pin 3 (+ R6 to 3.3 V) | Button B |
+| D1 anode | LINE_B (PC817 pin 2) | Reverse voltage clamp |
+| D1 cathode | OPTO_A (PC817 pin 1 / R2) | Reverse voltage clamp |
+| D2 anode | DAC_LP (J_SPK pin 1 / T1 pri 1) | Positive clamp on L+ |
+| D2 cathode | +5V rail | Positive clamp on L+ |
+| D3 anode | GND | Negative clamp on L+ |
+| D3 cathode | DAC_LP (J_SPK pin 1 / T1 pri 1) | Negative clamp on L+ |
+| D4 anode | DAC_LN (J_SPK pin 2 / T1 pri 2) | Positive clamp on L- |
+| D4 cathode | +5V rail | Positive clamp on L- |
+| D5 anode | GND | Negative clamp on L- |
+| D5 cathode | DAC_LN (J_SPK pin 2 / T1 pri 2) | Negative clamp on L- |
 | Terminal 1 | Red wire (Line A) | Phone cord |
 | Terminal 2 | White wire (Line B) | Phone cord |
 | Terminal 3 | Blue wire (Bell) | Phone cord |
@@ -422,7 +481,7 @@ interference and make assembly/debugging easier:
     │  └──────────────────────────────────────────────┘           │
     │  ○ = dev access hole (1 per pin, adjacent to each ESP32 pin)│
     ├─────────────────────────────────────────────────────────────┤
-    │  ZONE C: PERIPHERALS                   │  ZONE D: HIGH V   │
+    │  ZONE C: PERIPHERALS                   │  HIGH VOLTAGE     │
     │  ┌──────────────────────────┐          │  ┌──────────────┐ │
     │  │  MAX98357A DAC module    │          │  │  L293D        │ │
     │  │  SD card module          │          │  │  (DIP-16)     │ │
@@ -430,6 +489,12 @@ interference and make assembly/debugging easier:
     │  │  PC817 optocoupler       │          │  │  Bell output  │ │
     │  │  R1, R2, R3              │          │  └──────────────┘ │
     │  └──────────────────────────┘          │                   │
+    ├─────────────────────────────────────────────────────────────┤
+    │  ZONE D: PROTECTION DIODES                                  │
+    │  ┌──────────────┐  ┌──────────────────────────────────────┐ │
+    │  │  D1 (1N4007)  │  │  D2, D3 (DAC_LP clamps)             │ │
+    │  │  PC817 prot   │  │  D4, D5 (DAC_LN clamps)             │ │
+    │  └──────────────┘  └──────────────────────────────────────┘ │
     ├─────────────────────────────────────────────────────────────┤
     │  ZONE E: CONNECTORS                                         │
     │  ┌────────────┐ ┌────────────┐ ┌──────┐ ┌──────────────┐  │
@@ -458,9 +523,9 @@ module, spaced 2.54 mm (standard 0.1" pitch).
 
 ### Layout rules
 
-1. **Keep Zone D (48 V) physically separated** from Zone B (ESP32) and
-   Zone C (audio). Minimum 10 mm clearance between 48 V traces and
-   logic traces.
+1. **Keep the high-voltage area (L293D / 48 V) physically separated**
+   from Zone B (ESP32) and the audio section. Minimum 10 mm clearance
+   between 48 V traces and logic traces.
 2. **Use a ground plane.** Join analogue and digital grounds at a single
    point near the ESP32.
 3. The optocoupler (PC817) provides **galvanic isolation** — do not
@@ -476,12 +541,17 @@ module, spaced 2.54 mm (standard 0.1" pitch).
 7. **Pull-up resistors R4/R5/R6** should be placed close to the 6-pin
    daughter board header, not near the ESP32. This keeps the pull-up
    path short and clean.
+8. **D1** should be placed close to the PC817 (Zone D, near Zone C
+   peripherals). D2–D5 should be near the DAC speaker terminal (J_SPK).
+9. **48 V trace width:** Use 0.75–1.0 mm traces for +48V, BELL, and
+   LINE_B nets. Use 0.5 mm for +5V/+12V/+3V3 power rails. Increase
+   clearance around 48 V nets to 0.5 mm minimum.
 
 ### Recommended board size
 
-**100 mm × 80 mm** double-sided prototype board (standard size,
-available from most PCB suppliers). This gives enough room for all
-zones with clear separation.
+**100 mm × 100 mm** double-sided prototype board (standard size,
+available from most PCB suppliers). The extra height accommodates
+Zone D (protection diodes) with clear separation between all zones.
 
 ---
 

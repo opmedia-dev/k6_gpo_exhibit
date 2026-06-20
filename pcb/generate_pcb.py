@@ -2,7 +2,7 @@
 """Generate KiCad 6 PCB file for K6 GPO Exhibit carrier board (Rev 2).
 
 Uses the pcbnew Python API to create a valid PCB with proper footprints.
-Board: 100mm x 80mm, 2-layer
+Board: 100mm x 100mm, 2-layer
 ESP32 DevKit V1 (30-pin, 2x15) with USB facing bottom edge.
 
 Run with: /usr/bin/python3 generate_pcb.py
@@ -11,7 +11,8 @@ Run with: /usr/bin/python3 generate_pcb.py
 Layout (top to bottom):
   Zone A (y 0-15mm):  Power — barrel jacks + LM2596 module
   Zone B (y 15-55mm): ESP32 centre, peripherals on left/right sides
-  Zone E (y 55-80mm): Connectors — terminal, buttons, lamp, daughter board, pull-ups
+  Zone D (y 55-70mm): Protection diodes
+  Zone E (y 70-100mm): Connectors — terminal, buttons, lamp, daughter board, pull-ups
 """
 
 import pcbnew
@@ -21,7 +22,7 @@ def mm(val):
     return int(val * 1e6)
 
 BOARD_W = 100.0
-BOARD_H = 80.0
+BOARD_H = 100.0
 OX = 100.0  # Board origin X in KiCad coords
 OY = 50.0   # Board origin Y in KiCad coords
 
@@ -214,16 +215,48 @@ def main():
     place(board, "Capacitor_THT", "C_Disc_D3.0mm_W1.6mm_P2.50mm",
           "C1", "100nF", OX+92, OY+22)
 
-    # ── ZONE E: CONNECTORS (y = 57..80mm) ──
+    # ── ZONE D: PROTECTION DIODES (y = 57..70mm) ──
+
+    # D1: 1N4007 anti-parallel across PC817 LED (clamps reverse voltage)
+    # Anode = LINE_B (PC817 cathode side), Cathode = OPTO_A (PC817 anode side)
+    place(board, "Diode_THT", "D_DO-41_SOD81_P7.62mm_Horizontal",
+          "D1", "1N4007", OX+10, OY+60)
+    text(board, "D1 PC817 PROT", OX+14, OY+57, S, 0.5, 0.08)
+
+    # D2: 1N4007 clamp — DAC_LP to +5V (limits positive overvoltage)
+    # Anode = DAC_LP, Cathode = +5V
+    place(board, "Diode_THT", "D_DO-41_SOD81_P7.62mm_Horizontal",
+          "D2", "1N4007", OX+24, OY+60)
+    text(board, "D2 LP>5V", OX+28, OY+57, S, 0.5, 0.08)
+
+    # D3: 1N4007 clamp — GND to DAC_LP (limits negative overvoltage)
+    # Anode = GND, Cathode = DAC_LP
+    place(board, "Diode_THT", "D_DO-41_SOD81_P7.62mm_Horizontal",
+          "D3", "1N4007", OX+24, OY+64)
+    text(board, "D3 GND>LP", OX+28, OY+67, S, 0.5, 0.08)
+
+    # D4: 1N4007 clamp — DAC_LN to +5V (limits positive overvoltage)
+    # Anode = DAC_LN, Cathode = +5V
+    place(board, "Diode_THT", "D_DO-41_SOD81_P7.62mm_Horizontal",
+          "D4", "1N4007", OX+38, OY+60)
+    text(board, "D4 LN>5V", OX+42, OY+57, S, 0.5, 0.08)
+
+    # D5: 1N4007 clamp — GND to DAC_LN (limits negative overvoltage)
+    # Anode = GND, Cathode = DAC_LN
+    place(board, "Diode_THT", "D_DO-41_SOD81_P7.62mm_Horizontal",
+          "D5", "1N4007", OX+38, OY+64)
+    text(board, "D5 GND>LN", OX+42, OY+67, S, 0.5, 0.08)
+
+    # ── ZONE E: CONNECTORS (y = 72..100mm) ──
 
     # 3-way screw terminal for phone cord
     place(board, "TerminalBlock", "TerminalBlock_bornier-3_P5.08mm",
-          "J_PHONE", "Phone", OX+12, OY+62)
-    text(board, "PHONE", OX+12, OY+58, S, 0.7, 0.1)
-    text(board, "A  B  Bell", OX+12, OY+68, S, 0.5, 0.08)
+          "J_PHONE", "Phone", OX+12, OY+78)
+    text(board, "PHONE", OX+12, OY+74, S, 0.7, 0.1)
+    text(board, "A  B  Bell", OX+12, OY+84, S, 0.5, 0.08)
 
     # 4x buttons as 2-pin headers (GPIO + GND)
-    btn_y = OY + 62
+    btn_y = OY + 78
     btn_labels = [("SW1","RING",OX+28), ("SW2","CANCEL",OX+36),
                   ("SW3","RESET",OX+44), ("SW4","MODE",OX+52)]
     for ref, label, bx in btn_labels:
@@ -237,21 +270,21 @@ def main():
     text(board, "LAMP", OX+62, btn_y + 4, S, 0.6, 0.1)
 
     # Pull-up resistors R4/R5/R6 — vertical orientation near daughter header
-    pu_y = OY + 62
+    pu_y = OY + 78
     place(board, "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
           "R4", "10K", OX+72, pu_y, 90)
     place(board, "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
           "R5", "10K", OX+76, pu_y, 90)
     place(board, "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
           "R6", "10K", OX+80, pu_y, 90)
-    text(board, "R4 R5 R6", OX+76, OY+57, S, 0.5, 0.08)
-    text(board, "10K pull-ups", OX+76, OY+59, S, 0.5, 0.08)
+    text(board, "R4 R5 R6", OX+76, OY+73, S, 0.5, 0.08)
+    text(board, "10K pull-ups", OX+76, OY+75, S, 0.5, 0.08)
 
     # 6-pin daughter board header
     place(board, "Connector_PinHeader_2.54mm", "PinHeader_1x06_P2.54mm_Vertical",
-          "J_COIN", "A+B", OX+90, OY+62)
-    text(board, "DAUGHTER", OX+90, OY+57, S, 0.6, 0.1)
-    text(board, "A+B COIN", OX+90, OY+59, S, 0.6, 0.1)
+          "J_COIN", "A+B", OX+90, OY+78)
+    text(board, "DAUGHTER", OX+90, OY+73, S, 0.6, 0.1)
+    text(board, "A+B COIN", OX+90, OY+75, S, 0.6, 0.1)
 
     # ── MOUNTING HOLES (4 corners, 4mm inset) ──
     mi = 4.0
@@ -267,11 +300,13 @@ def main():
 
     text(board, "ZONE A: POWER", OX+50, OY+1.5, S, 1.2, 0.18)
     text(board, "ZONE B: ESP32 + PERIPHERALS", OX+50, OY+16, S, 1.0, 0.15)
-    text(board, "ZONE E: CONNECTORS", OX+50, OY+55, S, 1.0, 0.15)
+    text(board, "ZONE D: PROTECTION", OX+50, OY+56, S, 1.0, 0.15)
+    text(board, "ZONE E: CONNECTORS", OX+50, OY+71, S, 1.0, 0.15)
 
     # Zone separator lines
     line(board, OX, OY+15, OX+BOARD_W, OY+15, S, 0.15)
     line(board, OX, OY+55, OX+BOARD_W, OY+55, S, 0.15)
+    line(board, OX, OY+70, OX+BOARD_W, OY+70, S, 0.15)
 
     # Board title (bottom edge)
     text(board, "K6 GPO Exhibit", OX+50, OY+BOARD_H-4, S, 1.5, 0.25)
@@ -482,6 +517,32 @@ def main():
     set_pad_net("J_COIN", 5, "GND")
     set_pad_net("J_COIN", 6, "+5V")      # Optional 5V
 
+    # ── D1 (1N4007 anti-parallel across PC817 LED) ──
+    # Clamps reverse voltage during ringing (LINE_B at 48V)
+    # pad 1 = anode = LINE_B, pad 2 = cathode = OPTO_A
+    set_pad_net("D1", 1, "LINE_B")
+    set_pad_net("D1", 2, "OPTO_A")
+
+    # ── D2 (1N4007 clamp: DAC_LP → +5V) ──
+    # Clamps positive overvoltage on transformer primary L+
+    set_pad_net("D2", 1, "DAC_LP")
+    set_pad_net("D2", 2, "+5V")
+
+    # ── D3 (1N4007 clamp: GND → DAC_LP) ──
+    # Clamps negative overvoltage on transformer primary L+
+    set_pad_net("D3", 1, "GND")
+    set_pad_net("D3", 2, "DAC_LP")
+
+    # ── D4 (1N4007 clamp: DAC_LN → +5V) ──
+    # Clamps positive overvoltage on transformer primary L-
+    set_pad_net("D4", 1, "DAC_LN")
+    set_pad_net("D4", 2, "+5V")
+
+    # ── D5 (1N4007 clamp: GND → DAC_LN) ──
+    # Clamps negative overvoltage on transformer primary L-
+    set_pad_net("D5", 1, "GND")
+    set_pad_net("D5", 2, "DAC_LN")
+
     # ═══════════════════════════════════════════════════════════
     # SAVE
     # ═══════════════════════════════════════════════════════════
@@ -496,6 +557,7 @@ def main():
     print("  Zone B (centre): ESP32 sockets + dev holes (centre)")
     print("     Left side:    U1 PC817, R1-R3, U_DAC, T1, U_SD")
     print("     Right side:   U2 L293D, C1")
+    print("  Zone D:          D1 (PC817 prot), D2-D5 (DAC clamps)")
     print("  Zone E (bottom): J_PHONE, SW1-4 buttons (2-pin), J_LAMP, R4-R6, J_COIN")
     print("  Corners:         H1-H4 mounting holes")
 

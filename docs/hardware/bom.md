@@ -42,6 +42,20 @@
 | 3 | Resistor | 10 kΩ, ¼ W | R4, R5, R6 | **Pull-ups for coin box GPIOs (36, 39, 35)** |
 | 2 | Capacitor (ceramic) | 100 nF | C1, C2 | Decoupling: C1 at L293D VSS, C2 at ESP32 VIN |
 
+## Protection Diodes
+
+| Qty | Component | Value / Part | Label | Purpose |
+|-----|-----------|-------------|-------|--------|
+| 1 | Rectifier diode | 1N4007 (DO-41) | D1 | Anti-parallel across PC817 LED — clamps reverse voltage during ringing |
+| 4 | Rectifier diode | 1N4007 (DO-41) | D2–D5 | Overvoltage clamps on transformer primary (DAC_LP and DAC_LN to +5V and GND) |
+
+> **Why these are needed:** During bell ringing, L293D OUT2 drives LINE_B
+> between 0 V and 48 V. The PC817 cathode and transformer secondary are
+> also on LINE_B. Without D1, the PC817 LED sees 36 V reverse (max
+> rating 6 V) and is destroyed. Without D2–D5, the coupled ring voltage
+> can back-feed through the transformer primary into the MAX98357A
+> output pins.
+
 > **Rev 2 change:** Added R4/R5/R6 pull-up resistors. These are
 > essential — GPIO 36/39/35 are input-only and have no internal
 > pull-up. Without these, the firmware falsely detects an A+B coin
@@ -68,7 +82,7 @@
 | 2 | 15-pin female headers | ESP32 DevKit V1 (30-pin) sockets (allows removal) |
 | 1 | Project box / enclosure | Houses all electronics + buttons |
 | 1 | Multi-core cable (≥ 6 conductors) | Extended lead from phone to enclosure |
-| 1 | Custom carrier PCB | 100 × 80 mm, 2-layer |
+| 1 | Custom carrier PCB | 100 × 100 mm, 2-layer |
 | — | Hook-up wire, solder, standoffs | Assembly |
 
 ## Optional — A+B Coin Box Daughter Board
@@ -109,9 +123,9 @@ Plugs into the 6-pin header on the carrier board.
 | Power supply (12 V adapter + 48 V adapter + buck module) | ~£18 |
 | Controller + audio (ESP32 + DAC + SD) | ~£12 |
 | Phone line interface (opto + H-bridge + transformer) | ~£4 |
-| Passives (resistors, capacitors) | ~£2 |
+| Passives (resistors, capacitors, diodes) | ~£3 |
 | Connectors, buttons, lamp | ~£5 |
-| **Total** | **~£41** |
+| **Total** | **~£42** |
 
 *Excludes: phone, SD card content, enclosure, extended cable.*
 
@@ -137,3 +151,4 @@ Plugs into the 6-pin header on the carrier board.
 | — | 6-pin header | Standardised daughter board connector |
 | — | 2× 15-pin female headers | ESP32 30-pin DevKit V1 socket (allows removal for dev) |
 | — | 100 nF decoupling cap (C2) | Noise filtering at ESP32 VIN |
+| — | 5× 1N4007 rectifier diodes (D1–D5) | PC817 reverse voltage protection + DAC overvoltage clamps |
