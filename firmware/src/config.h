@@ -29,9 +29,10 @@ constexpr int PIN_BTN_RESET    = 27;  // system reset
 constexpr int PIN_BTN_MODE     = 14;  // toggle auto/manual ring mode
 
 // --- A+B Coin Box (optional daughter board) ----------------------------------
-// These input-only GPIOs are active-low via optocoupler.  When no daughter
-// board is installed, the pins float high and the coin box feature is
-// automatically disabled.
+// These input-only GPIOs are active-low via optocoupler.  GPIO 36/39/35
+// have NO internal pull-up — external 10 kΩ pull-up resistors (R4/R5/R6)
+// on the carrier board hold them HIGH when no daughter board is connected.
+// Without these pull-ups the pins float and false detection occurs.
 constexpr int PIN_COIN_SENSE   = 36;  // coin weight switch (coins inserted)
 constexpr int PIN_COIN_BTN_A   = 39;  // Button A (collect coins, connect call)
 constexpr int PIN_COIN_BTN_B   = 35;  // Button B (refund coins)
