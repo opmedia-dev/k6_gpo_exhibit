@@ -6,7 +6,7 @@ coin collecting box mechanism to the K6 GPO Exhibit carrier board.
 ## Board Specs
 
 - **Size:** 45 × 35 mm, 2-layer, all through-hole
-- **Power:** 3.3V or 5V from carrier board (via J4 pin 1)
+- **Power:** 3.3V from carrier board (pull-ups) + 5V from carrier board (optocoupler LED drive)
 - **Isolation:** 3× optocouplers provide galvanic isolation between A+B box contacts and ESP32
 
 ## Circuit (per channel)
@@ -51,15 +51,18 @@ A+B box contact             Daughter board                    Carrier board
 | 1 | B+ | A+B box: Button B contact |
 | 2 | B- | A+B box: Button B return |
 
-### J4 — Output Header (5-pin, to carrier board)
+### J4 — Output Header (6-pin, to carrier board)
 
-| Pin | Label | Connect To (carrier board) |
-|-----|-------|---------------------------|
-| 1 | VCC | 3.3V or 5V rail |
-| 2 | COIN | ESP32 GPIO 36 |
-| 3 | A | ESP32 GPIO 39 |
-| 4 | B | ESP32 GPIO 35 |
-| 5 | GND | GND |
+Pin order matches carrier board J_COIN header for straight ribbon cable connection.
+
+| Pin | Label | Connect To (carrier board J_COIN) |
+|-----|-------|-----------------------------------|
+| 1 | COIN | ESP32 GPIO 36 (coin sense) |
+| 2 | A | ESP32 GPIO 39 (Button A) |
+| 3 | B | ESP32 GPIO 35 (Button B) |
+| 4 | 3V3 | +3.3V rail (powers pull-ups R4/R5/R6) |
+| 5 | GND | Ground |
+| 6 | 5V | +5V rail (powers optocoupler LEDs via input side) |
 
 ## Components
 
@@ -77,7 +80,7 @@ A+B box contact             Daughter board                    Carrier board
 | J1 | Screw terminal | 2-pos, 5.08mm | Coin sense input |
 | J2 | Screw terminal | 2-pos, 5.08mm | Button A input |
 | J3 | Screw terminal | 2-pos, 5.08mm | Button B input |
-| J4 | Pin header | 1×5, 2.54mm | Output to carrier board |
+| J4 | Pin header | 1×6, 2.54mm | Output to carrier board |
 
 ## Wiring Guide — Which A+B Box Contacts to Use
 

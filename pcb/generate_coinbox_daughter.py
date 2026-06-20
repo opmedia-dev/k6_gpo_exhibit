@@ -8,7 +8,7 @@ Creates:
 
 Universal daughter board for any GPO A+B coin collecting box mechanism.
 3 optocoupler-isolated inputs (coin sense, Button A, Button B) connect
-to the carrier board ESP32 GPIOs 36/39/35 via a 4-pin header.
+to the carrier board ESP32 GPIOs 36/39/35 via a 6-pin header.
 
 Circuit per channel:
   A+B contact ──► [screw terminal] ──► R_in (470Ω) ──► Opto LED ──► GND_in
@@ -38,7 +38,7 @@ MOUNT_INSET = 3.0
 # ─── Net list ─────────────────────────────────────────────────────────
 NETS = {
     0: "",
-    1: "VCC",           # 3.3V or 5V from carrier board
+    1: "VCC_3V3",       # 3.3V from carrier board (pull-ups)
     2: "GND",
     3: "COIN_SENSE",    # output to ESP32 GPIO 36
     4: "BTN_A",         # output to ESP32 GPIO 39
@@ -52,6 +52,7 @@ NETS = {
     12: "OPTO1_CA",     # opto 1 cathode / R junction
     13: "OPTO2_CA",     # opto 2 cathode / R junction
     14: "OPTO3_CA",     # opto 3 cathode / R junction
+    15: "VCC_5V",       # 5V from carrier board (optocoupler LED drive)
 }
 
 def net_defs():
@@ -224,14 +225,16 @@ def build_pcb():
     footprints.append(resistor_th("R6", "10K", OX + 35, OY + 23, 0, 1, 5))
 
     # ── Output header (right side) — connects to carrier board ──
-    # J4: 5-pin header: VCC, COIN_SENSE, BTN_A, BTN_B, GND
-    footprints.append(pin_header_1xN(5, "J4", "TO_ESP32", OX + 42, OY + 15, 0,
-                                     {1: 1, 2: 3, 3: 4, 4: 5, 5: 2}))
-    labels.append(silk_text("VCC", OX + 42, OY + 8.5))
-    labels.append(silk_text("COIN", OX + 42, OY + 11))
-    labels.append(silk_text("A", OX + 42, OY + 13.5))
-    labels.append(silk_text("B", OX + 42, OY + 16))
-    labels.append(silk_text("GND", OX + 42, OY + 18.5))
+    # J4: 6-pin header: COIN_SENSE, BTN_A, BTN_B, +3V3, GND, +5V
+    # Pin order matches carrier board J_COIN: GPIO36, GPIO39, GPIO35, +3V3, GND, +5V
+    footprints.append(pin_header_1xN(6, "J4", "TO_ESP32", OX + 42, OY + 15, 0,
+                                     {1: 3, 2: 4, 3: 5, 4: 1, 5: 2, 6: 15}))
+    labels.append(silk_text("COIN", OX + 42, OY + 8.0))
+    labels.append(silk_text("A", OX + 42, OY + 10.5))
+    labels.append(silk_text("B", OX + 42, OY + 13.0))
+    labels.append(silk_text("3V3", OX + 42, OY + 15.5))
+    labels.append(silk_text("GND", OX + 42, OY + 18.0))
+    labels.append(silk_text("5V", OX + 42, OY + 20.5))
 
     # ── Mounting holes ──
     footprints.append(mounting_hole("MH1", OX + MOUNT_INSET, OY + MOUNT_INSET))
@@ -380,4 +383,4 @@ if __name__ == "__main__":
     write_schematic()
     print("\nDaughter board files generated successfully.")
     print(f"  Board size: {BOARD_W} x {BOARD_H} mm")
-    print(f"  Components: 3x optocouplers, 3x 470Ω, 3x 10kΩ, 3x screw terminals, 1x 5-pin header")
+    print(f"  Components: 3x optocouplers, 3x 470Ω, 3x 10kΩ, 3x screw terminals, 1x 6-pin header")
