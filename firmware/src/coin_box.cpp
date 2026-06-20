@@ -6,16 +6,17 @@ void CoinBox::begin() {
     pinMode(PIN_COIN_BTN_B, INPUT);
 
     // Auto-detect daughter board.  GPIO 36/39/35 are input-only pins with
-    // no internal pull-up on the ESP32.  When the optocoupler daughter board
-    // is connected, its pull-up resistors hold these pins HIGH, and the
-    // optocoupler output pulls them LOW when active.  When nothing is
-    // connected, the pins float — on the ESP32, unconnected input-only
-    // pins typically read HIGH due to leakage, but we sample multiple
-    // times to be sure.
+    // no internal pull-up on the ESP32.  External 10 kΩ pull-up resistors
+    // (R4/R5/R6) on the carrier board hold these pins HIGH when no daughter
+    // board is connected.  When the daughter board is present, its
+    // optocoupler outputs can pull the pins LOW (overriding the pull-ups).
     //
     // Detection strategy: if ANY pin reads LOW during the boot window, a
     // daughter board is present (an optocoupler is pulling a line down).
     // If all pins remain HIGH for the entire window, no board is installed.
+    //
+    // NOTE: Without the external pull-ups, these pins float and false
+    // detection will occur.  See docs/hardware/schematic.md Rev 2 notes.
     unsigned long start = millis();
     bool detected = false;
     while (millis() - start < COIN_DETECT_BOOT_MS) {

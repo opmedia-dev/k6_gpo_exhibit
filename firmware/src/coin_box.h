@@ -13,11 +13,12 @@
 //   BTN_A       — Button A pressed (collect coins, connect speech)
 //   BTN_B       — Button B pressed (refund coins)
 //
-// Auto-detection:  At boot, if all three inputs read HIGH (floating, no
-// pull-down from optocoupler) for COIN_DETECT_BOOT_MS, the module assumes
-// no daughter board is installed and disables itself.  All public methods
-// then become no-ops and coinsReady()/buttonAPressed() return pass-through
-// values so the phone controller operates normally without coin logic.
+// Auto-detection:  At boot, if all three inputs read HIGH (held by
+// external 10 kΩ pull-ups R4/R5/R6 on the carrier board) for
+// COIN_DETECT_BOOT_MS, the module assumes no daughter board is
+// installed and disables itself.  All public methods then become
+// no-ops and coinsReady()/buttonAPressed() return pass-through values
+// so the phone controller operates normally without coin logic.
 // ============================================================================
 
 class CoinBox {
