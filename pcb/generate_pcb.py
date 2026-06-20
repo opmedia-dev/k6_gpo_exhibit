@@ -195,12 +195,12 @@ def main():
     text(board, "XFMR", OX+20, OY+42, S, 0.6, 0.1)
     text(board, "Pri  Sec", OX+20, OY+44, S, 0.4, 0.06)
 
-    # SD card module (6-pin header: CS SCK MOSI MISO VCC GND)
+    # SD card module (6-pin header: 3V3 CS MOSI CLK MISO GND)
     place(board, "Connector_PinHeader_2.54mm", "PinHeader_1x06_P2.54mm_Vertical",
           "U_SD", "SD_Card", OX+24, OY+38)
     text(board, "SD Card", OX+24, OY+32, S, 0.6, 0.1)
-    text(board, "CS SCK MOSI", OX+24, OY+34, S, 0.4, 0.06)
-    text(board, "MISO VCC GND", OX+24, OY+36, S, 0.4, 0.06)
+    text(board, "3V3 CS MOSI", OX+24, OY+34, S, 0.4, 0.06)
+    text(board, "CLK MISO GND", OX+24, OY+36, S, 0.4, 0.06)
 
     # ── RIGHT PERIPHERALS (x = 72..100mm) ──
 
@@ -459,12 +459,12 @@ def main():
     set_pad_net("T1", 3, "DAC_LN")
     set_pad_net("T1", 4, "LINE_B")
 
-    # ── U_SD (SD card 6-pin header: CS SCK MOSI MISO VCC GND) ──
-    set_pad_net("U_SD", 1, "GPIO5")    # CS
-    set_pad_net("U_SD", 2, "GPIO18")   # SCK
+    # ── U_SD (SD card 6-pin header: 3V3 CS MOSI CLK MISO GND) ──
+    set_pad_net("U_SD", 1, "+3V3")     # 3V3
+    set_pad_net("U_SD", 2, "GPIO5")    # CS
     set_pad_net("U_SD", 3, "GPIO23")   # MOSI
-    set_pad_net("U_SD", 4, "GPIO19")   # MISO
-    set_pad_net("U_SD", 5, "+3V3")     # VCC
+    set_pad_net("U_SD", 4, "GPIO18")   # CLK
+    set_pad_net("U_SD", 5, "GPIO19")   # MISO
     set_pad_net("U_SD", 6, "GND")
 
     # ── U2 (L293D H-bridge DIP-16) ──
