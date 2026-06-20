@@ -483,39 +483,6 @@ def main():
     set_pad_net("J_COIN", 6, "+5V")      # Optional 5V
 
     # ═══════════════════════════════════════════════════════════
-    # GROUND VIAS — stitching vias connect F_Cu to B_Cu pour
-    # Placed near component clusters for solid ground reference
-    # ═══════════════════════════════════════════════════════════
-    gnd = board.FindNet("GND")
-    if gnd:
-        via_positions = [
-            # Zone A power area
-            (OX+20, OY+13), (OX+50, OY+13), (OX+80, OY+13),
-            # ESP32 area — between sockets and dev holes
-            (esp_cx, OY+20), (esp_cx, OY+30),
-            (esp_cx, OY+40), (esp_cx, OY+50),
-            # Left peripherals
-            (OX+5, OY+25), (OX+5, OY+40), (OX+5, OY+50),
-            # Right peripherals (near L293D GND pins)
-            (OX+95, OY+30), (OX+95, OY+40),
-            # Zone E connectors
-            (OX+20, OY+70), (OX+40, OY+70), (OX+60, OY+70),
-            (OX+80, OY+70), (OX+95, OY+70),
-            # Board edges / corners for pour connectivity
-            (OX+10, OY+5), (OX+90, OY+5),
-            (OX+10, OY+75), (OX+90, OY+75),
-        ]
-        for vx, vy in via_positions:
-            v = pcbnew.PCB_VIA(board)
-            v.SetPosition(pcbnew.wxPointMM(vx, vy))
-            v.SetWidth(mm(0.8))
-            v.SetDrill(mm(0.4))
-            v.SetNet(gnd)
-            v.SetViaType(pcbnew.VIATYPE_THROUGH)
-            v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-            board.Add(v)
-
-    # ═══════════════════════════════════════════════════════════
     # SAVE
     # ═══════════════════════════════════════════════════════════
     out = "/home/ubuntu/repos/k6_gpo_exhibit/pcb/k6_carrier_rev2.kicad_pcb"
