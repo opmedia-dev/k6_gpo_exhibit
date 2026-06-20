@@ -165,9 +165,9 @@ def main():
     text(board, "PC817", OX+10, OY+18, S, 0.7, 0.1)
     text(board, "pin1 dot", OX+5, OY+20, S, 0.5, 0.08)
 
-    # R1: 470Ω 1W — horizontal, below optocoupler
-    place(board, "Resistor_THT", "R_Axial_DIN0309_L9.0mm_D3.2mm_P12.70mm_Horizontal",
-          "R1", "470R", OX+8, OY+30)
+    # R1: 470Ω 1W — same pad size as R2/R3 for consistency
+    place(board, "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
+          "R1", "470R_1W", OX+8, OY+30)
 
     # R2: 220Ω — horizontal
     place(board, "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
@@ -177,15 +177,20 @@ def main():
     place(board, "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal",
           "R3", "10K", OX+8, OY+38)
 
-    # MAX98357A DAC module (7-pin header, vertical)
+    # MAX98357A DAC module: 7-pin header (bottom) + 2-pin screw terminal (speaker)
     place(board, "Connector_PinHeader_2.54mm", "PinHeader_1x07_P2.54mm_Vertical",
           "U_DAC", "MAX98357A", OX+10, OY+46)
     text(board, "DAC", OX+6, OY+46, S, 0.6, 0.1)
+    # DAC speaker screw terminal (2-pin, above the header)
+    place(board, "TerminalBlock", "TerminalBlock_bornier-2_P5.08mm",
+          "J_SPK", "Speaker", OX+10, OY+40)
+    text(board, "SPK+/-", OX+6, OY+39, S, 0.5, 0.08)
 
-    # Audio transformer (4-pin header, vertical)
-    place(board, "Connector_PinHeader_2.54mm", "PinHeader_1x04_P2.54mm_Vertical",
-          "T1", "600R_XFMR", OX+16, OY+46)
-    text(board, "XFMR", OX+20, OY+46, S, 0.6, 0.1)
+    # Audio transformer EI-14 (2x2 pins: primary left, secondary right)
+    place(board, "Connector_PinHeader_2.54mm", "PinHeader_2x02_P2.54mm_Vertical",
+          "T1", "600R_XFMR", OX+20, OY+46)
+    text(board, "XFMR", OX+20, OY+42, S, 0.6, 0.1)
+    text(board, "Pri  Sec", OX+20, OY+44, S, 0.4, 0.06)
 
     # SD card module (6-pin header: CS SCK MOSI MISO VCC GND)
     place(board, "Connector_PinHeader_2.54mm", "PinHeader_1x06_P2.54mm_Vertical",
