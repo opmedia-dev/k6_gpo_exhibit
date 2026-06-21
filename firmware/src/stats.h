@@ -31,6 +31,7 @@ public:
     void recordIncomingAnswered();
     void recordOutgoingCall(const char* number);
     void recordNotRecognised(const char* number);
+    void recordDiscovery(const char* number);
     void recordCoinCollected();
     void recordCoinRefunded();
 
@@ -44,6 +45,12 @@ public:
     // Most dialled numbers (top 5). Returns count of entries filled.
     struct NumberEntry { char number[12]; uint16_t count; };
     int topNumbers(NumberEntry* out, int maxEntries) const;
+
+    // Discovery log — unrecognised numbers visitors tried to dial.
+    int discoveryCount() const { return disc_count_; }
+    const NumberEntry* discoveryEntries() const { return discovery_; }
+    void clearDiscovery();
+    void removeDiscovery(const char* number);
 
     // Save stats to SD now (also called periodically by update()).
     void save();
@@ -62,7 +69,16 @@ private:
     int num_count_ = 0;
 
     void incrementNumber(const char* number);
+    void incrementDiscovery(const char* number);
+    void saveDiscovery();
+    void loadDiscovery();
 
     unsigned long call_start_ms_ = 0;
     bool in_call_ = false;
+
+    // Discovery log — numbers visitors dialled that weren't recognised.
+    static const int MAX_DISCOVERY = 50;
+    NumberEntry discovery_[MAX_DISCOVERY] = {};
+    int disc_count_ = 0;
+    bool disc_dirty_ = false;
 };
