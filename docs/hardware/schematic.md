@@ -385,7 +385,7 @@ across the LED to ~0.7 V instead of the destructive 36 V.
               (J_SPK pin 1)   (J_SPK pin 2)
                   │              │
               D3 cathode    D5 cathode
-              D3 anode      D4 anode
+              D3 anode      D5 anode
                   │              │
     GND ──────────┴──────────────┘
 ```

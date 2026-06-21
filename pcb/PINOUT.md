@@ -212,7 +212,7 @@ connecting other components.
 | 12 | R | -- | GND | Ground |
 | 13 | R | -- | GND | Ground |
 | 14 | R | -- | -- | Not connected |
-| 15 | R | -- | +5V | Logic supply |
+| 15 | R | -- | -- | Not connected |
 | 16 | R | 5V | +5V | Logic supply |
 
 ## U3 -- PC817 Optocoupler (DIP-4)
