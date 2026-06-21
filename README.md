@@ -121,8 +121,9 @@ KiCad project files for both boards are in [`pcb/`](pcb/):
 | [Carrier board](pcb/README.md) | 100 x 100 mm | Main board, 2-layer, all through-hole |
 | [Daughter board](pcb/COINBOX_DAUGHTER.md) | 45 x 35 mm | Optional A+B coin box interface |
 
-Pre-generated Gerber files are in `pcb/gerbers/` -- ready to upload to
-JLCPCB, PCBWay, or any other PCB fabricator.
+Export Gerber files from KiCad to order from JLCPCB, PCBWay, or any
+other PCB fabricator.  See [`pcb/README.md`](pcb/README.md) for
+export instructions.
 
 ---
 
@@ -297,7 +298,6 @@ k6_gpo_exhibit/
 +-- pcb/                      KiCad PCB design files
 |   +-- k6_carrier_rev2.*     Carrier board (KiCad project, schematic, PCB)
 |   +-- k6_coinbox_daughter.* Daughter board (KiCad project, schematic, PCB)
-|   +-- gerbers/              Pre-generated Gerber + drill files
 |   +-- generate_pcb.py       Carrier board generator script
 |   +-- generate_coinbox_daughter.py  Daughter board generator script
 |   +-- PINOUT.md             Complete carrier board pinout reference

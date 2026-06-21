@@ -22,7 +22,6 @@ SD card, LM2596 buck converter) plug in via pin headers.
 | `generate_schematic.py` | Python script that regenerates the schematic |
 | `generate_kicad.py` | Legacy generator (original board layout) |
 | `PINOUT.md` | Complete pinout reference for every connector and IC |
-| `gerbers/` | Pre-generated Gerber and drill files, ready for fabrication |
 
 ### Board Specifications
 
@@ -140,27 +139,20 @@ description, pin mapping, and A+B box wiring instructions.
 
 ## Fabrication
 
+### Exporting Gerbers
+
+1. Open the `.kicad_pcb` file in KiCad 10+
+2. **File -> Plot** -> select Gerber format, output to a folder of your choice
+3. Check layers: F.Cu, B.Cu, F.SilkS, B.SilkS, F.Mask, B.Mask, Edge.Cuts
+4. **Generate Drill Files** -> Excellon format
+5. Zip the output folder and upload to your fabricator
+
 ### Ordering from JLCPCB / PCBWay
 
-1. Zip the `gerbers/` folder and upload to your fabricator
+1. Upload the Gerber zip
 2. Select: 2-layer, 1.6 mm thickness, 1 oz copper, HASL finish
 3. Board dimensions: 100 x 100 mm (carrier) or 45 x 35 mm (daughter)
 4. Typical 5-board order: ~$2 + shipping
-
-### Regenerating Gerbers from KiCad
-
-1. Open `k6_carrier_rev2.kicad_pcb` in KiCad 10+
-2. **File -> Plot** -> select Gerber format, output to `gerbers/`
-3. Check layers: F.Cu, B.Cu, F.SilkS, B.SilkS, F.Mask, B.Mask, Edge.Cuts
-4. **Generate Drill Files** -> Excellon format
-5. Zip the `gerbers/` folder
-
-Or run the export script:
-
-```bash
-cd pcb
-python3 export_gerbers.py
-```
 
 ### Assembly Notes
 
