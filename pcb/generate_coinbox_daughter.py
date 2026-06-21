@@ -11,12 +11,13 @@ Universal daughter board for any GPO A+B coin collecting box mechanism.
 to the carrier board ESP32 GPIOs 36/39/35 via a 6-pin header.
 
 Circuit per channel:
-  A+B contact ──► [screw terminal] ──► R_in (470Ω) ──► Opto LED ──► GND_in
-  ESP32 side:  VCC ──► R_pull (10kΩ) ──► Opto collector ──► output pin
-                                         Opto emitter ──► GND
+  VCC_5V ──► [screw terminal pin 1] ──► A+B switch ──► [screw terminal pin 2]
+         ──► R_in (470Ω) ──► Opto LED ──► GND
+  ESP32 side:  VCC_3V3 ──► R_pull (10kΩ) ──► Opto collector ──► output pin
+                                              Opto emitter ──► GND
 
-When A+B contact is OPEN:  opto LED off, output pulled HIGH by R_pull
-When A+B contact is CLOSED: opto LED on, output pulled LOW by opto transistor
+When A+B contact is OPEN:  no current, opto LED off, output pulled HIGH by R_pull
+When A+B contact is CLOSED: 5V → R → LED = 8mA, opto on, output pulled LOW
 
 The ESP32 input-only pins (36/39/35) have no internal pull-up, so the
 10kΩ pull-up on this board is essential.
@@ -172,47 +173,49 @@ def build_pcb():
     labels = []
 
     # ── Screw terminals (left side) — A+B box contact inputs ──
+    # VCC_5V on pin 1 (provides drive voltage to switch)
+    # Pin 2 connects to R → LED → GND (switch return)
     # J1: Coin sense contacts
-    footprints.append(screw_terminal_2("J1", "COIN", OX + 6, OY + 7, 0, 6, 7))
+    footprints.append(screw_terminal_2("J1", "COIN", OX + 6, OY + 7, 0, 15, 7))
     labels.append(silk_text("COIN", OX + 6, OY + 3.5))
     labels.append(silk_text("C+", OX + 3.5, OY + 7))
     labels.append(silk_text("C-", OX + 8.5, OY + 7))
 
     # J2: Button A contacts
-    footprints.append(screw_terminal_2("J2", "BTN_A", OX + 6, OY + 15, 0, 8, 9))
+    footprints.append(screw_terminal_2("J2", "BTN_A", OX + 6, OY + 15, 0, 15, 9))
     labels.append(silk_text("BTN A", OX + 6, OY + 11.5))
     labels.append(silk_text("A+", OX + 3.5, OY + 15))
     labels.append(silk_text("A-", OX + 8.5, OY + 15))
 
     # J3: Button B contacts
-    footprints.append(screw_terminal_2("J3", "BTN_B", OX + 6, OY + 23, 0, 10, 11))
+    footprints.append(screw_terminal_2("J3", "BTN_B", OX + 6, OY + 23, 0, 15, 11))
     labels.append(silk_text("BTN B", OX + 6, OY + 19.5))
     labels.append(silk_text("B+", OX + 3.5, OY + 23))
     labels.append(silk_text("B-", OX + 8.5, OY + 23))
 
     # ── Input current-limiting resistors (470Ω each) ──
-    # R1: Coin sense LED current limiter
-    footprints.append(resistor_th("R1", "470R", OX + 16, OY + 7, 0, 6, 12))
+    # R1: Coin sense LED current limiter (from J1 pin 2 return)
+    footprints.append(resistor_th("R1", "470R", OX + 16, OY + 7, 0, 7, 12))
 
-    # R2: Button A LED current limiter
-    footprints.append(resistor_th("R2", "470R", OX + 16, OY + 15, 0, 8, 13))
+    # R2: Button A LED current limiter (from J2 pin 2 return)
+    footprints.append(resistor_th("R2", "470R", OX + 16, OY + 15, 0, 9, 13))
 
-    # R3: Button B LED current limiter
-    footprints.append(resistor_th("R3", "470R", OX + 16, OY + 23, 0, 10, 14))
+    # R3: Button B LED current limiter (from J3 pin 2 return)
+    footprints.append(resistor_th("R3", "470R", OX + 16, OY + 23, 0, 11, 14))
 
     # ── Optocouplers (centre) ──
     # U1: Coin sense opto (PC817/EL817)
-    # Pin 1=Anode (from R1), 2=Cathode (to J1 return), 3=Emitter (GND), 4=Collector (COIN_SENSE)
+    # Pin 1=Anode (from R1), 2=Cathode (to GND), 3=Emitter (GND), 4=Collector (COIN_SENSE)
     footprints.append(dip4_opto("U1", "PC817", OX + 26, OY + 7, 0,
-                                {1: 12, 2: 7, 3: 2, 4: 3}))
+                                {1: 12, 2: 2, 3: 2, 4: 3}))
 
     # U2: Button A opto
     footprints.append(dip4_opto("U2", "PC817", OX + 26, OY + 15, 0,
-                                {1: 13, 2: 9, 3: 2, 4: 4}))
+                                {1: 13, 2: 2, 3: 2, 4: 4}))
 
     # U3: Button B opto
     footprints.append(dip4_opto("U3", "PC817", OX + 26, OY + 23, 0,
-                                {1: 14, 2: 11, 3: 2, 4: 5}))
+                                {1: 14, 2: 2, 3: 2, 4: 5}))
 
     # ── Pull-up resistors (10kΩ each, to VCC) ──
     # R4: Coin sense pull-up
