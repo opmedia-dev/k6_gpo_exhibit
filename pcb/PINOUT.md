@@ -36,52 +36,37 @@ complete mapping.
 
 ---
 
-## J3 — 12V DC Power Input
+## J1 -- 12V DC Power Input
 
-2-pin screw terminal (rotated 90°)
+2-pin screw terminal (barrel jack)
 
 | Pin | Net | Description |
 |-----|-----|-------------|
-| 1 | +12V | DC input from wall adapter |
+| 1 | +12V | DC input from 12V adapter |
 | 2 | GND | Ground |
 
-## U4 — LM2596-5.0 Buck Converter IC (12V → 5V)
+## U_BUCK -- LM2596 Buck Converter Module (12V -> 5V)
 
-TO-220-5 package, on-board with supporting passives.
+Pre-built adjustable module.  Set the trimpot to 5.0V output before
+connecting other components.
 
-| Pin | Silk | Net | Description |
-|-----|------|-----|-------------|
-| 1 | VIN | +12V | Input voltage (12V) |
-| 2 | SW | SW_OUT | Switch output → D1 cathode / L1 input |
-| 3 | GND | GND | Ground (also connected to heatsink tab) |
-| 4 | FB | +5V | Feedback (fixed 5V version → connects to output) |
-| 5 | ON | GND | ON/OFF control (GND = always on) |
+| Pin | Net | Description |
+|-----|-----|-------------|
+| IN+ | +12V | Input voltage (12V) |
+| IN- | GND | Input ground |
+| OUT+ | +5V | Output voltage (set to 5.0V) |
+| OUT- | GND | Output ground |
 
-### Supporting Buck Converter Components
+## J2 -- 48V DC Power Input
 
-| Ref | Value | Net 1 | Net 2 | Description |
-|-----|-------|-------|-------|-------------|
-| C2 | 680 µF 25V electrolytic | +12V | GND | Input filter capacitor |
-| L1 | 33 µH power inductor | SW_OUT | +5V | Energy storage inductor |
-| D1 | 1N5825 (5A 40V Schottky) | GND (anode) | SW_OUT (cathode) | Freewheeling diode |
-| C3 | 220 µF 25V electrolytic | +5V | GND | Output filter capacitor |
+2-pin screw terminal (barrel jack)
 
-**Circuit:** +12V → CIN (C2) → U4 VIN (pin 1). U4 OUTPUT (pin 2) → L1 → +5V rail.
-D1 cathode connects to pin 2/L1 junction (SW_OUT); D1 anode to GND.
-COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
+| Pin | Net | Description |
+|-----|-----|-------------|
+| 1 | +48V | DC input from 48V adapter (bell power) |
+| 2 | GND | Ground |
 
-## J2 — XL6009 Boost Converter (12V → 50V)
-
-4-pin header
-
-| Pin | Silk | Net | Description |
-|-----|------|-----|-------------|
-| 1 | 12V+ | +12V | Input positive |
-| 2 | GND | GND | Input negative |
-| 3 | 50V+ | +50V | Output positive (adjust trimpot) |
-| 4 | GND | GND | Output negative |
-
-## U1 — ESP32 DevKit V1
+## U1 -- ESP32 DevKit V1
 
 2×15 pin header socket (25.4 mm row spacing, 2.54 mm pin pitch)
 
@@ -125,7 +110,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | R14 | 2 LD | 2 | LED_STATUS | On-board LED |
 | R15 | 15 | 15 | — | Unused |
 
-## J5 — MAX98357A I2S DAC Module
+## U_DAC -- MAX98357A I2S DAC Module
 
 7-pin header
 
@@ -139,7 +124,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 6 | BCK | I2S_BCLK | I2S bit clock (from ESP32 GPIO 26) |
 | 7 | LRC | I2S_LRCLK | I2S word select (from ESP32 GPIO 25) |
 
-## J6 — DAC Audio Output
+## J_SPK -- DAC Audio Output
 
 2-pin header (connects to transformer T1 primary)
 
@@ -148,7 +133,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 1 | SPK+ | AUDIO_P1 | Speaker output + |
 | 2 | SPK- | AUDIO_P2 | Speaker output − |
 
-## T1 — Audio Coupling Transformer
+## T1 -- Audio Coupling Transformer
 
 600 Ω : 600 Ω, 4-pin
 
@@ -159,7 +144,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 3 | LnA | LINE_A | Secondary → phone Line A |
 | 4 | LnB | LINE_B | Secondary → phone Line B |
 
-## J4 — Phone Cord
+## J_PHONE -- Phone Cord
 
 3-pin screw terminal (rotated 90°, pitch 5.08 mm)
 
@@ -169,7 +154,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 2 | B Wht | LINE_B | White | Line B |
 | 3 | Bell | BELL | Blue | Bell coil connection |
 
-## J8 — Ring Button
+## J_RING -- Ring Button
 
 2-pin header (active low, internal pull-up)
 
@@ -178,7 +163,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 1 | RING | BTN_RING | Button signal → ESP32 GPIO 32 |
 | 2 | GND | GND | Ground |
 
-## J9 — Cancel Button
+## J_CANCEL -- Cancel Button
 
 2-pin header (active low, internal pull-up)
 
@@ -187,7 +172,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 1 | CANCEL | BTN_CANCEL | Button signal → ESP32 GPIO 33 |
 | 2 | GND | GND | Ground |
 
-## J10 — Reset Button
+## J_RESET -- Reset Button
 
 2-pin header (active low, internal pull-up)
 
@@ -196,41 +181,41 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 1 | RESET | BTN_RESET | Button signal → ESP32 GPIO 27 |
 | 2 | GND | GND | Ground |
 
-## J7 — Micro-SD Card Module (SPI)
+## U_SD -- Micro-SD Card Module (SPI)
 
-6-pin header
+6-pin header (pin order matches common breakout modules)
 
 | Pin | Silk | Net | Description |
 |-----|------|-----|-------------|
-| 1 | GND | GND | Ground |
-| 2 | 3V3 | +3V3 | Module power |
-| 3 | MOSI | SPI_MOSI | Data out → ESP32 GPIO 23 |
-| 4 | MISO | SPI_MISO | Data in ← ESP32 GPIO 19 |
-| 5 | SCK | SPI_SCK | SPI clock → ESP32 GPIO 18 |
-| 6 | CS | SD_CS | Chip select → ESP32 GPIO 5 |
+| 1 | 3V3 | +3V3 | Module power (3.3V) |
+| 2 | CS | SD_CS | Chip select -> ESP32 GPIO 5 |
+| 3 | MOSI | SPI_MOSI | Data out -> ESP32 GPIO 23 |
+| 4 | CLK | SPI_SCK | SPI clock -> ESP32 GPIO 18 |
+| 5 | MISO | SPI_MISO | Data in <- ESP32 GPIO 19 |
+| 6 | GND | GND | Ground |
 
-## U2 — L293D H-Bridge Motor Driver (DIP-16)
+## U2 -- L293D H-Bridge Motor Driver (DIP-16)
 
 | Pin | Side | Silk | Net | Description |
 |-----|------|------|-----|-------------|
-| 1 | L | EN | RING_EN | Enable 1/2 → ESP32 GPIO 4 |
-| 2 | L | IN1 | RING_A | Input 1 → ESP32 GPIO 16 |
-| 3 | L | BELL | BELL | Output 1 → bell coil |
+| 1 | L | EN | RING_EN | Enable 1/2 -> ESP32 GPIO 4 |
+| 2 | L | IN1 | RING_A | Input 1 -> ESP32 GPIO 16 |
+| 3 | L | BELL | BELL | Output 1 -> bell coil |
 | 4 | L | GND | GND | Ground |
 | 5 | L | GND | GND | Ground |
-| 6 | L | LnB | LINE_B | Output 2 → phone Line B |
-| 7 | L | IN2 | RING_B | Input 2 → ESP32 GPIO 17 |
-| 8 | L | 50V | +50V | Motor supply (from boost) |
+| 6 | L | LnB | LINE_B | Output 2 -> phone Line B |
+| 7 | L | IN2 | RING_B | Input 2 -> ESP32 GPIO 17 |
+| 8 | L | 48V | +48V | Motor supply (48V bell power) |
 | 9 | R | GND | GND | Ground |
-| 10 | R | — | — | Not connected |
-| 11 | R | — | — | Not connected |
-| 12 | R | — | GND | Ground |
-| 13 | R | — | GND | Ground |
-| 14 | R | — | — | Not connected |
-| 15 | R | — | — | Not connected |
+| 10 | R | -- | -- | Not connected |
+| 11 | R | -- | -- | Not connected |
+| 12 | R | -- | GND | Ground |
+| 13 | R | -- | GND | Ground |
+| 14 | R | -- | -- | Not connected |
+| 15 | R | -- | +5V | Logic supply |
 | 16 | R | 5V | +5V | Logic supply |
 
-## U3 — PC817 Optocoupler (DIP-4)
+## U3 -- PC817 Optocoupler (DIP-4)
 
 | Pin | Side | Silk | Net | Description |
 |-----|------|------|-----|-------------|
@@ -239,7 +224,30 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 3 | R | Em | OPTO_EMIT | Phototransistor emitter → R3 → GND |
 | 4 | R | Col | +3V3 | Phototransistor collector → 3.3V |
 
-**Hook detect circuit:** +12V → R1 (470 Ω) → junction → R2 (220 Ω) → PC817 anode (pin 1). PC817 cathode (pin 2) → LINE_B. When phone is off-hook, current flows through the loop, illuminating the optocoupler LED. The phototransistor output (pin 3) is read by ESP32 GPIO 34 (ADC).
+**Hook detect circuit:** +12V -> R1 (470 ohm) -> junction -> R2 (220 ohm) -> PC817 anode (pin 1). PC817 cathode (pin 2) -> LINE_B. When phone is off-hook, current flows through the loop, illuminating the optocoupler LED. The phototransistor output (pin 3) is read by ESP32 GPIO 34 (ADC).
+
+## Protection Diodes
+
+| Ref | Part | Net 1 | Net 2 | Purpose |
+|-----|------|-------|-------|--------|
+| D1 | 1N4007 | LINE_B (anode) | OPTO_A (cathode) | Anti-parallel across PC817 LED -- clamps reverse voltage during ringing |
+| D2 | 1N4007 | DAC_LP (anode) | +5V (cathode) | Positive overvoltage clamp on transformer primary L+ |
+| D3 | 1N4007 | GND (anode) | DAC_LP (cathode) | Negative overvoltage clamp on transformer primary L+ |
+| D4 | 1N4007 | DAC_LN (anode) | +5V (cathode) | Positive overvoltage clamp on transformer primary L- |
+| D5 | 1N4007 | GND (anode) | DAC_LN (cathode) | Negative overvoltage clamp on transformer primary L- |
+
+## J_COIN -- Daughter Board Header
+
+6-pin header for connecting the optional A+B coin box daughter board.
+
+| Pin | Net | Description |
+|-----|-----|-------------|
+| 1 | GPIO 36 | Coin sense (input-only, external pull-up R4 to +3V3) |
+| 2 | GPIO 39 | Button A (input-only, external pull-up R5 to +3V3) |
+| 3 | GPIO 35 | Button B (input-only, external pull-up R6 to +3V3) |
+| 4 | +3V3 | 3.3V power for daughter board pull-ups |
+| 5 | GND | Ground |
+| 6 | +5V | 5V power for daughter board optocoupler LED drive |
 
 ## Passive Components
 
@@ -254,13 +262,14 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | L1 | 33 µH 3A | L1 33µH | SW_OUT | +5V | Buck inductor |
 | D1 | 1N5825 | D1 1N5825 | GND | SW_OUT | Buck freewheeling diode |
 
-## Module Clearance Zones
+## Pull-Up Resistors (Coin Box GPIOs)
 
-Dashed silkscreen outlines on the PCB show where plug-in module boards sit.
-Do not place tall components within these zones.
+| Ref | Value | GPIO | Net |
+|-----|-------|------|-----|
+| R4 | 10K | 36 | +3V3 -> GPIO 36 |
+| R5 | 10K | 39 | +3V3 -> GPIO 39 |
+| R6 | 10K | 35 | +3V3 -> GPIO 35 |
 
-| Module | Size (mm) | Header | Orientation |
-|--------|-----------|--------|-------------|
-| XL6009 Boost | 43 × 21 | J2 (4-pin) | Extends right from header |
-| MAX98357A DAC | 19 × 18 | J5 (7-pin) | Extends left from header |
-| Micro-SD Card | 25 × 20 | J7 (6-pin) | Extends right from header |
+These are required even without the daughter board.  GPIO 36/39/35 are
+input-only pins with no internal pull-up on the ESP32.  Without these
+resistors the firmware falsely detects an A+B coin box at boot.
