@@ -20,6 +20,12 @@ struct CallStats {
     uint32_t total_call_seconds;     // total time visitors spent on calls
     uint32_t longest_call_seconds;   // single longest call
     uint32_t call_count;             // completed calls (for average)
+
+    // New engagement metrics
+    uint32_t total_pickups;          // total handset lifts (off-hook events)
+    uint32_t total_completions;      // sessions where a full number was dialled
+    uint32_t total_first_digit_ms;   // sum of time-to-first-digit (ms)
+    uint32_t first_digit_count;      // number of sessions that had a first digit
 };
 
 class StatsTracker {
@@ -35,9 +41,22 @@ public:
     void recordCoinCollected();
     void recordCoinRefunded();
 
+    // Engagement metrics.
+    void recordPickup();                  // handset lifted
+    void recordFirstDigit(unsigned long dialToneMs);  // first digit after dial tone
+    void recordCompletion();              // full number dialled
+
     // Call duration tracking — call from onState when entering/leaving call.
     void callStarted();
     void callEnded();
+
+    // Error tracking.
+    enum class ErrorType : uint8_t { BELL_FAULT, LINE_ANOMALY, SD_FAILURE };
+    void recordError(ErrorType type, const char* detail = nullptr);
+    struct ErrorEntry { unsigned long timestamp; ErrorType type; char detail[48]; };
+    static const int MAX_ERRORS = 30;
+    int errorCount() const { return err_count_; }
+    const ErrorEntry* errorEntries() const { return errors_; }
 
     const CallStats& stats() const { return stats_; }
     uint32_t avgCallSeconds() const;
@@ -81,4 +100,9 @@ private:
     NumberEntry discovery_[MAX_DISCOVERY] = {};
     int disc_count_ = 0;
     bool disc_dirty_ = false;
+
+    // Error log (ring buffer, not persisted — resets on reboot).
+    ErrorEntry errors_[MAX_ERRORS] = {};
+    int err_count_ = 0;
+    int err_write_  = 0;
 };

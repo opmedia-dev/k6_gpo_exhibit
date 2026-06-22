@@ -60,6 +60,8 @@ static void onHook(HookState state) {
                   state == HookState::OFF_HOOK ? "OFF_HOOK" : "ON_HOOK");
 }
 
+static unsigned long dial_tone_start_ms_ = 0;
+
 static void onState(PhoneState state) {
     switch (state) {
     case PhoneState::RINGING:
@@ -69,23 +71,43 @@ static void onState(PhoneState state) {
     case PhoneState::PLAYING_HISTORY:
         logger.callLog("INCOMING answered");
         stats.recordIncomingAnswered();
+        stats.recordPickup();
         stats.callStarted();
         break;
+    case PhoneState::DIAL_TONE:
+        stats.recordPickup();
+        dial_tone_start_ms_ = millis();
+        break;
+    case PhoneState::DIALING: {
+        // First digit arrived — record time since dial tone started.
+        unsigned long dialToneMs = millis() - dial_tone_start_ms_;
+        stats.recordFirstDigit(dialToneMs);
+        break;
+    }
+    case PhoneState::RINGING_TONE:
     case PhoneState::PLAYING_NUMBER:
-        logger.callLog("OUTGOING connected number=%s", phone.dialledNumber());
-        stats.recordOutgoingCall(phone.dialledNumber());
+        if (state == PhoneState::PLAYING_NUMBER) {
+            logger.callLog("OUTGOING connected number=%s", phone.dialledNumber());
+            stats.recordOutgoingCall(phone.dialledNumber());
+        }
+        stats.recordCompletion();
         stats.callStarted();
         break;
     case PhoneState::PLAYING_NOT_REC:
         logger.callLog("OUTGOING not_recognised number=%s", phone.dialledNumber());
         stats.recordNotRecognised(phone.dialledNumber());
         stats.recordDiscovery(phone.dialledNumber());
+        stats.recordCompletion();
         stats.callStarted();
+        break;
+    case PhoneState::AWAIT_COINS:
+        stats.recordCompletion();
         break;
     case PhoneState::AWAIT_BTN_B:
         logger.callLog("OUTGOING not_recognised (coinbox) number=%s", phone.dialledNumber());
         stats.recordNotRecognised(phone.dialledNumber());
         stats.recordDiscovery(phone.dialledNumber());
+        stats.recordCompletion();
         break;
     case PhoneState::IDLE:
         logger.callLog("IDLE");
@@ -220,6 +242,9 @@ void setup() {
                     phone.player().sdReady() ? "OK" : "FAIL",
                     phone.coinBox().isInstalled() ? "INSTALLED" : "NONE",
                     phone.autoRingEnabled() ? "AUTO" : "MANUAL");
+    if (!phone.player().sdReady()) {
+        stats.recordError(StatsTracker::ErrorType::SD_FAILURE, "SD card not available at boot");
+    }
 
     // Mark current firmware as valid (A/B rollback support).
     esp_ota_mark_app_valid_cancel_rollback();
@@ -245,7 +270,12 @@ void loop() {
 
     if (!safe_mode) {
         phone.update();
+        bool sd_was_ok = phone.player().sdReady();
         phone.player().checkSdCard();
+        if (sd_was_ok && !phone.player().sdReady()) {
+            stats.recordError(StatsTracker::ErrorType::SD_FAILURE, "SD card lost during operation");
+            logger.systemLog("ERROR: SD card lost");
+        }
     }
     stats.update();
     web.update();

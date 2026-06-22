@@ -60,6 +60,36 @@ void StatsTracker::recordCoinRefunded() {
     dirty_ = true;
 }
 
+void StatsTracker::recordPickup() {
+    stats_.total_pickups++;
+    dirty_ = true;
+}
+
+void StatsTracker::recordFirstDigit(unsigned long dialToneMs) {
+    stats_.total_first_digit_ms += dialToneMs;
+    stats_.first_digit_count++;
+    dirty_ = true;
+}
+
+void StatsTracker::recordCompletion() {
+    stats_.total_completions++;
+    dirty_ = true;
+}
+
+void StatsTracker::recordError(ErrorType type, const char* detail) {
+    auto& e = errors_[err_write_];
+    e.timestamp = millis() / 1000;
+    e.type = type;
+    if (detail) {
+        strncpy(e.detail, detail, sizeof(e.detail) - 1);
+        e.detail[sizeof(e.detail) - 1] = '\0';
+    } else {
+        e.detail[0] = '\0';
+    }
+    err_write_ = (err_write_ + 1) % MAX_ERRORS;
+    if (err_count_ < MAX_ERRORS) err_count_++;
+}
+
 void StatsTracker::callStarted() {
     if (!in_call_) {
         in_call_ = true;
@@ -143,6 +173,10 @@ void StatsTracker::save() {
     doc["call_seconds"]     = stats_.total_call_seconds;
     doc["longest_call"]     = stats_.longest_call_seconds;
     doc["call_count"]       = stats_.call_count;
+    doc["pickups"]          = stats_.total_pickups;
+    doc["completions"]      = stats_.total_completions;
+    doc["first_digit_ms"]   = stats_.total_first_digit_ms;
+    doc["first_digit_n"]    = stats_.first_digit_count;
 
     JsonArray nums = doc["numbers"].to<JsonArray>();
     for (int i = 0; i < num_count_; i++) {
@@ -189,6 +223,10 @@ void StatsTracker::load() {
     stats_.total_call_seconds    = doc["call_seconds"]     | 0;
     stats_.longest_call_seconds  = doc["longest_call"]     | 0;
     stats_.call_count            = doc["call_count"]       | 0;
+    stats_.total_pickups         = doc["pickups"]          | 0;
+    stats_.total_completions     = doc["completions"]      | 0;
+    stats_.total_first_digit_ms  = doc["first_digit_ms"]   | 0;
+    stats_.first_digit_count     = doc["first_digit_n"]    | 0;
 
     JsonArray nums = doc["numbers"].as<JsonArray>();
     num_count_ = 0;
