@@ -133,13 +133,13 @@ input[type=text]{width:140px}
 /* --- Burger menu (mobile) --- */
 .burger{display:none;background:none;border:none;color:var(--fg);font-size:1.6em;padding:4px 8px;margin:0;cursor:pointer;line-height:1}
 .burger:hover{color:#c41e1e;background:none}
+.nav-close{display:none;position:fixed;top:16px;right:16px;font-size:2em;color:var(--fg);background:none;border:none;cursor:pointer;z-index:1000;margin:0;padding:4px 12px}
 @media(max-width:520px){
   .tab-nav{display:none}
   .tab-nav.open{display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:999;justify-content:center;align-items:center;gap:4px}
   .tab-nav.open button{font-size:1.2em;padding:16px 30px;width:80%;border-radius:8px;border-bottom:none}
   .tab-nav.open button.active{background:var(--nav-active);color:#fff}
   .burger{display:block}
-  .nav-close{display:none;position:fixed;top:16px;right:16px;font-size:2em;color:var(--fg);background:none;border:none;cursor:pointer;z-index:1000;margin:0;padding:4px 12px}
   .tab-nav.open~.nav-close,.tab-nav.open+.nav-close{display:block}
 }
 </style>
@@ -181,58 +181,15 @@ input[type=text]{width:140px}
 </div>
 
 <div class="card">
-<h2><span class="section-icon">&#128266;</span> Sound Settings</h2>
-<p class="hint">Adjust how loud the telephone sounds through the handset and bell.</p>
-<div class="field">
-<div class="field-label">Handset Volume</div>
-<div class="field-hint">How loud audio plays through the telephone earpiece.</div>
-<div class="field-row"><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)" style="flex:1"><span id="vollbl" style="min-width:30px;text-align:right">15</span></div>
-</div>
-<div class="field">
-<div class="field-label">Bell Volume</div>
-<div class="field-hint">How loudly the telephone bell rings.</div>
-<div class="field-row"><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)" style="flex:1"><span id="belllbl" style="min-width:30px;text-align:right">255</span></div>
-</div>
+<h2><span class="section-icon">&#128200;</span> Session Summary</h2>
+<p class="hint">Activity since the exhibit was powered on.</p>
+<div id="sessionbox" style="display:flex;flex-wrap:wrap;gap:4px"></div>
 </div>
 
 <div class="card">
-<h2><span class="section-icon">&#128276;</span> Automatic Ringing</h2>
-<p class="hint">When in Automatic mode, the phone rings by itself at random intervals to attract visitors.</p>
-<div class="field">
-<div class="field-label">Time Between Rings</div>
-<div class="field-hint">The phone will ring randomly between these two times.</div>
-<div class="field-row">
-<span>Every </span><input type="number" id="armin" value="5" min="1" max="120" style="width:60px">
-<span> to </span><input type="number" id="armax" value="30" min="1" max="120" style="width:60px">
-<span> minutes</span><button onclick="setAutoRing()" style="margin:0">Save</button>
-</div>
-</div>
-<div class="field">
-<div class="field-label">How Long to Ring</div>
-<div class="field-hint">How many seconds the phone rings each time before giving up.</div>
-<div class="field-row">
-<span>Ring for </span><input type="number" id="rtmin" value="4" min="2" max="15" style="width:55px">
-<span> to </span><input type="number" id="rtmax" value="8" min="2" max="15" style="width:55px">
-<span> seconds</span><button onclick="setRingTone()" style="margin:0">Save</button>
-</div>
-</div>
-<div class="field">
-<div class="field-label">Maximum Ring Cycles</div>
-<div class="field-hint">How many times the bell rings before it stops trying. Set to 0 for unlimited.</div>
-<div class="field-row">
-<input type="number" id="ringmax" value="10" min="0" max="60" style="width:70px">
-<span> cycles</span><button onclick="setRingCount()" style="margin:0">Save</button>
-</div>
-</div>
-<hr class="divider">
-<div class="field">
-<div class="field-label">Inactivity Warning</div>
-<div class="field-hint">Flash the panel lamp if no visitors for this many minutes. Set to 0 to disable.</div>
-<div class="field-row">
-<span>Warn after </span><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px">
-<span> minutes</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
-</div>
-</div>
+<h2><span class="section-icon">&#128994;</span> Quick Health</h2>
+<p class="hint">At-a-glance system status.</p>
+<div id="healthbox" style="font-size:.85em;line-height:1.8">Loading...</div>
 </div>
 
 </div>
@@ -302,6 +259,61 @@ input[type=text]{width:140px}
 
 <!-- ===== SETTINGS TAB ===== -->
 <div class="tab-content" id="tab-settings">
+
+<div class="card">
+<h2><span class="section-icon">&#128266;</span> Sound Settings</h2>
+<p class="hint">Adjust how loud the telephone sounds through the handset and bell.</p>
+<div class="field">
+<div class="field-label">Handset Volume</div>
+<div class="field-hint">How loud audio plays through the telephone earpiece.</div>
+<div class="field-row"><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)" style="flex:1"><span id="vollbl" style="min-width:30px;text-align:right">15</span></div>
+</div>
+<div class="field">
+<div class="field-label">Bell Volume</div>
+<div class="field-hint">How loudly the telephone bell rings.</div>
+<div class="field-row"><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)" style="flex:1"><span id="belllbl" style="min-width:30px;text-align:right">255</span></div>
+</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128276;</span> Automatic Ringing</h2>
+<p class="hint">When in Automatic mode, the phone rings by itself at random intervals to attract visitors.</p>
+<div class="field">
+<div class="field-label">Time Between Rings</div>
+<div class="field-hint">The phone will ring randomly between these two times.</div>
+<div class="field-row">
+<span>Every </span><input type="number" id="armin" value="5" min="1" max="120" style="width:60px">
+<span> to </span><input type="number" id="armax" value="30" min="1" max="120" style="width:60px">
+<span> minutes</span><button onclick="setAutoRing()" style="margin:0">Save</button>
+</div>
+</div>
+<div class="field">
+<div class="field-label">How Long to Ring</div>
+<div class="field-hint">How many seconds the phone rings each time before giving up.</div>
+<div class="field-row">
+<span>Ring for </span><input type="number" id="rtmin" value="4" min="2" max="15" style="width:55px">
+<span> to </span><input type="number" id="rtmax" value="8" min="2" max="15" style="width:55px">
+<span> seconds</span><button onclick="setRingTone()" style="margin:0">Save</button>
+</div>
+</div>
+<div class="field">
+<div class="field-label">Maximum Ring Cycles</div>
+<div class="field-hint">How many times the bell rings before it stops trying. Set to 0 for unlimited.</div>
+<div class="field-row">
+<input type="number" id="ringmax" value="10" min="0" max="60" style="width:70px">
+<span> cycles</span><button onclick="setRingCount()" style="margin:0">Save</button>
+</div>
+</div>
+<hr class="divider">
+<div class="field">
+<div class="field-label">Inactivity Warning</div>
+<div class="field-hint">Flash the panel lamp if no visitors for this many minutes. Set to 0 to disable.</div>
+<div class="field-row">
+<span>Warn after </span><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px">
+<span> minutes</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
+</div>
+</div>
+</div>
 
 <div class="card">
 <h2><span class="section-icon">&#128193;</span> Audio Files</h2>
@@ -557,6 +569,32 @@ function loadStatus(){
       let m=Math.floor(d.call_secs/60),s=d.call_secs%60;
       ct.textContent=m+':'+(s<10?'0':'')+s;
     } else { ct.textContent='\u2014'; }
+    // Quick Health
+    let hb=document.getElementById('healthbox');
+    let hh='SD Card: '+(d.sd?'<span class="ok">OK</span>':'<span class="err">Not detected</span>');
+    hh+='<br>Memory: '+(d.heap/1024).toFixed(0)+' KB free';
+    hh+='<br>Uptime: '+uH+'h '+uM+'m';
+    if(d.errors&&d.errors>0) hh+='<br><span class="err">&#9888; '+d.errors+' error'+(d.errors>1?'s':'')+' recorded</span> <span style="font-size:.8em;color:var(--link);cursor:pointer" onclick="switchTab(\'diagnostics\',document.querySelector(\'.tab-nav button:nth-child(3)\'))">(view)</span>';
+    else hh+='<br>Errors: <span class="ok">None</span>';
+    hb.innerHTML=hh;
+  });
+}
+function loadSession(){
+  fetch('/api/stats').then(r=>r.json()).then(d=>{
+    let sb=document.getElementById('sessionbox');
+    let h='';
+    h+='<span class="stat"><span class="stat-label">Pickups</span><b>'+d.pickups+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+d.outgoing+'</b></span>';
+    if(d.completions!==undefined){
+      let rate=d.pickups>0?Math.round(d.completions/d.pickups*100):0;
+      h+='<span class="stat"><span class="stat-label">Completion Rate</span><b>'+rate+'%</b></span>';
+    }
+    if(d.top_numbers&&d.top_numbers.length){
+      h+='<span class="stat"><span class="stat-label">Last Popular</span><b>'+d.top_numbers[0].number+'</b></span>';
+    }
+    let uH=Math.floor(d.total_uptime/3600),uM=Math.floor(d.total_uptime%3600/60);
+    h+='<span class="stat"><span class="stat-label">Running Time</span><b>'+uH+'h '+uM+'m</b></span>';
+    sb.innerHTML=h;
   });
 }
 function loadStats(){
@@ -748,8 +786,9 @@ function loadErrors(){
   }).catch(()=>{document.getElementById('errorbox').innerHTML='<span class="err">Failed to load error log</span>';});
 }
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
-loadStatus();loadStats();loadAliases();loadDiscovery();
+loadStatus();loadSession();loadStats();loadAliases();loadDiscovery();
 setInterval(loadStatus,5000);
+setInterval(loadSession,30000);
 setInterval(loadStats,30000);
 setInterval(loadDiscovery,30000);
 </script>
