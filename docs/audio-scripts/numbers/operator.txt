@@ -1,0 +1,28 @@
+OPERATOR — Dial 100 or 0
+========================
+File: /numbers/operator.mp3
+Estimated duration: ~30 seconds
+
+--- SCRIPT ---
+
+[Slight pause, then in a clipped, professional 1940s operator voice]
+
+"Number please?"
+
+[Brief pause]
+
+"I'm sorry caller, all lines are busy at the moment. Would you like to hold, or shall I try the number again for you?"
+
+[Brief pause]
+
+"I'm putting you through now. Please hold the line."
+
+[Brief pause, then a softer, breaking-character tone]
+
+"This is a recorded demonstration of a GPO telephone operator. In the days before automatic exchanges, every call you made was connected by a real person, just like this. Thank you for calling."
+
+--- NOTES ---
+- Open with the classic "Number please?" in a period-appropriate female voice
+- Clipped, efficient, polite — the professional operator manner
+- The final section breaks the fourth wall to explain what they just heard
+- Consider adding a subtle crackle or line noise effect for authenticity

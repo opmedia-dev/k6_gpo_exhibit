@@ -1,0 +1,27 @@
+BOND — Dial 007
+===============
+File: /numbers/bond.mp3
+Estimated duration: ~20 seconds
+
+--- SCRIPT ---
+
+[Suave, measured voice — unmistakably Bond-inspired]
+
+"Ah, you've reached the right number. Unfortunately, I'm not available at the moment — I'm on assignment."
+
+[Brief pause]
+
+"If this is M, I'll report in when I'm back in London. If this is Moneypenny... I'll bring you a souvenir."
+
+[Brief pause]
+
+"In the meantime, try not to touch anything on my desk."
+
+[Click — line goes dead]
+
+--- NOTES ---
+- Smooth, confident, slightly amused delivery
+- Keep it short and playful — this is an Easter egg
+- The "click" at the end suggests the line was cut deliberately
+- Consider the James Bond theme riff as a subtle background
+  (be mindful of copyright — a few notes hummed might work)

@@ -1,0 +1,31 @@
+SIGNAL BOX — Dial 501
+=====================
+File: /numbers/signal_box.mp3
+Estimated duration: ~30 seconds
+
+--- SCRIPT ---
+
+[Sound of lever being pulled, a mechanical clunk]
+
+[In a gruff, busy voice — a working signalman]
+
+"Signal box. Yes?"
+
+[Brief pause]
+
+"Right, the down express has just cleared the section. I'm pulling off the signals for your goods train now. You're clear through to the junction."
+
+[Sound of another lever, bell ringing twice]
+
+"That's two bells — train entering section. Keep your eyes peeled at the crossing, the gates are set."
+
+[Brief pause]
+
+"I've got to go, there's another one coming up behind. Cheerio."
+
+--- NOTES ---
+- Busy, no-nonsense working man's voice
+- The signalman is in the middle of something — the caller is interrupting
+- Bell codes are authentic: 2 bells = "train entering section"
+- Sound effects: lever pulls (mechanical clunks), block bell rings
+- This gives visitors a feel for the real working railway

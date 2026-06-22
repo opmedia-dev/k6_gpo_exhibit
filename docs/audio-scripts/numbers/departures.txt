@@ -1,0 +1,29 @@
+DEPARTURES — Dial 347
+=====================
+File: /numbers/departures.mp3
+Estimated duration: ~35 seconds
+
+--- SCRIPT ---
+
+[In a classic British Rail announcer voice — clear, measured, slightly echoey]
+
+"This is a passenger announcement. The train now standing at platform one is the ten fifteen service to Birmingham New Street, calling at Reading, Oxford, Banbury, and Leamington Spa."
+
+[Brief pause]
+
+"The eleven o'clock express service to Edinburgh Waverley will depart from platform three. First class is at the front of the train."
+
+[Brief pause]
+
+"We regret to announce that the twelve thirty service to Bristol Temple Meads is running approximately fifteen minutes late. We apologise for any inconvenience."
+
+[Brief pause]
+
+"Thank you for travelling with us today."
+
+--- NOTES ---
+- Classic 1960s/70s station announcer delivery — precise and formal
+- Add reverb/echo to simulate a station PA system
+- Station names can be customised to match the model railway
+- The delayed train adds humour and realism
+- Consider adding background steam/platform ambience

@@ -1,0 +1,28 @@
+TIMETABLE ENQUIRIES — Dial 800
+==============================
+File: /numbers/timetable.mp3
+Estimated duration: ~30 seconds
+
+--- SCRIPT ---
+
+[In a helpful, patient voice — someone used to answering the same questions]
+
+"Railway timetable enquiries. Where are you travelling from and to?"
+
+[Brief pause]
+
+"Right, let me have a look for you. There's a service at nine forty-five, arriving at eleven twenty. You'll need to change at Crewe — that's a twelve-minute connection on platform four."
+
+[Brief pause]
+
+"Or if you'd prefer a direct train, there's one at ten thirty, but that's the slow service and doesn't arrive until quarter past twelve."
+
+[Brief pause]
+
+"Shall I book you a seat? No? Very well. Have a pleasant journey."
+
+--- NOTES ---
+- Patient, methodical delivery — leafing through a big timetable book
+- The Crewe connection is an authentic railway experience
+- The choice between fast-with-change and slow-but-direct is classic
+- Adjust stations and times to match the model railway if preferred

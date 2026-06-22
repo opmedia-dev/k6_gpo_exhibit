@@ -1,0 +1,28 @@
+PARCELS OFFICE — Dial 742
+=========================
+File: /numbers/parcels.mp3
+Estimated duration: ~25 seconds
+
+--- SCRIPT ---
+
+[In a cheerful, busy voice — someone working behind a counter]
+
+"Railway parcels office, good afternoon."
+
+[Brief pause]
+
+"Yes, we can send that for you. If you bring it to the parcels counter before three o'clock, it'll go on the four fifteen to Manchester and arrive first thing tomorrow morning."
+
+[Brief pause]
+
+"The charge depends on the weight. Up to seven pounds it's one and sixpence, over that it's two and nine. Cash on collection is available for an extra threepence."
+
+[Brief pause]
+
+"Right you are. We'll see you before three then. Goodbye."
+
+--- NOTES ---
+- Friendly, efficient — someone who does this all day
+- Pre-decimal currency adds period flavour (1s 6d, 2s 9d, 3d)
+- The railway parcels service was a vital part of British commerce
+- Adjust destination city to suit the model railway's setting

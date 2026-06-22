@@ -1,0 +1,26 @@
+SPEAKING CLOCK — Dial 123
+=========================
+File: /numbers/speaking_clock.mp3
+Estimated duration: ~25 seconds
+
+--- SCRIPT ---
+
+[In a precise, formal voice — imitating the classic speaking clock cadence]
+
+"At the third stroke, the time sponsored by Accurist will be twelve o'clock precisely."
+
+[Three short pips]
+
+"At the third stroke, the time will be twelve o'clock and ten seconds."
+
+[Three short pips]
+
+[Brief pause, then narrator voice]
+
+"The Speaking Clock, known affectionately as TIM, has been telling Britain the time since nineteen thirty-six. At its peak, it received over two hundred and fifty million calls a year."
+
+--- NOTES ---
+- The speaking clock voice should be precise, measured, and distinctly formal
+- The three pips are essential — short, evenly spaced beeps
+- Use a fixed time (twelve o'clock) rather than trying to be accurate
+- The pips can be generated as 1kHz tone, 100ms each, 500ms apart

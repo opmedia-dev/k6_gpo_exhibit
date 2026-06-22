@@ -1,0 +1,14 @@
+PRESS BUTTON A — Played when coins are inserted and call is ready
+=================================================================
+File: /system/press_a.mp3
+Estimated duration: ~6 seconds
+
+--- SCRIPT ---
+
+[Clear, instructional voice]
+
+"Press Button A now to connect your call."
+
+--- NOTES ---
+- Very short — the visitor just needs a prompt
+- Only used with coinbox installed

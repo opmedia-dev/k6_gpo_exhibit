@@ -1,0 +1,21 @@
+NOT RECOGNISED — Played when an unknown number is dialled
+=========================================================
+File: /system/not_recognised.mp3
+Estimated duration: ~12 seconds
+
+--- SCRIPT ---
+
+[In a formal, clipped GPO intercept voice]
+
+"The number you have dialled has not been recognised. Please replace the handset and try again."
+
+[Brief pause]
+
+"You may dial one-zero-zero for operator assistance."
+
+--- NOTES ---
+- Formal, precise, slightly stern — the classic GPO intercept tone
+- This plays every time someone dials a number not in the directory
+- Keep it short — visitors will hear this often
+- The "dial 100" hint encourages them to try another number
+- Consider adding a single "pip" tone before the voice starts
