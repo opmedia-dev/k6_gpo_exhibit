@@ -1,0 +1,20 @@
+WELCOME — Played during incoming/auto-ring answer (history playback)
+====================================================================
+File: /system/welcome.mp3 (optional — replaces default random history playback)
+Estimated duration: ~15 seconds
+
+--- SCRIPT ---
+
+[Warm, inviting voice]
+
+"Welcome to the K6 telephone box. This is a real GPO telephone from the nineteen thirties."
+
+"Pick up the handset, listen for the dial tone, and try dialling a number. You'll find a list of numbers to try on the card inside the box."
+
+"Go on — give it a go."
+
+--- NOTES ---
+- This could play when visitors answer an auto-ring call
+- Friendly, encouraging — especially for children or hesitant visitors
+- Keep it brief so they want to put it down and start dialling
+- Alternative: skip this and go straight to random history playback

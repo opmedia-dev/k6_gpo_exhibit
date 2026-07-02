@@ -1,0 +1,23 @@
+EMERGENCY — Dial 999
+====================
+File: /numbers/emergency.mp3
+Estimated duration: ~35 seconds
+
+--- SCRIPT ---
+
+[In a calm, professional voice]
+
+"Emergency. Which service do you require — police, fire, or ambulance?"
+
+[Brief pause]
+
+"Connecting you now. Please stay on the line."
+
+[Brief pause, then shift to informative narrator voice]
+
+"Nine-nine-nine is the United Kingdom's emergency telephone number, and the oldest in the world. It was introduced in nineteen thirty-seven after a devastating fire in London highlighted the need for a dedicated emergency line. Today, it handles over thirty million calls a year. This has been a recorded demonstration — in a real emergency, always dial nine-nine-nine."
+
+--- NOTES ---
+- Opening line delivered in the classic calm emergency operator style
+- Transition to narrator voice for the educational content
+- End with a clear reminder this is a demonstration

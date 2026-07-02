@@ -1,0 +1,32 @@
+SPOOKY — Dial 666
+=================
+File: /numbers/spooky.mp3
+Estimated duration: ~20 seconds
+
+--- SCRIPT ---
+
+[Heavy static and crackling on the line]
+
+[A distant, echoey voice — barely audible through interference]
+
+"Hello...? Can you hear me...?"
+
+[More static]
+
+"I've been trying to get through for such a long time..."
+
+[The crackling intensifies, then a long pause]
+
+"The last train left... a very long time ago..."
+
+[Static fades to silence]
+
+[Three slow, deep bell tolls]
+
+--- NOTES ---
+- Heavy audio processing: reverb, static, low-pass filter
+- The voice should sound distant, as if calling from far away
+- The "last train" reference ties it to the railway setting
+- The bell tolls are a classic gothic touch
+- Keep it atmospheric rather than scary — suitable for all ages
+- This should feel like a ghost story, not a horror film

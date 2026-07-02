@@ -1,0 +1,27 @@
+DIRECTORY ENQUIRIES — Dial 192
+==============================
+File: /numbers/directory.mp3
+Estimated duration: ~25 seconds
+
+--- SCRIPT ---
+
+[In a polite, efficient operator voice]
+
+"Directory enquiries. What name please?"
+
+[Brief pause]
+
+"And the town?"
+
+[Brief pause]
+
+"The number you require is Whitehall one-two-one-two. I'll repeat that — Whitehall one-two-one-two. Thank you for calling directory enquiries."
+
+[Brief pause, narrator voice]
+
+"Before the internet, if you didn't know someone's telephone number, you dialled one-nine-two for directory enquiries. An operator would look up the number for you from a large printed directory."
+
+--- NOTES ---
+- Efficient, helpful operator voice
+- "Whitehall 1212" is the famous old Scotland Yard number — a fun period detail
+- Spell out numbers clearly as individual digits

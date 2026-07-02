@@ -45,6 +45,7 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 --badge-amber-bg:#3a2a0a;--badge-amber-fg:#fc6;--badge-amber-bd:#5a4a1a;
 --badge-red-bg:#3a1a1a;--badge-red-fg:#f55;--badge-red-bd:#5a2a2a;
 --log-bg:#111;--log-fg:#bfb;
+--nav-bg:#111;--nav-active:#c41e1e;
 }
 .light{
 --bg:#f5f5f5;--bg2:#fff;--bg3:#e8e8e8;--bg4:#f0f0f0;--bg5:#f8f8f8;
@@ -60,12 +61,13 @@ static const char INDEX_HTML[] PROGMEM = R"rawhtml(
 --badge-amber-bg:#fff3cd;--badge-amber-fg:#856404;--badge-amber-bd:#ffc107;
 --badge-red-bg:#f8d7da;--badge-red-fg:#721c24;--badge-red-bd:#f5c6cb;
 --log-bg:#f8f8f0;--log-fg:#333;
+--nav-bg:#f0f0f0;--nav-active:#c41e1e;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:16px;max-width:640px;margin:0 auto;transition:background .3s,color .3s}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:0;max-width:640px;margin:0 auto;transition:background .3s,color .3s}
 h1{color:#c41e1e;margin-bottom:2px;font-size:1.5em}
 h2{font-size:1.1em;margin:0 0 4px;color:var(--fg2)}
-.sub{color:var(--fg4);font-size:.85em;margin-bottom:16px}
+.sub{color:var(--fg4);font-size:.85em;margin-bottom:0}
 .card{background:var(--bg2);border-radius:10px;padding:16px;margin-bottom:14px;border:1px solid var(--card-border);transition:background .3s}
 .hint{color:var(--fg4);font-size:.8em;margin:2px 0 8px;line-height:1.3}
 .path{font-family:monospace;color:var(--fg3);font-size:.9em;margin-bottom:8px}
@@ -118,15 +120,49 @@ input[type=text]{width:140px}
 .badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.8em;font-weight:600}
 .badge-green{background:var(--badge-green-bg);color:var(--badge-green-fg);border:1px solid var(--badge-green-bd)}
 .badge-amber{background:var(--badge-amber-bg);color:var(--badge-amber-fg);border:1px solid var(--badge-amber-bd)}
+.badge-red{background:var(--badge-red-bg);color:var(--badge-red-fg);border:1px solid var(--badge-red-bd)}
 .divider{border:none;border-top:1px solid var(--border);margin:12px 0}
-.header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.header-row{display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px}
+/* --- Tab navigation --- */
+.tab-nav{display:flex;background:var(--nav-bg);border-bottom:2px solid var(--border);position:sticky;top:0;z-index:100}
+.tab-nav button{flex:1;background:none;color:var(--fg4);border:none;padding:12px 8px;margin:0;border-radius:0;font-size:.85em;font-weight:500;cursor:pointer;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+.tab-nav button:hover{color:var(--fg);background:none}
+.tab-nav button.active{color:var(--nav-active);border-bottom-color:var(--nav-active);font-weight:700}
+.tab-content{display:none;padding:16px}
+.tab-content.active{display:block}
+/* --- Burger menu (mobile) --- */
+.burger{display:none;background:none;border:none;color:var(--fg);font-size:1.6em;padding:4px 8px;margin:0;cursor:pointer;line-height:1}
+.burger:hover{color:#c41e1e;background:none}
+.nav-close{display:none;position:fixed;top:16px;right:16px;font-size:2em;color:var(--fg);background:none;border:none;cursor:pointer;z-index:1000;margin:0;padding:4px 12px}
+@media(max-width:520px){
+  .tab-nav{display:none}
+  .tab-nav.open{display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:999;justify-content:center;align-items:center;gap:4px}
+  .tab-nav.open button{font-size:1.2em;padding:16px 30px;width:80%;border-radius:8px;border-bottom:none}
+  .tab-nav.open button.active{background:var(--nav-active);color:#fff}
+  .burger{display:block}
+  .tab-nav.open~.nav-close,.tab-nav.open+.nav-close{display:block}
+}
 </style>
 </head>
 <body>
 <div class="header-row">
 <div><h1>K6 GPO Exhibit</h1><p class="sub">Telephone Management System</p></div>
+<div style="display:flex;gap:8px;align-items:center">
 <button class="btn-theme" id="themebtn" onclick="toggleTheme()">Light Mode</button>
+<button class="burger" id="burgerbtn" onclick="toggleMenu()">&#9776;</button>
 </div>
+</div>
+
+<nav class="tab-nav" id="tabnav">
+<button class="active" onclick="switchTab('overview',this)">Overview</button>
+<button onclick="switchTab('stats',this)">Stats</button>
+<button onclick="switchTab('diagnostics',this)">Diagnostics</button>
+<button onclick="switchTab('settings',this)">Settings</button>
+</nav>
+<button class="nav-close" id="navclose" onclick="closeMenu()">&#10005;</button>
+
+<!-- ===== OVERVIEW TAB ===== -->
+<div class="tab-content active" id="tab-overview">
 
 <div class="card" style="border-color:var(--border2)">
 <h2><span class="section-icon">&#128222;</span> Phone Status</h2>
@@ -135,14 +171,94 @@ input[type=text]{width:140px}
 <div class="live-item"><div class="label">Current Mode</div><div class="value"><span id="modelbl" class="badge badge-green">AUTOMATIC</span></div></div>
 <div class="live-item"><div class="label">Phone State</div><div class="value" id="statelbl">Waiting for visitors</div></div>
 <div class="live-item"><div class="label">Now Playing</div><div class="value" id="playlbl" style="font-family:monospace;color:var(--link)">Nothing</div></div>
-<div class="live-item"><div class="label">Call Duration</div><div class="value" id="calltimer" style="font-family:monospace;color:var(--warn)">—</div></div>
+<div class="live-item"><div class="label">Call Duration</div><div class="value" id="calltimer" style="font-family:monospace;color:var(--warn)">&mdash;</div></div>
 </div>
-<div id="alertbanner" style="display:none;background:#c41e1e;color:#fff;padding:10px 14px;border-radius:6px;margin-top:10px;font-weight:600;font-size:.9em">&#9888; No visitor activity detected for a while — please check the exhibit is working.</div>
+<div id="alertbanner" style="display:none;background:#c41e1e;color:#fff;padding:10px 14px;border-radius:6px;margin-top:10px;font-weight:600;font-size:.9em">&#9888; No visitor activity detected for a while &mdash; please check the exhibit is working.</div>
 <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
 <button onclick="ringNow()">Make Phone Ring</button>
 <button onclick="toggleMode()" id="modebtn" class="btn-secondary">Switch to Manual Mode</button>
 </div>
 </div>
+
+<div class="card">
+<h2><span class="section-icon">&#128200;</span> Session Summary</h2>
+<p class="hint">Activity since the exhibit was powered on.</p>
+<div id="sessionbox" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128994;</span> Quick Health</h2>
+<p class="hint">At-a-glance system status.</p>
+<div id="healthbox" style="font-size:.85em;line-height:1.8">Loading...</div>
+</div>
+
+</div>
+
+<!-- ===== STATS TAB ===== -->
+<div class="tab-content" id="tab-stats">
+
+<div class="card">
+<h2><span class="section-icon">&#128202;</span> Visitor Activity</h2>
+<p class="hint">How visitors have been interacting with the telephone.</p>
+<div id="statsbox">Loading...</div>
+<div style="margin-top:8px"><button onclick="resetStats()" class="btn-danger">Clear All Statistics</button></div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128270;</span> Numbers Tried</h2>
+<p class="hint">Numbers visitors tried to dial that aren't in the directory. Use this to decide what content to add next.</p>
+<div id="discbox">Loading...</div>
+<div style="margin-top:8px"><button onclick="clearDiscovery()" class="btn-danger">Clear All</button></div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128214;</span> Number Directory</h2>
+<p class="hint">Link dialled numbers to audio files. Dialling a number listed here plays the matching file from <b>/numbers/</b>.</p>
+<table id="aliastbl"><thead><tr><td style="color:var(--fg3)">Dial Number</td><td style="color:var(--fg3)">Plays File</td><td></td></tr></thead><tbody></tbody></table>
+<div style="margin-top:10px">
+<div style="color:var(--fg2);font-size:.85em;margin-bottom:6px">Add a new number:</div>
+<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+<input type="text" id="anew_num" placeholder="e.g. 999" style="width:80px">
+<input type="text" id="anew_name" placeholder="e.g. emergency">
+<button onclick="addAlias()" style="margin:0">Add</button>
+</div>
+</div>
+<div class="status" id="aliasstatus"></div>
+</div>
+
+</div>
+
+<!-- ===== DIAGNOSTICS TAB ===== -->
+<div class="tab-content" id="tab-diagnostics">
+
+<div class="card">
+<h2><span class="section-icon">&#9888;</span> Error Log</h2>
+<p class="hint">Hardware and system errors since last power-on. Bell faults, line anomalies, and SD card failures appear here.</p>
+<div id="errorbox" style="font-size:.85em;color:var(--fg3)">Loading...</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128196;</span> Activity Log</h2>
+<p class="hint">View a record of what the telephone has been doing.</p>
+<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
+<button onclick="loadLog('system')">System Events</button>
+<button onclick="loadLog('calls')" class="btn-secondary">Call History</button>
+<button onclick="clearLog()" class="btn-danger">Clear Log</button>
+</div>
+<pre id="logview" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128295;</span> System Information</h2>
+<p class="hint">Technical details about the device.</p>
+<div id="sysinfo" style="font-size:.85em;color:var(--fg3);line-height:1.6">Loading...</div>
+<div style="margin-top:10px"><button onclick="rebootDevice()" class="btn-danger">Restart Telephone</button></div>
+</div>
+
+</div>
+
+<!-- ===== SETTINGS TAB ===== -->
+<div class="tab-content" id="tab-settings">
 
 <div class="card">
 <h2><span class="section-icon">&#128266;</span> Sound Settings</h2>
@@ -161,7 +277,7 @@ input[type=text]{width:140px}
 
 <div class="card">
 <h2><span class="section-icon">&#128276;</span> Automatic Ringing</h2>
-<p class="hint">When in Automatic mode, the phone rings by itself at random intervals to attract visitors. Configure the timing here.</p>
+<p class="hint">When in Automatic mode, the phone rings by itself at random intervals to attract visitors.</p>
 <div class="field">
 <div class="field-label">Time Between Rings</div>
 <div class="field-hint">The phone will ring randomly between these two times.</div>
@@ -173,7 +289,7 @@ input[type=text]{width:140px}
 </div>
 <div class="field">
 <div class="field-label">How Long to Ring</div>
-<div class="field-hint">How many seconds the phone rings each time before giving up (if nobody answers).</div>
+<div class="field-hint">How many seconds the phone rings each time before giving up.</div>
 <div class="field-row">
 <span>Ring for </span><input type="number" id="rtmin" value="4" min="2" max="15" style="width:55px">
 <span> to </span><input type="number" id="rtmax" value="8" min="2" max="15" style="width:55px">
@@ -191,31 +307,17 @@ input[type=text]{width:140px}
 <hr class="divider">
 <div class="field">
 <div class="field-label">Inactivity Warning</div>
-<div class="field-hint">If no visitors have used the phone for this long, flash the panel lamp and show a warning. Set to 0 to turn off.</div>
+<div class="field-hint">Flash the panel lamp if no visitors for this many minutes. Set to 0 to disable.</div>
 <div class="field-row">
 <span>Warn after </span><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px">
-<span> minutes with no activity</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
+<span> minutes</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
 </div>
 </div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128202;</span> Visitor Activity</h2>
-<p class="hint">How visitors have been interacting with the telephone.</p>
-<div id="statsbox">Loading...</div>
-<div style="margin-top:8px"><button onclick="resetStats()" class="btn-danger">Clear All Statistics</button></div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128270;</span> Numbers Tried</h2>
-<p class="hint">Numbers that visitors tried to dial but weren't in the directory. Use this to see what content visitors expect and decide what to add next.</p>
-<div id="discbox">Loading...</div>
-<div style="margin-top:8px"><button onclick="clearDiscovery()" class="btn-danger">Clear All</button></div>
 </div>
 
 <div class="card">
 <h2><span class="section-icon">&#128193;</span> Audio Files</h2>
-<p class="hint">Browse, upload, and manage the audio files stored on the SD card. Tap a folder name to open it.</p>
+<p class="hint">Browse, upload, and manage the audio files stored on the SD card.</p>
 <div class="path" id="pathbar">/</div>
 <table id="filetbl"><tbody></tbody></table>
 <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -227,23 +329,8 @@ input[type=text]{width:140px}
 </div>
 
 <div class="card">
-<h2><span class="section-icon">&#128214;</span> Number Directory</h2>
-<p class="hint">Link dialled numbers to audio files. When a visitor dials a number listed here, the matching audio file plays. For example, adding "999" with the name "emergency" means dialling 999 plays <b>/numbers/emergency.mp3</b>.</p>
-<table id="aliastbl"><thead><tr><td style="color:var(--fg3)">Dial Number</td><td style="color:var(--fg3)">Plays File</td><td></td></tr></thead><tbody></tbody></table>
-<div style="margin-top:10px">
-<div style="color:var(--fg2);font-size:.85em;margin-bottom:6px">Add a new number:</div>
-<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-<input type="text" id="anew_num" placeholder="e.g. 999" style="width:80px">
-<input type="text" id="anew_name" placeholder="e.g. emergency">
-<button onclick="addAlias()" style="margin:0">Add</button>
-</div>
-</div>
-<div class="status" id="aliasstatus"></div>
-</div>
-
-<div class="card">
 <h2><span class="section-icon">&#127908;</span> Record New Audio</h2>
-<p class="hint">Record audio using your phone's microphone. Listen back to check the quality before saving to the SD card.</p>
+<p class="hint">Record audio using your device's microphone. Listen back before saving.</p>
 <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
 <button onclick="startRec()" id="recbtn">Start Recording</button>
 <button onclick="stopRec()" id="stopbtn" disabled class="btn-secondary">Stop Recording</button>
@@ -267,35 +354,41 @@ input[type=text]{width:140px}
 
 <div class="card">
 <h2><span class="section-icon">&#9881;</span> Update Firmware</h2>
-<p class="hint">Upload a new firmware file (.bin) to update the telephone software. The phone will restart automatically after the update is installed.</p>
+<p class="hint">Upload a new firmware file (.bin) to update the telephone software.</p>
 <input type="file" id="otafile" accept=".bin">
 <button onclick="otaUpload()" id="otabtn">Install Update</button>
 <div id="prog"><div id="progbar"></div></div>
 <div class="status" id="otastatus"></div>
 <hr class="divider">
-<div class="field-hint" style="margin-bottom:4px">If a firmware update causes problems, you can go back to the previous version:</div>
+<div class="field-hint" style="margin-bottom:4px">If a firmware update causes problems:</div>
 <button onclick="rollbackFW()" class="btn-danger">Restore Previous Version</button>
 </div>
 
-<div class="card">
-<h2><span class="section-icon">&#128196;</span> Activity Log</h2>
-<p class="hint">View a record of what the telephone has been doing. Useful for troubleshooting if something isn't working correctly.</p>
-<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
-<button onclick="loadLog('system')">System Events</button>
-<button onclick="loadLog('calls')" class="btn-secondary">Call History</button>
-<button onclick="clearLog()" class="btn-danger">Clear Log</button>
-</div>
-<pre id="logview" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128295;</span> System Information</h2>
-<p class="hint">Technical details about the device. Useful for support if you need to report an issue.</p>
-<div id="sysinfo" style="font-size:.85em;color:var(--fg3);line-height:1.6">Loading...</div>
-<div style="margin-top:10px"><button onclick="rebootDevice()" class="btn-danger">Restart Telephone</button></div>
 </div>
 
 <script>
+// --- Tab navigation ---
+function switchTab(id,btn){
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-nav button').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  if(btn)btn.classList.add('active');
+  closeMenu();
+  try{localStorage.setItem('k6tab',id)}catch(e){}
+  if(id==='stats'){loadStats();loadDiscovery();loadAliases();}
+  if(id==='diagnostics'){loadErrors();loadLog('system');}
+  if(id==='settings'){loadFiles();}
+}
+function toggleMenu(){
+  document.getElementById('tabnav').classList.toggle('open');
+  document.getElementById('navclose').style.display=
+    document.getElementById('tabnav').classList.contains('open')?'block':'none';
+}
+function closeMenu(){
+  document.getElementById('tabnav').classList.remove('open');
+  document.getElementById('navclose').style.display='none';
+}
+// --- Theme ---
 function toggleTheme(){
   var b=document.body;b.classList.toggle('light');
   var isLight=b.classList.contains('light');
@@ -304,6 +397,7 @@ function toggleTheme(){
   try{localStorage.setItem('k6theme',isLight?'light':'dark')}catch(e){}
 }
 (function(){try{if(localStorage.getItem('k6theme')==='light'){document.body.classList.add('light');document.getElementById('themebtn').textContent='Dark Mode';document.getElementById('themecolor').content='#f5f5f5';}}catch(e){}})();
+(function(){try{var t=localStorage.getItem('k6tab');if(t){var btn=document.querySelector('.tab-nav button:nth-child('+(t==='overview'?1:t==='stats'?2:t==='diagnostics'?3:4)+')');switchTab(t,btn);}}catch(e){}})();
 let cwd='/';
 function nav(p){cwd=p;loadFiles()}
 function loadFiles(){
@@ -475,11 +569,38 @@ function loadStatus(){
       let m=Math.floor(d.call_secs/60),s=d.call_secs%60;
       ct.textContent=m+':'+(s<10?'0':'')+s;
     } else { ct.textContent='\u2014'; }
+    // Quick Health
+    let hb=document.getElementById('healthbox');
+    let hh='SD Card: '+(d.sd?'<span class="ok">OK</span>':'<span class="err">Not detected</span>');
+    hh+='<br>Memory: '+(d.heap/1024).toFixed(0)+' KB free';
+    hh+='<br>Uptime: '+uH+'h '+uM+'m';
+    if(d.errors&&d.errors>0) hh+='<br><span class="err">&#9888; '+d.errors+' error'+(d.errors>1?'s':'')+' recorded</span> <span style="font-size:.8em;color:var(--link);cursor:pointer" onclick="switchTab(\'diagnostics\',document.querySelector(\'.tab-nav button:nth-child(3)\'))">(view)</span>';
+    else hh+='<br>Errors: <span class="ok">None</span>';
+    hb.innerHTML=hh;
+  });
+}
+function loadSession(){
+  fetch('/api/stats').then(r=>r.json()).then(d=>{
+    let sb=document.getElementById('sessionbox');
+    let h='';
+    h+='<span class="stat"><span class="stat-label">Pickups</span><b>'+d.pickups+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+d.outgoing+'</b></span>';
+    if(d.completions!==undefined){
+      let rate=d.pickups>0?Math.round(d.completions/d.pickups*100):0;
+      h+='<span class="stat"><span class="stat-label">Completion Rate</span><b>'+rate+'%</b></span>';
+    }
+    if(d.top_numbers&&d.top_numbers.length){
+      h+='<span class="stat"><span class="stat-label">Last Popular</span><b>'+d.top_numbers[0].number+'</b></span>';
+    }
+    let uH=Math.floor(d.total_uptime/3600),uM=Math.floor(d.total_uptime%3600/60);
+    h+='<span class="stat"><span class="stat-label">Running Time</span><b>'+uH+'h '+uM+'m</b></span>';
+    sb.innerHTML=h;
   });
 }
 function loadStats(){
   fetch('/api/stats').then(r=>r.json()).then(d=>{
     let h='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
+    h+='<span class="stat"><span class="stat-label">Sessions (Pickups)</span><b>'+d.pickups+'</b></span>';
     h+='<span class="stat"><span class="stat-label">Times Rung</span><b>'+d.incoming+'</b></span>';
     h+='<span class="stat"><span class="stat-label">Calls Answered</span><b>'+d.answered+'</b></span>';
     h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+d.outgoing+'</b></span>';
@@ -497,8 +618,19 @@ function loadStats(){
       h+='<span class="stat"><span class="stat-label">Total Talk Time</span><b>'+totM+' min</b></span>';
       h+='</div>';
     }
+    // Engagement metrics
+    h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
+    if(d.pickups>0){
+      let compRate=d.completions>0?Math.round(d.completions/d.pickups*100):0;
+      h+='<span class="stat"><span class="stat-label">Completion Rate</span><b>'+compRate+'%</b></span>';
+    }
+    if(d.first_digit_n>0){
+      let avgFd=Math.round(d.first_digit_ms/d.first_digit_n/1000*10)/10;
+      h+='<span class="stat"><span class="stat-label">Avg. Time to First Digit</span><b>'+avgFd+'s</b></span>';
+    }
     let uH=Math.floor(d.total_uptime/3600), uM=Math.floor(d.total_uptime%3600/60);
     h+='<span class="stat"><span class="stat-label">Total Running Time</span><b>'+uH+'h '+uM+'m</b></span>';
+    h+='</div>';
     if(d.top_numbers&&d.top_numbers.length){
       h+='<div style="margin-top:12px"><div style="color:var(--fg2);font-weight:500;font-size:.9em;margin-bottom:4px">Most Popular Numbers:</div>';
       d.top_numbers.forEach(n=>{
@@ -636,9 +768,27 @@ function rollbackFW(){
     else document.getElementById('otastatus').innerHTML='<span class="err">'+(d.error||'No previous firmware available')+'</span>';
   });
 }
+function loadErrors(){
+  fetch('/api/diagnostics').then(r=>r.json()).then(d=>{
+    let box=document.getElementById('errorbox');
+    if(!d||!d.length){box.innerHTML='<span style="color:var(--ok)">No errors recorded since last power-on.</span>';return;}
+    let h='<table style="width:100%;border-collapse:collapse"><thead><tr><td style="color:var(--fg3);padding:4px 8px">Time</td><td style="color:var(--fg3);padding:4px 8px">Type</td><td style="color:var(--fg3);padding:4px 8px">Detail</td></tr></thead><tbody>';
+    d.forEach(e=>{
+      let mins=Math.floor(e.time/60), secs=e.time%60;
+      let ts=mins+'m '+secs+'s';
+      let cls=e.type==='SD_FAILURE'?'err':e.type==='BELL_FAULT'?'warn':'warn';
+      h+='<tr><td style="padding:4px 8px;font-family:monospace;font-size:.8em">'+ts+'</td>';
+      h+='<td style="padding:4px 8px"><span class="'+cls+'">'+e.type+'</span></td>';
+      h+='<td style="padding:4px 8px;font-size:.85em">'+(e.detail||'—')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    box.innerHTML=h;
+  }).catch(()=>{document.getElementById('errorbox').innerHTML='<span class="err">Failed to load error log</span>';});
+}
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
-loadFiles();loadStatus();loadStats();loadAliases();loadDiscovery();
+loadStatus();loadSession();loadStats();loadAliases();loadDiscovery();
 setInterval(loadStatus,5000);
+setInterval(loadSession,30000);
 setInterval(loadStats,30000);
 setInterval(loadDiscovery,30000);
 </script>
@@ -999,6 +1149,10 @@ static void handleStats() {
     json += ",\"longest_call\":";  json += String(st.longest_call_seconds);
     json += ",\"avg_call\":";      json += String(s_stats->avgCallSeconds());
     json += ",\"call_count\":";    json += String(st.call_count);
+    json += ",\"pickups\":";       json += String(st.total_pickups);
+    json += ",\"completions\":";   json += String(st.total_completions);
+    json += ",\"first_digit_ms\":"; json += String(st.total_first_digit_ms);
+    json += ",\"first_digit_n\":";  json += String(st.first_digit_count);
 
     StatsTracker::NumberEntry top[5];
     int n = s_stats->topNumbers(top, 5);
@@ -1024,6 +1178,43 @@ static void handleStatsReset() {
         if (s_logger) s_logger->systemLog("Stats reset via web");
     }
     server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// --- Diagnostics API handler ------------------------------------------------
+
+static void handleDiagnostics() {
+    if (!s_stats) { server.send(200, "application/json", "[]"); return; }
+
+    int count = s_stats->errorCount();
+    const StatsTracker::ErrorEntry* entries = s_stats->errorEntries();
+
+    String json = "[";
+    for (int i = 0; i < count; i++) {
+        if (i > 0) json += ",";
+        json += "{\"time\":";
+        json += String(entries[i].timestamp);
+        json += ",\"type\":\"";
+        switch (entries[i].type) {
+            case StatsTracker::ErrorType::BELL_FAULT:  json += "BELL_FAULT"; break;
+            case StatsTracker::ErrorType::LINE_ANOMALY: json += "LINE_ANOMALY"; break;
+            case StatsTracker::ErrorType::SD_FAILURE:   json += "SD_FAILURE"; break;
+        }
+        json += "\"";
+        if (entries[i].detail[0]) {
+            json += ",\"detail\":\"";
+            // Escape any quotes in detail string.
+            for (const char* p = entries[i].detail; *p; p++) {
+                if (*p == '"') json += "\\\"";
+                else if (*p == '\\') json += "\\\\";
+                else json += *p;
+            }
+            json += "\"";
+        }
+        json += "}";
+    }
+    json += "]";
+
+    server.send(200, "application/json", json);
 }
 
 // --- Discovery log API handlers ---------------------------------------------
@@ -1279,6 +1470,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/mode",        HTTP_POST, handleToggleMode);
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
+    server.on("/api/diagnostics", HTTP_GET,  handleDiagnostics);
     server.on("/api/discovery",       HTTP_GET,  handleDiscovery);
     server.on("/api/discovery/clear",  HTTP_POST, handleDiscoveryClear);
     server.on("/api/discovery/remove", HTTP_POST, handleDiscoveryRemove);

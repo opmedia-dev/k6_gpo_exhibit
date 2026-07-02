@@ -1,0 +1,27 @@
+FAULTS LINE — Dial 150
+======================
+File: /numbers/faults.mp3
+Estimated duration: ~25 seconds
+
+--- SCRIPT ---
+
+[In a bored but professional GPO engineer voice]
+
+"You're through to faults. What seems to be the problem?"
+
+[Brief pause]
+
+"Right, I'll make a note of that. We'll send an engineer round within the next three working days. Is there anything else I can help with?"
+
+[Brief pause]
+
+"Thank you for reporting the fault. Good day."
+
+[Brief pause, narrator voice]
+
+"If your telephone wasn't working properly, you dialled one-five-oh to report the fault. A GPO engineer would visit your home to fix the problem — sometimes taking rather longer than three days."
+
+--- NOTES ---
+- The engineer voice should be matter-of-fact, slightly weary
+- The "three working days" line can have a hint of optimism
+- The narrator's closing line should be gently humorous

@@ -1,0 +1,15 @@
+INSERT COINS — Played when coinbox is installed and call requires payment
+=========================================================================
+File: /system/insert_coins.mp3
+Estimated duration: ~8 seconds
+
+--- SCRIPT ---
+
+[In a polite, instructional voice]
+
+"Please insert your coins now, and then press Button A to connect your call."
+
+--- NOTES ---
+- Only used when the coinbox daughter board is installed
+- Short and clear — the visitor needs to act, not listen
+- Could also be a pre-recorded GPO-style announcement

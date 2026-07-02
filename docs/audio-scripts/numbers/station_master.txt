@@ -1,0 +1,28 @@
+STATION MASTER — Dial 246
+=========================
+File: /numbers/station_master.mp3
+Estimated duration: ~30 seconds
+
+--- SCRIPT ---
+
+[In an authoritative but welcoming voice, slight echo as if in a station office]
+
+"Station master's office. Good morning."
+
+[Brief pause]
+
+"I can confirm the next train to London Waterloo departs from platform two at half past eleven. It calls at Woking, Surbiton, and Clapham Junction."
+
+[Brief pause]
+
+"Please make sure you're on the platform in good time. We run a punctual service here."
+
+[Brief pause]
+
+"Is there anything else I can help you with? Very good. Safe travels."
+
+--- NOTES ---
+- Warm, authoritative — the voice of someone who takes pride in their station
+- Station names can be changed to match the model railway's layout
+- The slight formality of mid-century railway staff
+- Consider a faint background sound of a steam whistle or platform announcements

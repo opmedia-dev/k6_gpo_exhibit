@@ -1,0 +1,21 @@
+ROTARY DIALLING — How the Dial Works
+=====================================
+File: /history/rotary_dialling.mp3
+Estimated duration: ~40 seconds
+
+--- SCRIPT ---
+
+The rotary dial is a beautifully simple piece of engineering.
+
+To dial a number, you place your finger in the correct hole and turn the dial clockwise until your finger reaches the stop. When you release it, a spring pulls the dial back, and as it returns, it briefly interrupts the electrical circuit on the telephone line.
+
+Each interruption is called a pulse. Dial the number five, and the circuit breaks five times. Dial nine, and it breaks nine times. The telephone exchange counts these pulses and connects your call to the right number.
+
+The characteristic clicking sound you hear as the dial returns is the pulse mechanism at work — the same sound that millions of callers heard every day for over half a century.
+
+Have a go yourself — lift the handset, listen for the dial tone, and try dialling a number.
+
+--- NOTES ---
+- Engaging, slightly enthusiastic tone — explaining something clever
+- Slow down slightly when explaining the pulse mechanism
+- End with an encouraging invitation to try
