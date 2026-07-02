@@ -28,8 +28,12 @@ public:
     // Call every loop().  Reads and debounces the three coin inputs.
     void update();
 
-    // True if the daughter board was detected at boot.
+    // True if the coin box is active (detected at boot or manually enabled).
     bool isInstalled() const { return installed_; }
+
+    // Manual override — force coin box on or off regardless of detection.
+    void setOverride(int mode);  // -1=auto, 0=force off, 1=force on
+    int  overrideMode() const { return override_; }
 
     // True when sufficient coins are in the basket (weight switch closed).
     // Always returns true when no daughter board is installed.
@@ -51,6 +55,8 @@ private:
     bool debounceRead(int pin, bool& last, unsigned long& last_change) const;
 
     bool installed_ = false;
+    bool detected_  = false;   // hardware detection result
+    int  override_  = -1;      // -1=auto, 0=force off, 1=force on
 
     // Debounced states (active-low inputs, stored as logical state)
     bool coin_ready_  = false;

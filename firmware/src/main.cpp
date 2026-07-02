@@ -30,6 +30,7 @@
 //   S   — print state
 //   A   — toggle auto-ring on/off
 //   V0-9 — set volume (0=min, 9=max)
+//   B   — cycle coin box override (auto → off → on → auto)
 // ============================================================================
 
 PhoneController phone;
@@ -138,14 +139,16 @@ static void handleSerial() {
         phone.cancelRing();
         break;
     case 'S':
-        Serial.printf("[cmd] state=%s  hook=%s  line=%d  mode=%s  sd=%s  coinbox=%s\n",
+        Serial.printf("[cmd] state=%s  hook=%s  line=%d  mode=%s  sd=%s  coinbox=%s(%s)\n",
                       phone.stateName(),
                       phone.line().hookState() == HookState::OFF_HOOK
                           ? "OFF_HOOK" : "ON_HOOK",
                       phone.line().lastRawReading(),
                       phone.autoRingEnabled() ? "AUTO" : "MANUAL",
                       phone.player().sdReady() ? "OK" : "FAIL",
-                      phone.coinBox().isInstalled() ? "INSTALLED" : "NONE");
+                      phone.coinBox().isInstalled() ? "ACTIVE" : "OFF",
+                      phone.coinBox().overrideMode() == 1 ? "forced-on" :
+                      phone.coinBox().overrideMode() == 0 ? "forced-off" : "auto");
         break;
     case 'A':
         phone.setAutoRing(!phone.autoRingEnabled());
@@ -164,6 +167,12 @@ static void handleSerial() {
                 Serial.printf("[cmd] volume → %d/21\n", vol);
             }
         }
+        break;
+    }
+    case 'B': {
+        int cur = phone.coinBox().overrideMode();
+        int next = (cur == -1) ? 0 : (cur == 0) ? 1 : -1;
+        phone.coinBox().setOverride(next);
         break;
     }
     default:

@@ -316,6 +316,23 @@ input[type=text]{width:140px}
 </div>
 
 <div class="card">
+<h2><span class="section-icon">&#128176;</span> A+B Coin Box</h2>
+<p class="hint">Control whether the A+B coin box daughter board is active. In Auto mode, the system detects the hardware at boot. Use the override to force it on or off.</p>
+<div class="field">
+<div class="field-label">Coin Box Mode</div>
+<div class="field-hint">Auto = detect hardware at boot. Force Off = disable coin logic. Force On = always require coins.</div>
+<div class="field-row">
+<select id="coinmode" onchange="setCoinMode(this.value)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg4);color:var(--fg1)">
+<option value="-1">Auto (detect at boot)</option>
+<option value="0">Force Off</option>
+<option value="1">Force On</option>
+</select>
+<span id="coinstatus" style="margin-left:10px;font-size:.85em;color:var(--fg3)"></span>
+</div>
+</div>
+</div>
+
+<div class="card">
 <h2><span class="section-icon">&#128193;</span> Audio Files</h2>
 <p class="hint">Browse, upload, and manage the audio files stored on the SD card.</p>
 <div class="path" id="pathbar">/</div>
@@ -520,6 +537,11 @@ function setAlertIdle(){
   let v=document.getElementById('alertidle').value;
   fetch('/api/alertidle?v='+v,{method:'POST'});
 }
+function setCoinMode(v){
+  fetch('/api/coinmode?v='+v,{method:'POST'}).then(r=>r.json()).then(d=>{
+    document.getElementById('coinstatus').textContent=d.active?'Coin logic active':'Coin logic disabled';
+  });
+}
 function setAutoRing(){
   let mn=document.getElementById('armin').value;
   let mx=document.getElementById('armax').value;
@@ -554,6 +576,11 @@ function loadStatus(){
     if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
     if(d.rt_min!==undefined){document.getElementById('rtmin').value=d.rt_min;document.getElementById('rtmax').value=d.rt_max;}
     if(d.alert_idle!==undefined) document.getElementById('alertidle').value=d.alert_idle;
+    if(d.coin_override!==undefined){
+      document.getElementById('coinmode').value=d.coin_override;
+      let cs=document.getElementById('coinstatus');
+      cs.textContent=d.coin_active?'Coin logic active':'Coin logic disabled';
+    }
     document.getElementById('alertbanner').style.display=d.alert_on?'block':'none';
     document.getElementById('armin').value=Math.round(d.ar_min/60000);
     document.getElementById('armax').value=Math.round(d.ar_max/60000);
@@ -918,6 +945,20 @@ static void handleMkdir() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+static void handleCoinMode() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < -1) v = -1;
+    if (v > 1)  v = 1;
+    s_phone->coinBox().setOverride(v);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Coin box override set to %d via web", v);
+    String json = "{\"ok\":true,\"active\":";
+    json += s_phone->coinBox().isInstalled() ? "true" : "false";
+    json += "}";
+    server.send(200, "application/json", json);
+}
+
 static void handleStatus() {
     if (!s_phone) {
         server.send(200, "application/json", "{\"error\":\"not ready\"}");
@@ -940,6 +981,8 @@ static void handleStatus() {
     json += ",\"rt_max\":"; json += String(s_phone->ringToneMaxSecs());
     json += ",\"alert_idle\":"; json += String(s_phone->alertIdleMinutes());
     json += ",\"alert_on\":"; json += s_phone->isAlertActive() ? "true" : "false";
+    json += ",\"coin_override\":"; json += String(s_phone->coinBox().overrideMode());
+    json += ",\"coin_active\":"; json += s_phone->coinBox().isInstalled() ? "true" : "false";
     json += ",\"mode\":\"";  json += s_phone->autoRingEnabled() ? "AUTO" : "MANUAL";
     json += "\",\"state\":\""; json += s_phone->stateName();
     json += "\",\"playing\":\"";
@@ -1305,6 +1348,7 @@ static void loadSettings() {
     if (!doc["rt_min"].isNull() && !doc["rt_max"].isNull())
         s_phone->setRingToneRange(doc["rt_min"].as<int>(), doc["rt_max"].as<int>());
     if (!doc["alert_idle"].isNull()) s_phone->setAlertIdleMinutes(doc["alert_idle"].as<int>());
+    if (!doc["coin_override"].isNull()) s_phone->coinBox().setOverride(doc["coin_override"].as<int>());
     Serial.println("[web] settings loaded");
 }
 
@@ -1325,6 +1369,7 @@ static void saveSettings() {
     doc["rt_min"] = s_phone->ringToneMinSecs();
     doc["rt_max"] = s_phone->ringToneMaxSecs();
     doc["alert_idle"] = s_phone->alertIdleMinutes();
+    doc["coin_override"] = s_phone->coinBox().overrideMode();
     serializeJson(doc, f);
     f.flush();
     f.close();
@@ -1467,6 +1512,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/ringcount",  HTTP_POST, handleRingCount);
     server.on("/api/ringtone",   HTTP_POST, handleRingTone);
     server.on("/api/alertidle",  HTTP_POST, handleAlertIdle);
+    server.on("/api/coinmode",   HTTP_POST, handleCoinMode);
     server.on("/api/mode",        HTTP_POST, handleToggleMode);
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);

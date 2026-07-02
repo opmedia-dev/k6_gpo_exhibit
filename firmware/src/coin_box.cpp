@@ -11,30 +11,43 @@ void CoinBox::begin() {
     // board is connected.  When the daughter board is present, its
     // optocoupler outputs can pull the pins LOW (overriding the pull-ups).
     //
-    // Detection strategy: if ANY pin reads LOW during the boot window, a
-    // daughter board is present (an optocoupler is pulling a line down).
-    // If all pins remain HIGH for the entire window, no board is installed.
-    //
-    // NOTE: Without the external pull-ups, these pins float and false
-    // detection will occur.  See docs/hardware/schematic.md Rev 2 notes.
+    // Detection: require a majority of consecutive LOW samples to filter
+    // out transient glitches from WiFi radio startup on GPIO 36/39.
+    // A single LOW reading is not sufficient — need DETECT_THRESHOLD
+    // consecutive readings with ANY pin LOW.
+    static const int DETECT_THRESHOLD = 10;  // consecutive LOW samples needed
     unsigned long start = millis();
-    bool detected = false;
+    int low_streak = 0;
+    detected_ = false;
     while (millis() - start < COIN_DETECT_BOOT_MS) {
         if (digitalRead(PIN_COIN_SENSE) == LOW ||
             digitalRead(PIN_COIN_BTN_A) == LOW ||
             digitalRead(PIN_COIN_BTN_B) == LOW) {
-            detected = true;
-            break;
+            low_streak++;
+            if (low_streak >= DETECT_THRESHOLD) {
+                detected_ = true;
+                break;
+            }
+        } else {
+            low_streak = 0;
         }
         delay(10);
     }
 
-    installed_ = detected;
+    installed_ = (override_ == 1) || (override_ == -1 && detected_);
 
-    if (installed_) {
+    if (detected_) {
         Serial.println("[coin] A+B coin box daughter board DETECTED");
     } else {
-        Serial.println("[coin] no coin box detected — feature disabled");
+        Serial.println("[coin] no coin box detected");
+    }
+    if (override_ != -1) {
+        Serial.printf("[coin] override: %s\n", override_ == 1 ? "FORCE ON" : "FORCE OFF");
+    }
+    if (installed_) {
+        Serial.println("[coin] coin logic ACTIVE");
+    } else {
+        Serial.println("[coin] coin logic disabled");
     }
 }
 
@@ -73,6 +86,16 @@ bool CoinBox::buttonAPressed() const {
 bool CoinBox::buttonBPressed() const {
     if (!installed_) return false;
     return btn_b_edge_;
+}
+
+void CoinBox::setOverride(int mode) {
+    override_ = mode;
+    if (mode == 1)      installed_ = true;
+    else if (mode == 0) installed_ = false;
+    else                installed_ = detected_;
+    Serial.printf("[coin] override set to %s — coin logic %s\n",
+                  mode == 1 ? "FORCE ON" : mode == 0 ? "FORCE OFF" : "AUTO",
+                  installed_ ? "ACTIVE" : "disabled");
 }
 
 bool CoinBox::debounceRead(int pin, bool& last, unsigned long& last_change) const {
