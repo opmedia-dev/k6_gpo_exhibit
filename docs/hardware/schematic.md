@@ -59,7 +59,7 @@ The board has **two bus rails** running the full length:
 
 | Bus | Voltage | Source | Connects to |
 |-----|---------|--------|-------------|
-| **5 V bus** | +5 V / GND | LM2596 output | ESP32 VIN, MAX98357A VIN, SD card VCC, L293D pin 16 |
+| **5 V bus** | +5 V / GND | LM2596 output | ESP32 VIN, MAX98357A VIN, L293D pin 16 |
 | **48 V bus** | +48 V / GND | 48 V adapter | L293D pin 8 (VS) only |
 
 > **IMPORTANT:** The GND rails of both supplies must be **connected
@@ -228,8 +228,8 @@ Standard micro-SD card breakout module, using the ESP32's default VSPI bus.
     GPIO 5  ── CS ──────► CS
     GPIO 23 ── MOSI ────► MOSI (DI)
     GPIO 19 ── MISO ◄───  MISO (DO)
-    GPIO 18 ── SCK ─────► SCK (CLK)
-    3.3 V ───── VCC ────► VCC
+    GPIO 18 ── SCK ─────► CLK
+    3.3 V ───── VCC ────► 3V3
     GND ─────── GND ────► GND
 ```
 
@@ -385,7 +385,7 @@ across the LED to ~0.7 V instead of the destructive 36 V.
               (J_SPK pin 1)   (J_SPK pin 2)
                   │              │
               D3 cathode    D5 cathode
-              D3 anode      D4 anode
+              D3 anode      D5 anode
                   │              │
     GND ──────────┴──────────────┘
 ```
@@ -412,12 +412,12 @@ Every wire in the system, listed by destination:
 | Buck converter OUT+ (5 V) | ESP32 VIN pin | Logic power |
 | Buck converter OUT+ (5 V) | MAX98357A VIN | DAC power |
 | Buck converter OUT+ (5 V) | L293D pin 16 (VSS) | H-bridge logic |
-| Buck converter OUT+ (5 V) | SD card module VCC | SD card power |
+| ESP32 3.3 V | SD card module 3V3 | SD card power |
 | Buck converter OUT+ (5 V) | Header pin 6 | Daughter board (optional) |
 | ESP32 3.3 V | PC817 Collector (pin 4) | Optocoupler pull-up |
 | ESP32 3.3 V | R4, R5, R6 (top) | Coin box GPIO pull-ups |
 | ESP32 3.3 V | Header pin 4 | Daughter board power |
-| ESP32 3.3 V | SD card VCC (if 3.3 V module) | Some modules need 3.3 V |
+
 | R1 (470 Ω) bottom | Terminal 1 / R2 top | Line A feed |
 | R2 (220 Ω) bottom | PC817 Anode (pin 1) | Optocoupler drive |
 | PC817 Cathode (pin 2) | Terminal 2 (Line B) | Return path |

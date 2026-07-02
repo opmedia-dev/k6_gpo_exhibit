@@ -39,9 +39,10 @@
 | 15 | 4× momentary push buttons | RING / CANCEL / RESET / MODE |
 | 16 | 1× panel lamp (LED or filament) | Auto-mode indicator |
 | 17 | 3-way screw terminal block | Phone cord connection |
+| -- | 5× 1N4007 rectifier diodes | D1-D5: PC817 reverse clamp + DAC overvoltage clamps |
 | 18 | 2× barrel jack sockets | 12 V and 48 V power inputs |
 | 19 | 1× 6-pin header (2.54 mm) | A+B daughter board connector |
-| 20 | Prototype PCB | 100 × 80 mm minimum |
+| 20 | Prototype PCB | 100 × 100 mm |
 | 21 | Hook-up wire, solder | Assembly |
 
 ---
@@ -205,32 +206,67 @@ nearest GND pin, as close to the IC as possible.
 
 ---
 
-## Step 7: Wire the SD Card Module
+## Step 7: Install Protection Diodes (D1-D5)
+
+All diodes are 1N4007 (1000 V, 1 A rectifier).  The band on the diode
+body marks the cathode.
+
+### D1 -- PC817 reverse voltage clamp
 
 ```
-    SD module pin order (left to right, facing pins):
-    CS  SCK  MOSI  MISO  VCC  GND
+    PC817 pin 1 (Anode / OPTO_A)  ──── D1 cathode (band end)
+    PC817 pin 2 (Cathode / LINE_B) ── D1 anode
+```
 
+D1 sits anti-parallel across the PC817 LED.  During bell ringing, the
+L293D drives LINE_B to 48 V.  Without D1, the PC817 LED (rated 6 V
+reverse) would be destroyed.  D1 clamps the reverse voltage to 0.7 V.
+
+### D2-D5 -- DAC overvoltage clamps
+
+These four diodes clamp the transformer primary voltage to between
+-0.7 V and +5.7 V, protecting the MAX98357A DAC output.
+
+```
+    DAC L+ net (AUDIO_P1):
+        D2 anode ── AUDIO_P1,  D2 cathode ── +5 V    (positive clamp)
+        D3 anode ── GND,       D3 cathode ── AUDIO_P1 (negative clamp)
+
+    DAC L- net (AUDIO_P2):
+        D4 anode ── AUDIO_P2,  D4 cathode ── +5 V    (positive clamp)
+        D5 anode ── GND,       D5 cathode ── AUDIO_P2 (negative clamp)
+```
+
+> Place all five diodes close to the components they protect.
+> D1 next to the PC817; D2-D5 near the transformer primary / DAC output.
+
+---
+
+## Step 8: Wire the SD Card Module
+
+```
+    SD module pin order (top to bottom, facing pins):
+    3V3  CS  MOSI  CLK  MISO  GND
+
+    +3.3 V  ──── 3V3
     GPIO 5  ──── CS
-    GPIO 18 ──── SCK (CLK)
     GPIO 23 ──── MOSI (DI)
+    GPIO 18 ──── CLK (SCK)
     GPIO 19 ──── MISO (DO)
-    +3.3 V  ──── VCC
     GND     ──── GND
 ```
 
 > Most SD card modules have an on-board 3.3 V regulator, so you can
-> safely connect VCC to 3.3 V or 5 V depending on the module. Check
-> your module's documentation.
+> safely connect VCC/3V3 to 3.3 V. Check your module's documentation.
 
 Place a **100 nF ceramic capacitor (C2)** between the ESP32 VIN pin
 and GND, close to the ESP32 board.
 
 ---
 
-## Step 8: Wire the Control Panel
+## Step 9: Wire the Control Panel
 
-### 8a. Four buttons
+### 9a. Four buttons
 
 Four momentary push buttons, each wired between the GPIO pin and GND.
 No external resistors — the ESP32 enables internal pull-ups in firmware.
@@ -246,7 +282,7 @@ No external resistors — the ESP32 enables internal pull-ups in firmware.
 > continuity between the two pins should read < 1 Ω. When released,
 > open circuit.
 
-### 8b. Panel lamp
+### 9b. Panel lamp
 
 For a 3 V LED with 100 Ω series resistor:
 
@@ -269,9 +305,9 @@ For a 5-6 V filament lamp with transistor driver:
 
 ---
 
-## Step 9: Wire the Coin Box Pull-Ups and Header
+## Step 10: Wire the Coin Box Pull-Ups and Header
 
-### 9a. Pull-up resistors (required even without daughter board)
+### 10a. Pull-up resistors (required even without daughter board)
 
 ```
     +3.3 V ──┬──────────┬──────────┐
@@ -286,7 +322,7 @@ For a 5-6 V filament lamp with transistor driver:
 > pull-up. Without R4/R5/R6, the firmware falsely detects a coin box
 > and blocks normal phone operation.
 
-### 9b. 6-pin daughter board header
+### 10b. 6-pin daughter board header
 
 ```
     Header Pin 1 ──── GPIO 36 (+ R4 pull-up to 3.3 V)
@@ -301,7 +337,7 @@ Mount this header at the board edge for easy daughter board connection.
 
 ---
 
-## Step 10: Prepare the SD Card
+## Step 11: Prepare the SD Card
 
 1. Format a micro-SD card as **FAT32**
 2. Create directories and add MP3 files:
