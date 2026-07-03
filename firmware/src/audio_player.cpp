@@ -1,18 +1,39 @@
 #include "audio_player.h"
 #include "config.h"
+#include <SPI.h>
 #include <ArduinoJson.h>
 
 static const char* ALIASES_FILE = "/system/aliases.json";
 
 bool AudioPlayer::begin() {
-    // Initialise SD card on the default VSPI bus.
-    if (!SD.begin(PIN_SD_CS)) {
-        Serial.println("[audio] SD card init failed");
-        sd_ok_ = false;
-    } else {
-        Serial.printf("[audio] SD card ready  type=%d  size=%lluMB\n",
-                      SD.cardType(), SD.cardSize() / (1024 * 1024));
-        sd_ok_ = true;
+    // GPIO 5 (CS) is an ESP32 strapping pin that outputs PWM during boot,
+    // which sends spurious chip-select pulses to the SD card.  Explicitly
+    // initialise SPI, deselect the card, and send dummy clocks to reset
+    // the card's SPI state machine before attempting SD.begin().
+    SPI.begin();
+    pinMode(PIN_SD_CS, OUTPUT);
+    digitalWrite(PIN_SD_CS, HIGH);  // deselect card
+    delay(10);
+    // Send 80 dummy clocks (10 bytes of 0xFF) with CS high to flush
+    // any partial command the card received during boot.
+    for (int i = 0; i < 10; i++) SPI.transfer(0xFF);
+    delay(10);
+
+    // Try SD init up to 3 times — some cards need a retry after boot glitches.
+    sd_ok_ = false;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        if (SD.begin(PIN_SD_CS, SPI, 4000000)) {
+            Serial.printf("[audio] SD card ready  type=%d  size=%lluMB  (attempt %d)\n",
+                          SD.cardType(), SD.cardSize() / (1024 * 1024), attempt);
+            sd_ok_ = true;
+            break;
+        }
+        Serial.printf("[audio] SD init attempt %d failed\n", attempt);
+        SD.end();
+        delay(100);
+    }
+    if (!sd_ok_) {
+        Serial.println("[audio] SD card init failed after 3 attempts");
     }
 
     // Initialise I2S output.
