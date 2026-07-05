@@ -133,14 +133,14 @@ input[type=text]{width:140px}
 /* --- Burger menu (mobile) --- */
 .burger{display:none;background:none;border:none;color:var(--fg);font-size:1.6em;padding:4px 8px;margin:0;cursor:pointer;line-height:1}
 .burger:hover{color:#c41e1e;background:none}
-.nav-close{display:none;position:fixed;top:16px;right:16px;font-size:2em;color:var(--fg);background:none;border:none;cursor:pointer;z-index:1000;margin:0;padding:4px 12px}
+.nav-backdrop{display:none}
 @media(max-width:520px){
   .tab-nav{display:none}
-  .tab-nav.open{display:flex;flex-direction:column;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:999;justify-content:center;align-items:center;gap:4px}
-  .tab-nav.open button{font-size:1.2em;padding:16px 30px;width:80%;border-radius:8px;border-bottom:none}
+  .tab-nav.open{display:flex;flex-direction:column;position:absolute;top:60px;right:10px;min-width:180px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:1000;padding:6px;gap:2px}
+  .tab-nav.open button{font-size:1em;padding:11px 16px;width:100%;border-radius:6px;border-bottom:none;text-align:left}
   .tab-nav.open button.active{background:var(--nav-active);color:#fff}
   .burger{display:block}
-  .tab-nav.open~.nav-close,.tab-nav.open+.nav-close{display:block}
+  .nav-backdrop.open{display:block;position:fixed;inset:0;z-index:999;background:transparent}
 }
 </style>
 </head>
@@ -157,9 +157,10 @@ input[type=text]{width:140px}
 <button class="active" onclick="switchTab('overview',this)">Overview</button>
 <button onclick="switchTab('stats',this)">Stats</button>
 <button onclick="switchTab('diagnostics',this)">Diagnostics</button>
+<button onclick="switchTab('terminal',this)">Terminal</button>
 <button onclick="switchTab('settings',this)">Settings</button>
 </nav>
-<button class="nav-close" id="navclose" onclick="closeMenu()">&#10005;</button>
+<div class="nav-backdrop" id="navbackdrop" onclick="closeMenu()"></div>
 
 <!-- ===== OVERVIEW TAB ===== -->
 <div class="tab-content active" id="tab-overview">
@@ -255,6 +256,28 @@ input[type=text]{width:140px}
 <div style="margin-top:10px"><button onclick="rebootDevice()" class="btn-danger">Restart Telephone</button></div>
 </div>
 
+</div>
+
+<!-- ===== TERMINAL TAB ===== -->
+<div class="tab-content" id="tab-terminal">
+<div class="card">
+<h2><span class="section-icon">&#128421;</span> Command Terminal</h2>
+<p class="hint">Send commands directly to the telephone for manual control and troubleshooting. Type <b>help</b> for a list of commands.</p>
+<pre id="termout" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin-bottom:10px">K6 GPO Exhibit terminal ready. Type 'help' for commands.</pre>
+<div class="field-row" style="gap:6px">
+<input type="text" id="termin" placeholder="Enter command…" autocomplete="off" autocapitalize="off" spellcheck="false" onkeydown="termKey(event)" style="flex:1;min-width:120px;font-family:monospace">
+<button onclick="runCmd()" style="margin:0">Send</button>
+</div>
+<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('status')">status</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('ring')">ring</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('hangup')">hangup</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('ls /')">ls /</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('sd')">sd</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('help')">help</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="termClear()">clear</button>
+</div>
+</div>
 </div>
 
 <!-- ===== SETTINGS TAB ===== -->
@@ -394,16 +417,16 @@ function switchTab(id,btn){
   try{localStorage.setItem('k6tab',id)}catch(e){}
   if(id==='stats'){loadStats();loadDiscovery();loadAliases();}
   if(id==='diagnostics'){loadErrors();loadLog('system');}
+  if(id==='terminal'){setTimeout(function(){document.getElementById('termin').focus()},50);}
   if(id==='settings'){loadFiles();}
 }
 function toggleMenu(){
-  document.getElementById('tabnav').classList.toggle('open');
-  document.getElementById('navclose').style.display=
-    document.getElementById('tabnav').classList.contains('open')?'block':'none';
+  var open=document.getElementById('tabnav').classList.toggle('open');
+  document.getElementById('navbackdrop').classList.toggle('open',open);
 }
 function closeMenu(){
   document.getElementById('tabnav').classList.remove('open');
-  document.getElementById('navclose').style.display='none';
+  document.getElementById('navbackdrop').classList.remove('open');
 }
 // --- Theme ---
 function toggleTheme(){
@@ -414,7 +437,24 @@ function toggleTheme(){
   try{localStorage.setItem('k6theme',isLight?'light':'dark')}catch(e){}
 }
 (function(){try{if(localStorage.getItem('k6theme')==='light'){document.body.classList.add('light');document.getElementById('themebtn').textContent='Dark Mode';document.getElementById('themecolor').content='#f5f5f5';}}catch(e){}})();
-(function(){try{var t=localStorage.getItem('k6tab');if(t){var btn=document.querySelector('.tab-nav button:nth-child('+(t==='overview'?1:t==='stats'?2:t==='diagnostics'?3:4)+')');switchTab(t,btn);}}catch(e){}})();
+(function(){try{var t=localStorage.getItem('k6tab');if(t){var idx={overview:1,stats:2,diagnostics:3,terminal:4,settings:5}[t]||1;var btn=document.querySelector('.tab-nav button:nth-child('+idx+')');switchTab(t,btn);}}catch(e){}})();
+// --- Terminal ---
+let termHist=[],termHi=0;
+function termPrint(t){var o=document.getElementById('termout');o.textContent+='\n'+t;o.scrollTop=o.scrollHeight;}
+function termClear(){document.getElementById('termout').textContent='K6 GPO Exhibit terminal ready. Type \'help\' for commands.';}
+function termKey(e){
+  if(e.key==='Enter'){runCmd();return;}
+  if(e.key==='ArrowUp'){if(termHi>0){termHi--;e.target.value=termHist[termHi];}e.preventDefault();}
+  if(e.key==='ArrowDown'){if(termHi<termHist.length-1){termHi++;e.target.value=termHist[termHi];}else{termHi=termHist.length;e.target.value='';}e.preventDefault();}
+}
+function runCmd(){
+  var i=document.getElementById('termin');var c=i.value.trim();if(!c)return;
+  termPrint('> '+c);termHist.push(c);termHi=termHist.length;i.value='';
+  fetch('/api/terminal?cmd='+encodeURIComponent(c),{method:'POST'})
+    .then(r=>r.text()).then(t=>{if(t)termPrint(t);loadStatus();})
+    .catch(e=>termPrint('error: '+e));
+}
+function quickCmd(c){document.getElementById('termin').value=c;runCmd();}
 let cwd='/';
 function nav(p){cwd=p;loadFiles()}
 function loadFiles(){
@@ -1172,6 +1212,157 @@ static void handleToggleMode() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// --- Terminal command handler -----------------------------------------------
+// Text-based command interface for manual control / troubleshooting from the
+// web dashboard.  Returns plain text.
+static void handleTerminal() {
+    if (!s_phone) { server.send(200, "text/plain", "error: phone not ready"); return; }
+    String cmd = server.arg("cmd");
+    cmd.trim();
+    if (cmd.length() == 0) { server.send(200, "text/plain", ""); return; }
+
+    String verb = cmd, arg = "";
+    int sp = cmd.indexOf(' ');
+    if (sp >= 0) { verb = cmd.substring(0, sp); arg = cmd.substring(sp + 1); arg.trim(); }
+    verb.toLowerCase();
+    String larg = arg; larg.toLowerCase();
+
+    PhoneController& p = *s_phone;
+    String out;
+
+    if (verb == "help" || verb == "?") {
+        out  = "Available commands:\n";
+        out += "  status              show phone state\n";
+        out += "  ring                trigger the bell\n";
+        out += "  hangup              hang up / stop playback\n";
+        out += "  cancel              cancel ringing\n";
+        out += "  mode [auto|manual]  get/set ring mode\n";
+        out += "  vol [0-21]          get/set handset volume\n";
+        out += "  bell <0-255>        set bell volume\n";
+        out += "  coin [auto|on|off]  coin box override\n";
+        out += "  play <path>         play an SD file\n";
+        out += "  stop                stop playback\n";
+        out += "  ls [path]           list SD directory\n";
+        out += "  cat <path>          show a text file\n";
+        out += "  rm <path>           delete a file\n";
+        out += "  sd                  SD card info\n";
+        out += "  mem                 free heap\n";
+        out += "  uptime              time since boot\n";
+        out += "  wifi                Wi-Fi AP info\n";
+        out += "  reboot              restart the device";
+    } else if (verb == "status" || verb == "s") {
+        int m = p.coinBox().overrideMode();
+        out  = "state=" + String(p.stateName());
+        out += "  hook=" + String(p.line().hookState() == HookState::OFF_HOOK ? "OFF_HOOK" : "ON_HOOK");
+        out += "  line=" + String(p.line().lastRawReading());
+        out += "  mode=" + String(p.autoRingEnabled() ? "AUTO" : "MANUAL");
+        out += "  sd=" + String(p.player().sdReady() ? "OK" : "FAIL");
+        out += "  vol=" + String(p.player().getVolume()) + "/21";
+        out += "  coinbox=" + String(p.coinBox().isInstalled() ? "ACTIVE" : "OFF");
+        out += "(" + String(m == 1 ? "forced-on" : m == 0 ? "forced-off" : "auto") + ")";
+    } else if (verb == "ring") {
+        p.ring(); out = "ringing";
+    } else if (verb == "hangup" || verb == "h") {
+        p.hangUp(); out = "hung up";
+    } else if (verb == "cancel" || verb == "c") {
+        p.cancelRing(); out = "ring cancelled";
+    } else if (verb == "mode") {
+        if (larg == "auto")        p.setAutoRing(true);
+        else if (larg == "manual") p.setAutoRing(false);
+        else if (larg.length())    { server.send(200, "text/plain", "usage: mode [auto|manual]"); return; }
+        else { server.send(200, "text/plain", String("mode=") + (p.autoRingEnabled() ? "AUTO" : "MANUAL")); return; }
+        saveSettings();
+        out = String("mode=") + (p.autoRingEnabled() ? "AUTO" : "MANUAL");
+    } else if (verb == "vol") {
+        if (arg.length()) {
+            int v = arg.toInt(); if (v < 0) v = 0; if (v > 21) v = 21;
+            p.player().setVolume(v); saveSettings();
+        }
+        out = "volume=" + String(p.player().getVolume()) + "/21";
+    } else if (verb == "bell") {
+        if (!arg.length()) { server.send(200, "text/plain", "usage: bell <0-255>"); return; }
+        int v = arg.toInt(); if (v < 0) v = 0; if (v > 255) v = 255;
+        p.bell().setBellVolume(v); saveSettings();
+        out = "bell volume=" + String(v);
+    } else if (verb == "coin") {
+        if (larg == "auto")      p.coinBox().setOverride(-1);
+        else if (larg == "on")   p.coinBox().setOverride(1);
+        else if (larg == "off")  p.coinBox().setOverride(0);
+        else if (larg.length())  { server.send(200, "text/plain", "usage: coin [auto|on|off]"); return; }
+        if (larg.length()) saveSettings();
+        int m = p.coinBox().overrideMode();
+        out  = String("coin override=") + (m == 1 ? "on" : m == 0 ? "off" : "auto");
+        out += "  active=" + String(p.coinBox().isInstalled() ? "yes" : "no");
+    } else if (verb == "play") {
+        if (!arg.length())           { server.send(200, "text/plain", "usage: play <path>"); return; }
+        if (!p.player().sdReady())   { server.send(200, "text/plain", "error: SD not available"); return; }
+        bool ok = p.player().playFile(arg.c_str(), false);
+        out = ok ? ("playing " + arg) : ("error: could not play " + arg);
+    } else if (verb == "stop") {
+        p.player().stop(); out = "playback stopped";
+    } else if (verb == "ls") {
+        if (!p.player().sdReady()) { server.send(200, "text/plain", "error: SD not available"); return; }
+        String path = arg.length() ? arg : "/";
+        File dir = SD.open(path);
+        if (!dir || !dir.isDirectory()) { server.send(200, "text/plain", "error: not a directory: " + path); return; }
+        out = path + ":\n";
+        File f = dir.openNextFile();
+        int n = 0;
+        while (f) {
+            out += f.isDirectory() ? "  [DIR] " : "        ";
+            out += String(f.name());
+            if (!f.isDirectory()) out += "  (" + String((unsigned long)f.size()) + " bytes)";
+            out += "\n";
+            f = dir.openNextFile();
+            if (++n > 100) { out += "  ... (more)\n"; break; }
+        }
+        if (n == 0) out += "  (empty)";
+    } else if (verb == "cat") {
+        if (!arg.length())         { server.send(200, "text/plain", "usage: cat <path>"); return; }
+        if (!p.player().sdReady()) { server.send(200, "text/plain", "error: SD not available"); return; }
+        File f = SD.open(arg);
+        if (!f || f.isDirectory()) { server.send(200, "text/plain", "error: cannot open " + arg); return; }
+        const size_t MAXB = 2048;
+        while (f.available() && out.length() < MAXB) out += (char)f.read();
+        if (f.available()) out += "\n... (truncated)";
+        f.close();
+        if (out.length() == 0) out = "(empty file)";
+    } else if (verb == "rm") {
+        if (!arg.length())         { server.send(200, "text/plain", "usage: rm <path>"); return; }
+        if (!p.player().sdReady()) { server.send(200, "text/plain", "error: SD not available"); return; }
+        bool ok = SD.remove(arg);
+        if (ok && s_logger) s_logger->systemLog("File deleted via terminal: %s", arg.c_str());
+        out = ok ? ("deleted " + arg) : ("error: could not delete " + arg);
+    } else if (verb == "sd") {
+        if (!p.player().sdReady()) out = "SD card: NOT MOUNTED";
+        else {
+            out  = "SD card: OK  type=" + String(SD.cardType());
+            out += "  size=" + String((unsigned long)(SD.cardSize() / (1024 * 1024))) + "MB";
+            out += "  used=" + String((unsigned long)(SD.usedBytes() / (1024 * 1024))) + "MB";
+        }
+    } else if (verb == "mem" || verb == "heap") {
+        out  = "free heap: " + String(ESP.getFreeHeap()) + " bytes";
+        out += "  min free: " + String(ESP.getMinFreeHeap()) + " bytes";
+    } else if (verb == "uptime") {
+        unsigned long s = millis() / 1000;
+        out = "uptime: " + String(s / 3600) + "h " + String((s % 3600) / 60) + "m " + String(s % 60) + "s";
+    } else if (verb == "wifi") {
+        out  = "AP SSID: " + WiFi.softAPSSID() + "\n";
+        out += "AP IP: " + WiFi.softAPIP().toString() + "\n";
+        out += "connected clients: " + String(WiFi.softAPgetStationNum());
+    } else if (verb == "reboot") {
+        if (s_logger) s_logger->systemLog("Reboot via terminal");
+        server.send(200, "text/plain", "rebooting…");
+        delay(300);
+        ESP.restart();
+        return;
+    } else {
+        out = "unknown command: " + verb + "  (type 'help')";
+    }
+
+    server.send(200, "text/plain", out);
+}
+
 // --- Stats API handlers -----------------------------------------------------
 
 static void handleStats() {
@@ -1514,6 +1705,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/alertidle",  HTTP_POST, handleAlertIdle);
     server.on("/api/coinmode",   HTTP_POST, handleCoinMode);
     server.on("/api/mode",        HTTP_POST, handleToggleMode);
+    server.on("/api/terminal",    HTTP_POST, handleTerminal);
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
     server.on("/api/diagnostics", HTTP_GET,  handleDiagnostics);
