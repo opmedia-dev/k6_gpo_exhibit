@@ -175,6 +175,28 @@ static void handleSerial() {
         phone.coinBox().setOverride(next);
         break;
     }
+    case 'L': {
+        // Get/set master line level (0-100). "L" prints, "L 15" sets.
+        String arg;
+        unsigned long t = millis();
+        while (millis() - t < 500) {
+            if (Serial.available()) {
+                char ch = Serial.read();
+                if (ch == '\r' || ch == '\n') break;
+                arg += ch;
+                t = millis();
+            }
+        }
+        arg.trim();
+        if (arg.length()) {
+            int v = arg.toInt();
+            if (v < 0) v = 0;
+            if (v > 100) v = 100;
+            phone.player().setLineLevel((uint8_t)v);
+        }
+        Serial.printf("[cmd] line level = %d%%\n", phone.player().lineLevel());
+        break;
+    }
     case 'P': {
         // Play a file directly, regardless of hook state. Reads the rest of
         // the line as the path, e.g.  "P /history/test.wav".
