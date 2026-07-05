@@ -215,6 +215,20 @@ static void handleSerial() {
         Serial.printf("[cmd] I2S hook debug %s\n", g_audio_hook_debug ? "ON" : "OFF");
         break;
     }
+    case 'F': {
+        // Tone/EQ preset test. "F 0".."F 3". Set BEFORE starting playback.
+        String arg = readSerialLine();
+        arg.trim();
+        int preset = arg.length() ? arg.toInt() : 0;
+        switch (preset) {
+        case 0: phone.player().setEq(0, 0, 0);      break;  // flat
+        case 1: phone.player().setEq(-20, 0, 0);    break;  // gentle low cut
+        case 2: phone.player().setEq(-40, 0, -12);  break;  // telephone band
+        case 3: phone.player().setEq(-40, -6, -40); break;  // narrow mid only
+        default: Serial.println("[cmd] F 0=flat 1=lowcut 2=telephone 3=narrow"); break;
+        }
+        break;
+    }
     case 'P': {
         // Play a file directly, regardless of hook state. Reads the rest of
         // the line as the path, e.g.  "P /history/test.wav".

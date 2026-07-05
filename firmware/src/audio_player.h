@@ -68,6 +68,11 @@ public:
     void setLineLevel(uint8_t pct);
     uint8_t lineLevel() const { return line_level_; }
 
+    // 3-band tone control (low / mid / high shelf gains, each -40..+6 dB).
+    // Used to band-limit audio to the telephone band, which also avoids
+    // low-frequency energy saturating the small coupling transformer.
+    void setEq(int8_t lowdB, int8_t middB, int8_t highdB);
+
     // Currently playing file path (empty if not playing).
     const String& currentFile() const { return loop_path_; }
 

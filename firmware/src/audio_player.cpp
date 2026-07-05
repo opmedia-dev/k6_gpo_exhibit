@@ -303,6 +303,11 @@ void AudioPlayer::setVolume(uint8_t vol) {
     audio_.setVolume(vol);
 }
 
+void AudioPlayer::setEq(int8_t lowdB, int8_t middB, int8_t highdB) {
+    audio_.setTone(lowdB, middB, highdB);
+    Serial.printf("[audio] EQ low=%d mid=%d high=%d dB\n", lowdB, middB, highdB);
+}
+
 void AudioPlayer::setLineLevel(uint8_t pct) {
     if (pct > 100) pct = 100;
     line_level_ = pct;
