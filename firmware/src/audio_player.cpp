@@ -3,6 +3,25 @@
 #include <SPI.h>
 #include <ArduinoJson.h>
 
+// Master line-level attenuation, applied per-sample just before I2S write.
+// 256 = unity (no attenuation).  Set via AudioPlayer::setLineLevel().
+static volatile uint16_t g_audio_atten256 = 256;
+
+// Weak hook in the ESP32-audioI2S library: called with the gained 32-bit
+// sample (left in high 16 bits, right in low 16 bits) right before it is
+// written to the I2S bus.  We scale it down so audio can sit below the
+// library's minimum volume step without overdriving the phone earpiece.
+void audio_process_i2s(uint32_t* sample, bool* continueI2S) {
+    *continueI2S = true;
+    uint16_t a = g_audio_atten256;
+    if (a >= 256) return;  // unity — leave sample untouched
+    int16_t l = (int16_t)((*sample >> 16) & 0xFFFF);
+    int16_t r = (int16_t)(*sample & 0xFFFF);
+    l = (int16_t)(((int32_t)l * a) >> 8);
+    r = (int16_t)(((int32_t)r * a) >> 8);
+    *sample = ((uint32_t)(uint16_t)l << 16) | (uint16_t)r;
+}
+
 static const char* ALIASES_FILE = "/system/aliases.json";
 
 bool AudioPlayer::begin() {
@@ -251,6 +270,12 @@ void AudioPlayer::update() {
 void AudioPlayer::setVolume(uint8_t vol) {
     volume_ = vol;
     audio_.setVolume(vol);
+}
+
+void AudioPlayer::setLineLevel(uint8_t pct) {
+    if (pct > 100) pct = 100;
+    line_level_ = pct;
+    g_audio_atten256 = (uint16_t)(((uint32_t)pct * 256) / 100);
 }
 
 int AudioPlayer::countFilesIn(const char* dirPath) {

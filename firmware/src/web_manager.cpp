@@ -305,6 +305,12 @@ input[type=text]{width:140px}
 <button onclick="testRing()" class="btn-secondary" style="margin:0">Test Ring (3s)</button>
 </div>
 </div>
+<div class="field">
+<div class="field-label">Line Level (earpiece trim)</div>
+<div class="field-hint">Master attenuation of all audio sent to the phone line. Lower this if audio distorts in the earpiece &mdash; it goes far quieter than the Handset Volume alone can. Use "Test Tone" to set the level, then fine-tune with Handset Volume. 100% = no attenuation.</div>
+<div class="field-row"><input type="range" id="linelevel" min="0" max="100" value="100" oninput="setLineLevel(this.value)" style="flex:1"><span id="linelevellbl" style="min-width:38px;text-align:right">100%</span></div>
+<div class="field-row"><button onclick="testTone()" class="btn-secondary" style="margin:0">Test Tone (5s)</button></div>
+</div>
 </div>
 
 <div class="card">
@@ -577,6 +583,11 @@ function setBellFreq(){
   let hz=document.getElementById('bellfreq').value;
   fetch('/api/bellfreq?hz='+hz,{method:'POST'});
 }
+function setLineLevel(v){
+  document.getElementById('linelevellbl').textContent=v+'%';
+  fetch('/api/linelevel?v='+v,{method:'POST'});
+}
+function testTone(){fetch('/api/tone?hz=1000&secs=5',{method:'POST'})}
 function setRingCount(){
   let n=document.getElementById('ringmax').value;
   fetch('/api/ringcount?n='+n,{method:'POST'});
@@ -628,6 +639,7 @@ function loadStatus(){
     document.getElementById('bell').value=d.bell_vol;
     document.getElementById('belllbl').textContent=d.bell_vol;
     if(d.bell_freq!==undefined) document.getElementById('bellfreq').value=d.bell_freq;
+    if(d.line_level!==undefined){document.getElementById('linelevel').value=d.line_level;document.getElementById('linelevellbl').textContent=d.line_level+'%';}
     if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
     if(d.rt_min!==undefined){document.getElementById('rtmin').value=d.rt_min;document.getElementById('rtmax').value=d.rt_max;}
     if(d.alert_idle!==undefined) document.getElementById('alertidle').value=d.alert_idle;
@@ -1030,6 +1042,7 @@ static void handleStatus() {
     json += ",\"volume\":";  json += String(s_phone->player().getVolume());
     json += ",\"bell_vol\":"; json += String(s_phone->bell().bellVolume());
     json += ",\"bell_freq\":"; json += String(s_phone->bell().ringFreq());
+    json += ",\"line_level\":"; json += String(s_phone->player().lineLevel());
     json += ",\"ar_min\":";  json += String(s_phone->autoRingMinMs());
     json += ",\"ar_max\":";  json += String(s_phone->autoRingMaxMs());
     json += ",\"ring_max\":"; json += String(s_phone->maxRingCadences());
@@ -1168,6 +1181,17 @@ static void handleBellVolume() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+static void handleLineLevel() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int v = server.arg("v").toInt();
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    s_phone->player().setLineLevel(v);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Line level set to %d%% via web", v);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleBellFreq() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
     int hz = server.arg("hz").toInt();
@@ -1197,6 +1221,17 @@ static void handleRingNow() {
     s_phone->ring();
     if (s_logger) s_logger->systemLog("Ring triggered via web");
     server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleTone() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int hz = server.arg("hz").toInt();
+    int secs = server.arg("secs").toInt();
+    if (hz < 50) hz = 1000;
+    if (secs < 1) secs = 5;
+    bool ok = s_phone->player().playTestTone(hz, secs);
+    if (s_logger) s_logger->systemLog("Test tone %d Hz for %ds via web", hz, secs);
+    server.send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
 }
 
 static void handleTestRing() {
@@ -1278,6 +1313,7 @@ static void handleTerminal() {
         out += "  vol [0-21]          get/set handset volume\n";
         out += "  bell <0-255>        set bell volume\n";
         out += "  bellfreq [10-50]    get/set ring frequency (Hz)\n";
+        out += "  linelevel [0-100]   get/set master line level (%)\n";
         out += "  coin [auto|on|off]  coin box override\n";
         out += "  play <path>         play an SD file\n";
         out += "  tone [hz] [secs]    play a steady sine tone (default 1000Hz 5s)\n";
@@ -1335,6 +1371,12 @@ static void handleTerminal() {
             p.bell().setRingFreq(hz); saveSettings();
         }
         out = "bell frequency=" + String(p.bell().ringFreq()) + " Hz";
+    } else if (verb == "linelevel") {
+        if (arg.length()) {
+            int v = arg.toInt(); if (v < 0) v = 0; if (v > 100) v = 100;
+            p.player().setLineLevel(v); saveSettings();
+        }
+        out = "line level=" + String(p.player().lineLevel()) + "%";
     } else if (verb == "coin") {
         if (larg == "auto")      p.coinBox().setOverride(-1);
         else if (larg == "on")   p.coinBox().setOverride(1);
@@ -1605,6 +1647,7 @@ static void loadSettings() {
     if (!doc["alert_idle"].isNull()) s_phone->setAlertIdleMinutes(doc["alert_idle"].as<int>());
     if (!doc["coin_override"].isNull()) s_phone->coinBox().setOverride(doc["coin_override"].as<int>());
     if (!doc["bell_freq"].isNull()) s_phone->bell().setRingFreq(doc["bell_freq"].as<int>());
+    if (!doc["line_level"].isNull()) s_phone->player().setLineLevel(doc["line_level"].as<uint8_t>());
     Serial.println("[web] settings loaded");
 }
 
@@ -1627,6 +1670,7 @@ static void saveSettings() {
     doc["alert_idle"] = s_phone->alertIdleMinutes();
     doc["coin_override"] = s_phone->coinBox().overrideMode();
     doc["bell_freq"] = s_phone->bell().ringFreq();
+    doc["line_level"] = s_phone->player().lineLevel();
     serializeJson(doc, f);
     f.flush();
     f.close();
@@ -1765,9 +1809,11 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/volume",      HTTP_POST, handleVolume);
     server.on("/api/bellvol",     HTTP_POST, handleBellVolume);
     server.on("/api/bellfreq",    HTTP_POST, handleBellFreq);
+    server.on("/api/linelevel",   HTTP_POST, handleLineLevel);
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
     server.on("/api/ring",        HTTP_POST, handleRingNow);
     server.on("/api/testring",    HTTP_POST, handleTestRing);
+    server.on("/api/tone",        HTTP_POST, handleTone);
     server.on("/api/ringcount",  HTTP_POST, handleRingCount);
     server.on("/api/ringtone",   HTTP_POST, handleRingTone);
     server.on("/api/alertidle",  HTTP_POST, handleAlertIdle);

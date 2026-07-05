@@ -62,6 +62,12 @@ public:
     void setVolume(uint8_t vol);
     uint8_t getVolume() const { return volume_; }
 
+    // Master line-level trim (0-100%). Attenuates ALL audio below the
+    // library's minimum volume step, so the earpiece level can be set
+    // without overdriving it. 100% = no extra attenuation.
+    void setLineLevel(uint8_t pct);
+    uint8_t lineLevel() const { return line_level_; }
+
     // Currently playing file path (empty if not playing).
     const String& currentFile() const { return loop_path_; }
 
@@ -78,6 +84,7 @@ private:
     bool   sd_ok_     = false;
     bool   looping_   = false;
     uint8_t volume_   = 15;
+    uint8_t line_level_ = 100;  // master trim 0-100% (100 = no attenuation)
     String loop_path_;
     unsigned long tone_end_ = 0;  // auto-stop time for test tone (0 = off)
 
