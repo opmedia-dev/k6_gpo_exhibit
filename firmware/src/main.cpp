@@ -121,6 +121,25 @@ static void onState(PhoneState state) {
 
 // --- Serial command handler -------------------------------------------------
 
+// Read the remainder of a serial line after a command letter. Waits up to
+// 10s for the first character, then reads until CR/LF (1s idle timeout).
+static String readSerialLine() {
+    String s;
+    unsigned long start = millis();
+    // Wait for the first character.
+    while (!Serial.available() && millis() - start < 10000) { delay(1); }
+    unsigned long t = millis();
+    while (millis() - t < 1000) {
+        if (Serial.available()) {
+            char ch = Serial.read();
+            if (ch == '\r' || ch == '\n') break;
+            s += ch;
+            t = millis();
+        }
+    }
+    return s;
+}
+
 static void handleSerial() {
     if (!Serial.available()) return;
 
@@ -177,16 +196,7 @@ static void handleSerial() {
     }
     case 'L': {
         // Get/set master line level (0-100). "L" prints, "L 15" sets.
-        String arg;
-        unsigned long t = millis();
-        while (millis() - t < 500) {
-            if (Serial.available()) {
-                char ch = Serial.read();
-                if (ch == '\r' || ch == '\n') break;
-                arg += ch;
-                t = millis();
-            }
-        }
+        String arg = readSerialLine();
         arg.trim();
         if (arg.length()) {
             int v = arg.toInt();
@@ -200,16 +210,7 @@ static void handleSerial() {
     case 'P': {
         // Play a file directly, regardless of hook state. Reads the rest of
         // the line as the path, e.g.  "P /history/test.wav".
-        String path;
-        unsigned long t = millis();
-        while (millis() - t < 1000) {
-            if (Serial.available()) {
-                char ch = Serial.read();
-                if (ch == '\r' || ch == '\n') break;
-                path += ch;
-                t = millis();
-            }
-        }
+        String path = readSerialLine();
         path.trim();
         if (!path.length()) {
             Serial.println("[cmd] usage: P <path>   e.g. P /history/test.wav");

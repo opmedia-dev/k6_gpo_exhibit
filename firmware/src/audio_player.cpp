@@ -22,6 +22,13 @@ void audio_process_i2s(uint32_t* sample, bool* continueI2S) {
     *sample = ((uint32_t)(uint16_t)l << 16) | (uint16_t)r;
 }
 
+// Weak hook in the ESP32-audioI2S library: receives human-readable status
+// messages, including the decoded stream format (SampleRate / Channels /
+// BitsPerSample / BitRate).  Forward them to Serial for diagnostics.
+void audio_info(const char* info) {
+    Serial.printf("[audio] %s\n", info);
+}
+
 static const char* ALIASES_FILE = "/system/aliases.json";
 
 bool AudioPlayer::begin() {
