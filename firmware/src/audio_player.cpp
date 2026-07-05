@@ -60,6 +60,67 @@ bool AudioPlayer::playFile(const char* path, bool loop) {
     return ok;
 }
 
+bool AudioPlayer::playTestTone(int hz, int secs) {
+    if (!sd_ok_) return false;
+    if (hz < 50)   hz = 50;
+    if (hz > 4000) hz = 4000;
+    if (secs < 1)  secs = 1;
+    if (secs > 60) secs = 60;
+
+    const uint32_t sampleRate = 16000;
+    // Whole number of periods so the looped WAV joins seamlessly (no click).
+    uint32_t periodSamples = sampleRate / hz;      // samples per cycle
+    if (periodSamples < 1) periodSamples = 1;
+    uint32_t cycles        = (sampleRate / 2) / periodSamples;  // ~0.5s buffer
+    if (cycles < 1) cycles = 1;
+    uint32_t numSamples    = periodSamples * cycles;
+    uint32_t dataBytes     = numSamples * 2;       // 16-bit mono
+
+    const char* path = "/system/_testtone.wav";
+    if (!SD.exists("/system")) SD.mkdir("/system");
+    SD.remove(path);
+    File f = SD.open(path, FILE_WRITE);
+    if (!f) {
+        Serial.println("[audio] could not create test tone file");
+        return false;
+    }
+
+    // --- WAV header (44 bytes, PCM 16-bit mono) ---
+    auto w32 = [&](uint32_t v){ uint8_t b[4]={(uint8_t)v,(uint8_t)(v>>8),(uint8_t)(v>>16),(uint8_t)(v>>24)}; f.write(b,4); };
+    auto w16 = [&](uint16_t v){ uint8_t b[2]={(uint8_t)v,(uint8_t)(v>>8)}; f.write(b,2); };
+    f.write((const uint8_t*)"RIFF", 4);  w32(36 + dataBytes);
+    f.write((const uint8_t*)"WAVE", 4);
+    f.write((const uint8_t*)"fmt ", 4);  w32(16);
+    w16(1);                    // PCM
+    w16(1);                    // channels
+    w32(sampleRate);
+    w32(sampleRate * 2);       // byte rate
+    w16(2);                    // block align
+    w16(16);                   // bits per sample
+    f.write((const uint8_t*)"data", 4);  w32(dataBytes);
+
+    // --- Sine samples ---
+    const float amp = 0.6f * 32767.0f;
+    uint8_t buf[512];
+    int bi = 0;
+    for (uint32_t i = 0; i < numSamples; i++) {
+        float phase = 2.0f * PI * (float)(i % periodSamples) / (float)periodSamples;
+        int16_t s = (int16_t)(amp * sinf(phase));
+        buf[bi++] = (uint8_t)s;
+        buf[bi++] = (uint8_t)(s >> 8);
+        if (bi >= (int)sizeof(buf)) { f.write(buf, bi); bi = 0; }
+    }
+    if (bi) f.write(buf, bi);
+    f.close();
+
+    bool ok = playFile(path, true);  // loop the buffer
+    if (ok) {
+        tone_end_ = millis() + (unsigned long)secs * 1000;
+        Serial.printf("[audio] test tone %d Hz for %ds\n", hz, secs);
+    }
+    return ok;
+}
+
 bool AudioPlayer::playDialTone() {
     return playFile(SD_FILE_DIALTONE, true);
 }
@@ -163,6 +224,7 @@ void AudioPlayer::stop() {
     audio_.stopSong();
     looping_ = false;
     loop_path_ = "";
+    tone_end_ = 0;
 }
 
 bool AudioPlayer::isPlaying() {
@@ -171,6 +233,14 @@ bool AudioPlayer::isPlaying() {
 
 void AudioPlayer::update() {
     audio_.loop();
+
+    // Auto-stop the test tone after its duration.
+    if (tone_end_ && millis() >= tone_end_) {
+        tone_end_ = 0;
+        stop();
+        Serial.println("[audio] test tone finished");
+        return;
+    }
 
     // Handle looping: restart file when playback finishes.
     if (looping_ && !audio_.isRunning() && loop_path_.length() > 0) {

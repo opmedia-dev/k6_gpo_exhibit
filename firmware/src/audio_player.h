@@ -26,6 +26,11 @@ public:
     // Play a file from SD card.  If loop is true the file restarts on EOF.
     bool playFile(const char* path, bool loop = false);
 
+    // Generate and play a steady sine test tone for a fixed duration.
+    // Writes a short looping WAV to the SD card and plays it looped, then
+    // auto-stops after `secs`.  Useful for measuring the line output.
+    bool playTestTone(int hz, int secs);
+
     // Play the built-in dial tone (file-based).
     bool playDialTone();
 
@@ -74,6 +79,7 @@ private:
     bool   looping_   = false;
     uint8_t volume_   = 15;
     String loop_path_;
+    unsigned long tone_end_ = 0;  // auto-stop time for test tone (0 = off)
 
     int  countFilesIn(const char* dir);
     bool fileExists(const char* path);

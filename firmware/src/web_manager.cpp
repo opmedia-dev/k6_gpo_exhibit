@@ -1280,6 +1280,7 @@ static void handleTerminal() {
         out += "  bellfreq [10-50]    get/set ring frequency (Hz)\n";
         out += "  coin [auto|on|off]  coin box override\n";
         out += "  play <path>         play an SD file\n";
+        out += "  tone [hz] [secs]    play a steady sine tone (default 1000Hz 5s)\n";
         out += "  stop                stop playback\n";
         out += "  ls [path]           list SD directory\n";
         out += "  cat <path>          show a text file\n";
@@ -1348,6 +1349,19 @@ static void handleTerminal() {
         if (!p.player().sdReady())   { server.send(200, "text/plain", "error: SD not available"); return; }
         bool ok = p.player().playFile(arg.c_str(), false);
         out = ok ? ("playing " + arg) : ("error: could not play " + arg);
+    } else if (verb == "tone") {
+        if (!p.player().sdReady()) { server.send(200, "text/plain", "error: SD not available"); return; }
+        // tone [hz] [secs] — default 1000 Hz for 5s
+        int hz = 1000, secs = 5;
+        if (larg.length()) {
+            int sp2 = larg.indexOf(' ');
+            if (sp2 >= 0) { hz = larg.substring(0, sp2).toInt(); secs = larg.substring(sp2 + 1).toInt(); }
+            else hz = larg.toInt();
+        }
+        if (secs < 1) secs = 5;
+        bool ok = p.player().playTestTone(hz, secs);
+        out = ok ? ("playing " + String(hz) + " Hz tone for " + String(secs) + "s")
+                 : "error: could not start tone";
     } else if (verb == "stop") {
         p.player().stop(); out = "playback stopped";
     } else if (verb == "ls") {
