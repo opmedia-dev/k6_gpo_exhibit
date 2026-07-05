@@ -296,6 +296,15 @@ input[type=text]{width:140px}
 <div class="field-hint">How loudly the telephone bell rings.</div>
 <div class="field-row"><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)" style="flex:1"><span id="belllbl" style="min-width:30px;text-align:right">255</span></div>
 </div>
+<div class="field">
+<div class="field-label">Bell Frequency</div>
+<div class="field-hint">Ringing frequency in Hz. UK exchanges used ~17 Hz (16&#8532;) to 25 Hz. Lower can give an older bell a fuller ring &mdash; try a few and listen. Press "Test Ring" after changing to hear it.</div>
+<div class="field-row">
+<input type="number" id="bellfreq" value="25" min="10" max="50" style="width:70px">
+<span> Hz</span><button onclick="setBellFreq()" style="margin:0">Save</button>
+<button onclick="ringNow()" class="btn-secondary" style="margin:0">Test Ring</button>
+</div>
+</div>
 </div>
 
 <div class="card">
@@ -564,6 +573,10 @@ function setBell(v){
   document.getElementById('belllbl').textContent=v;
   fetch('/api/bellvol?v='+v,{method:'POST'});
 }
+function setBellFreq(){
+  let hz=document.getElementById('bellfreq').value;
+  fetch('/api/bellfreq?hz='+hz,{method:'POST'});
+}
 function setRingCount(){
   let n=document.getElementById('ringmax').value;
   fetch('/api/ringcount?n='+n,{method:'POST'});
@@ -613,6 +626,7 @@ function loadStatus(){
     document.getElementById('vollbl').textContent=d.volume;
     document.getElementById('bell').value=d.bell_vol;
     document.getElementById('belllbl').textContent=d.bell_vol;
+    if(d.bell_freq!==undefined) document.getElementById('bellfreq').value=d.bell_freq;
     if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
     if(d.rt_min!==undefined){document.getElementById('rtmin').value=d.rt_min;document.getElementById('rtmax').value=d.rt_max;}
     if(d.alert_idle!==undefined) document.getElementById('alertidle').value=d.alert_idle;
@@ -1014,6 +1028,7 @@ static void handleStatus() {
     json += ",\"firmware\":\"" FIRMWARE_VERSION "\"";
     json += ",\"volume\":";  json += String(s_phone->player().getVolume());
     json += ",\"bell_vol\":"; json += String(s_phone->bell().bellVolume());
+    json += ",\"bell_freq\":"; json += String(s_phone->bell().ringFreq());
     json += ",\"ar_min\":";  json += String(s_phone->autoRingMinMs());
     json += ",\"ar_max\":";  json += String(s_phone->autoRingMaxMs());
     json += ",\"ring_max\":"; json += String(s_phone->maxRingCadences());
@@ -1152,6 +1167,17 @@ static void handleBellVolume() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+static void handleBellFreq() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int hz = server.arg("hz").toInt();
+    if (hz < 10) hz = 10;
+    if (hz > 50) hz = 50;
+    s_phone->bell().setRingFreq(hz);
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Bell frequency set to %d Hz via web", hz);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleAutoRing() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
     unsigned long minMin = server.arg("min").toInt();
@@ -1239,6 +1265,7 @@ static void handleTerminal() {
         out += "  mode [auto|manual]  get/set ring mode\n";
         out += "  vol [0-21]          get/set handset volume\n";
         out += "  bell <0-255>        set bell volume\n";
+        out += "  bellfreq [10-50]    get/set ring frequency (Hz)\n";
         out += "  coin [auto|on|off]  coin box override\n";
         out += "  play <path>         play an SD file\n";
         out += "  stop                stop playback\n";
@@ -1284,6 +1311,12 @@ static void handleTerminal() {
         int v = arg.toInt(); if (v < 0) v = 0; if (v > 255) v = 255;
         p.bell().setBellVolume(v); saveSettings();
         out = "bell volume=" + String(v);
+    } else if (verb == "bellfreq") {
+        if (arg.length()) {
+            int hz = arg.toInt(); if (hz < 10) hz = 10; if (hz > 50) hz = 50;
+            p.bell().setRingFreq(hz); saveSettings();
+        }
+        out = "bell frequency=" + String(p.bell().ringFreq()) + " Hz";
     } else if (verb == "coin") {
         if (larg == "auto")      p.coinBox().setOverride(-1);
         else if (larg == "on")   p.coinBox().setOverride(1);
@@ -1540,6 +1573,7 @@ static void loadSettings() {
         s_phone->setRingToneRange(doc["rt_min"].as<int>(), doc["rt_max"].as<int>());
     if (!doc["alert_idle"].isNull()) s_phone->setAlertIdleMinutes(doc["alert_idle"].as<int>());
     if (!doc["coin_override"].isNull()) s_phone->coinBox().setOverride(doc["coin_override"].as<int>());
+    if (!doc["bell_freq"].isNull()) s_phone->bell().setRingFreq(doc["bell_freq"].as<int>());
     Serial.println("[web] settings loaded");
 }
 
@@ -1561,6 +1595,7 @@ static void saveSettings() {
     doc["rt_max"] = s_phone->ringToneMaxSecs();
     doc["alert_idle"] = s_phone->alertIdleMinutes();
     doc["coin_override"] = s_phone->coinBox().overrideMode();
+    doc["bell_freq"] = s_phone->bell().ringFreq();
     serializeJson(doc, f);
     f.flush();
     f.close();
@@ -1698,6 +1733,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/logs/clear",  HTTP_POST, handleLogClear);
     server.on("/api/volume",      HTTP_POST, handleVolume);
     server.on("/api/bellvol",     HTTP_POST, handleBellVolume);
+    server.on("/api/bellfreq",    HTTP_POST, handleBellFreq);
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
     server.on("/api/ring",        HTTP_POST, handleRingNow);
     server.on("/api/ringcount",  HTTP_POST, handleRingCount);

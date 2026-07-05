@@ -27,6 +27,12 @@ void BellDriver::setBellVolume(uint8_t vol) {
     bell_volume_ = vol;
 }
 
+void BellDriver::setRingFreq(int hz) {
+    if (hz < 10) hz = 10;
+    if (hz > 50) hz = 50;
+    ring_freq_hz_ = hz;
+}
+
 void BellDriver::startRinging() {
     if (ringing_) return;
     ringing_       = true;
@@ -53,8 +59,8 @@ void BellDriver::update() {
     }
 
     if (CADENCE[cadence_step_].active) {
-        // Toggle H-bridge at RING_FREQ_HZ (25 Hz → 20 ms half-period).
-        unsigned long halfPeriod = 500 / RING_FREQ_HZ;  // 500 ms / 25 = 20 ms
+        // Toggle H-bridge at ring_freq_hz_ (e.g. 25 Hz → 20 ms half-period).
+        unsigned long halfPeriod = 500 / ring_freq_hz_;
         if (now - toggle_time_ >= halfPeriod) {
             toggle_time_ = now;
             phase_ = !phase_;
@@ -68,7 +74,7 @@ void BellDriver::update() {
 void BellDriver::strike(unsigned long durationMs) {
     unsigned long start = millis();
     bool ph = false;
-    unsigned long halfPeriod = 500 / RING_FREQ_HZ;
+    unsigned long halfPeriod = 500 / ring_freq_hz_;
     unsigned long lastToggle = start;
     while (millis() - start < durationMs) {
         if (millis() - lastToggle >= halfPeriod) {
