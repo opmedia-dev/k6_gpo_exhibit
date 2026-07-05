@@ -376,7 +376,7 @@ input[type=text]{width:140px}
 <div class="path" id="pathbar">/</div>
 <table id="filetbl"><tbody></tbody></table>
 <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-<input type="file" id="upfile" multiple accept=".mp3,.MP3">
+<input type="file" id="upfile" multiple accept=".mp3,.MP3,.wav,.WAV">
 <button onclick="upload()" id="upbtn">Upload Files</button>
 <button onclick="mkdirPrompt()" class="btn-secondary">Create Folder</button>
 </div>
@@ -490,8 +490,9 @@ function loadFiles(){
         tr.innerHTML='<td class="dir" onclick="nav(\''+cwd+f.name+'/\')">'+f.name+'/</td><td class="sz">DIR</td><td></td>';
       }else{
         let sz=f.size<1024?f.size+'B':f.size<1048576?(f.size/1024).toFixed(1)+'KB':(f.size/1048576).toFixed(1)+'MB';
-        let mp3=f.name.toLowerCase().endsWith('.mp3');
-        let acts=mp3?'<span class="play" onclick="preview(\''+cwd+f.name+'\')">play</span> ':'';
+        let nm=f.name.toLowerCase();
+        let playable=nm.endsWith('.mp3')||nm.endsWith('.wav');
+        let acts=playable?'<span class="play" onclick="preview(\''+cwd+f.name+'\')">play</span> ':'';
         acts+='<span class="del" onclick="del(\''+f.name+'\')">delete</span>';
         tr.innerHTML='<td class="file">'+f.name+'</td><td class="sz">'+sz+'</td><td>'+acts+'</td>';
       }
@@ -955,7 +956,8 @@ static void handleUpload() {
         uploadFile = SD.open(path, FILE_WRITE);
     } else if (upload.status == UPLOAD_FILE_WRITE) {
         if (uploadFile) {
-            // Validate first chunk of .mp3 files.
+            // Validate first chunk of .mp3 files.  WAV files are accepted
+            // as-is (the player supports MP3 and WAV).
             if (s_upload_valid && upload.totalSize == 0 &&
                 (s_upload_path.endsWith(".mp3") || s_upload_path.endsWith(".MP3"))) {
                 if (!looksLikeMp3(upload.buf, upload.currentSize)) {
@@ -1612,7 +1614,10 @@ static void handlePreview() {
         return;
     }
 
-    server.streamFile(f, "audio/mpeg");
+    String lower = path;
+    lower.toLowerCase();
+    const char* mime = lower.endsWith(".wav") ? "audio/wav" : "audio/mpeg";
+    server.streamFile(f, mime);
     f.close();
 }
 
