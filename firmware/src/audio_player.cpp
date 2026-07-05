@@ -11,12 +11,36 @@ static volatile uint16_t g_audio_atten256 = 256;
 // sample (left in high 16 bits, right in low 16 bits) right before it is
 // written to the I2S bus.  We scale it down so audio can sit below the
 // library's minimum volume step without overdriving the phone earpiece.
+volatile bool     g_audio_hook_debug = false;   // set true to log hook activity
+static uint32_t   s_hook_calls = 0;
+static int32_t    s_hook_peak  = 0;
+static uint32_t   s_hook_last_ms = 0;
+
 void audio_process_i2s(uint32_t* sample, bool* continueI2S) {
     *continueI2S = true;
-    uint16_t a = g_audio_atten256;
-    if (a >= 256) return;  // unity — leave sample untouched
+
     int16_t l = (int16_t)((*sample >> 16) & 0xFFFF);
     int16_t r = (int16_t)(*sample & 0xFFFF);
+
+    if (g_audio_hook_debug) {
+        s_hook_calls++;
+        int32_t al = l < 0 ? -l : l;
+        int32_t ar = r < 0 ? -r : r;
+        if (al > s_hook_peak) s_hook_peak = al;
+        if (ar > s_hook_peak) s_hook_peak = ar;
+        uint32_t now = millis();
+        if (now - s_hook_last_ms >= 1000) {
+            Serial.printf("[hookdbg] calls/s=%lu  peak=%ld/32767  atten256=%u\n",
+                          (unsigned long)s_hook_calls, (long)s_hook_peak,
+                          (unsigned)g_audio_atten256);
+            s_hook_calls = 0;
+            s_hook_peak  = 0;
+            s_hook_last_ms = now;
+        }
+    }
+
+    uint16_t a = g_audio_atten256;
+    if (a >= 256) return;  // unity — leave sample untouched
     l = (int16_t)(((int32_t)l * a) >> 8);
     r = (int16_t)(((int32_t)r * a) >> 8);
     *sample = ((uint32_t)(uint16_t)l << 16) | (uint16_t)r;

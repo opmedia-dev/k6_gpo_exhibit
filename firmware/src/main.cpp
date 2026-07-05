@@ -47,6 +47,9 @@ static const unsigned long STABLE_BOOT_MS = 30000;  // 30s = considered stable
 
 // --- Callbacks --------------------------------------------------------------
 
+// Debug flag in audio_player.cpp: when true, the I2S hook logs call rate + peak.
+extern volatile bool g_audio_hook_debug;
+
 static void onDigit(uint8_t digit) {
     Serial.printf("[app] digit: %d\n", digit);
 }
@@ -205,6 +208,11 @@ static void handleSerial() {
             phone.player().setLineLevel((uint8_t)v);
         }
         Serial.printf("[cmd] line level = %d%%\n", phone.player().lineLevel());
+        break;
+    }
+    case 'D': {
+        g_audio_hook_debug = !g_audio_hook_debug;
+        Serial.printf("[cmd] I2S hook debug %s\n", g_audio_hook_debug ? "ON" : "OFF");
         break;
     }
     case 'P': {
