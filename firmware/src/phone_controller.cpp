@@ -79,8 +79,16 @@ void PhoneController::update() {
             enterState(PhoneState::PLAYING_HISTORY);
             break;
         }
-        // Ring count limit: one cadence cycle ≈ 3s.
-        if (max_ring_cadences_ > 0) {
+        // Fixed-duration test ring — stop after the requested time.
+        if (test_ring_end_ && millis() >= test_ring_end_) {
+            test_ring_end_ = 0;
+            bell_.stopRinging();
+            enterState(PhoneState::IDLE);
+            Serial.println("[phone] test ring finished");
+            break;
+        }
+        // Ring count limit: one cadence cycle ≈ 3s.  Skipped during test ring.
+        if (!test_ring_end_ && max_ring_cadences_ > 0) {
             unsigned long elapsed = millis() - state_enter_time_;
             int cadences = elapsed / 3000;
             if (cadences >= max_ring_cadences_) {
@@ -379,9 +387,20 @@ void PhoneController::update() {
 
 void PhoneController::ring() {
     if (state_ != PhoneState::IDLE) return;
+    test_ring_end_ = 0;
     bell_.startRinging();
     enterState(PhoneState::RINGING);
     Serial.println("[phone] ringing");
+}
+
+void PhoneController::testRing(int seconds) {
+    if (state_ != PhoneState::IDLE) return;
+    if (seconds < 1) seconds = 1;
+    if (seconds > 30) seconds = 30;
+    test_ring_end_ = millis() + (unsigned long)seconds * 1000;
+    bell_.startRinging();
+    enterState(PhoneState::RINGING);
+    Serial.printf("[phone] test ring for %ds\n", seconds);
 }
 
 void PhoneController::cancelRing() {

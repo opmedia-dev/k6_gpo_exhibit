@@ -58,6 +58,7 @@ public:
     const char* stateName() const;
 
     void ring();
+    void testRing(int seconds = 3);  // fixed-duration ring for bell testing
     void cancelRing();
     void hangUp();
 
@@ -121,6 +122,7 @@ private:
     uint8_t        dial_pos_ = 0;
 
     unsigned long  state_enter_time_ = 0;
+    unsigned long  test_ring_end_    = 0;  // fixed-duration test ring end (0=off)
     unsigned long  last_digit_time_  = 0;
     bool           replace_prompted_ = false;  // "replace handset" already played
 

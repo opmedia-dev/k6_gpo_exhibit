@@ -302,7 +302,7 @@ input[type=text]{width:140px}
 <div class="field-row">
 <input type="number" id="bellfreq" value="25" min="10" max="50" style="width:70px">
 <span> Hz</span><button onclick="setBellFreq()" style="margin:0">Save</button>
-<button onclick="ringNow()" class="btn-secondary" style="margin:0">Test Ring</button>
+<button onclick="testRing()" class="btn-secondary" style="margin:0">Test Ring (3s)</button>
 </div>
 </div>
 </div>
@@ -601,6 +601,7 @@ function setAutoRing(){
   fetch('/api/autoring?min='+mn+'&max='+mx,{method:'POST'});
 }
 function ringNow(){fetch('/api/ring',{method:'POST'})}
+function testRing(){fetch('/api/testring?secs=3',{method:'POST'})}
 function toggleMode(){fetch('/api/mode',{method:'POST'}).then(()=>loadStatus())}
 function rebootDevice(){
   if(!confirm('This will restart the telephone. Any active calls will be disconnected.'))return;
@@ -1198,6 +1199,16 @@ static void handleRingNow() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+static void handleTestRing() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+    int secs = server.arg("secs").toInt();
+    if (secs < 1) secs = 3;
+    if (secs > 30) secs = 30;
+    s_phone->testRing(secs);
+    if (s_logger) s_logger->systemLog("Test ring (%ds) triggered via web", secs);
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleAlertIdle() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
     int v = server.arg("v").toInt();
@@ -1260,6 +1271,7 @@ static void handleTerminal() {
         out  = "Available commands:\n";
         out += "  status              show phone state\n";
         out += "  ring                trigger the bell\n";
+        out += "  testring [secs]     ring for a fixed time (default 3s)\n";
         out += "  hangup              hang up / stop playback\n";
         out += "  cancel              cancel ringing\n";
         out += "  mode [auto|manual]  get/set ring mode\n";
@@ -1289,6 +1301,11 @@ static void handleTerminal() {
         out += "(" + String(m == 1 ? "forced-on" : m == 0 ? "forced-off" : "auto") + ")";
     } else if (verb == "ring") {
         p.ring(); out = "ringing";
+    } else if (verb == "testring") {
+        int secs = arg.length() ? arg.toInt() : 3;
+        if (secs < 1) secs = 1; if (secs > 30) secs = 30;
+        p.testRing(secs);
+        out = "test ring for " + String(secs) + "s";
     } else if (verb == "hangup" || verb == "h") {
         p.hangUp(); out = "hung up";
     } else if (verb == "cancel" || verb == "c") {
@@ -1736,6 +1753,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/bellfreq",    HTTP_POST, handleBellFreq);
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
     server.on("/api/ring",        HTTP_POST, handleRingNow);
+    server.on("/api/testring",    HTTP_POST, handleTestRing);
     server.on("/api/ringcount",  HTTP_POST, handleRingCount);
     server.on("/api/ringtone",   HTTP_POST, handleRingTone);
     server.on("/api/alertidle",  HTTP_POST, handleAlertIdle);
