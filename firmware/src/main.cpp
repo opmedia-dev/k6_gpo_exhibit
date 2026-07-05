@@ -175,6 +175,30 @@ static void handleSerial() {
         phone.coinBox().setOverride(next);
         break;
     }
+    case 'P': {
+        // Play a file directly, regardless of hook state. Reads the rest of
+        // the line as the path, e.g.  "P /history/test.wav".
+        String path;
+        unsigned long t = millis();
+        while (millis() - t < 1000) {
+            if (Serial.available()) {
+                char ch = Serial.read();
+                if (ch == '\r' || ch == '\n') break;
+                path += ch;
+                t = millis();
+            }
+        }
+        path.trim();
+        if (!path.length()) {
+            Serial.println("[cmd] usage: P <path>   e.g. P /history/test.wav");
+        } else if (!phone.player().sdReady()) {
+            Serial.println("[cmd] error: SD not available");
+        } else {
+            bool ok = phone.player().playFile(path.c_str(), false);
+            Serial.printf("[cmd] %s %s\n", ok ? "playing" : "error playing", path.c_str());
+        }
+        break;
+    }
     default:
         break;
     }
@@ -238,7 +262,7 @@ void setup() {
     logger.begin();
     stats.begin();
 
-    Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol");
+    Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol  P <path>=play file");
     Serial.printf("[app] mode: %s (lamp %s)\n",
                   phone.autoRingEnabled() ? "AUTO" : "MANUAL",
                   phone.autoRingEnabled() ? "ON" : "OFF");
