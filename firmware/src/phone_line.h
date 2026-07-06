@@ -38,4 +38,9 @@ private:
     int           last_raw_     = 0;
     unsigned long last_change_  = 0;
     HookState     pending_      = HookState::ON_HOOK;
+
+    // Line-sense debug state (used only when g_line_debug is true).
+    bool          dbg_break_    = false;
+    unsigned long dbg_edge_ms_  = 0;
+    unsigned long dbg_last_ms_  = 0;
 };
