@@ -37,24 +37,34 @@
 | Qty | Component | Value | Label | Purpose |
 |-----|-----------|-------|-------|---------|
 | 1 | Resistor | 470 Ω, 1 W | R1 | Line current limit (12 V to phone) |
-| 1 | Resistor | 220 Ω, ¼ W | R2 | Optocoupler LED current limit |
+| 1 | Resistor | 1.5–2.2 kΩ, ¼ W | R_LIM | **Opto LED leg current limit — limits off-hook (~5 mA) AND 48 V ring (~22 mA). MANDATORY (Rev 2.1)** |
 | 1 | Resistor | 10 kΩ, ¼ W | R3 | Pull-down for optocoupler output (GPIO 34) |
 | 3 | Resistor | 10 kΩ, ¼ W | R4, R5, R6 | **Pull-ups for coin box GPIOs (36, 39, 35)** |
 | 2 | Capacitor (ceramic) | 100 nF | C1, C2 | Decoupling: C1 at L293D VSS, C2 at ESP32 VIN |
+| 1 | Capacitor (non-polar) | 10 µF ≥63 V bipolar/film, **or** 2× 10 µF 63 V electrolytic back-to-back | Cc | **DC-block coupling cap in series with transformer secondary — MANDATORY (Rev 2.1). Blocks the ~120 Ω DC short that otherwise kills hook/dial + saturates the core** |
+
+> **Rev 2.1 change:** **R2 deleted** — the optocoupler is now wired *in
+> series* in the loop return leg (Line B → R_LIM → D1 → LED → GND), not
+> bridged across the line. Added **R_LIM** (current limit, mandatory
+> before applying 48 V) and **Cc** (DC-block coupling cap on the
+> transformer secondary). Without R_LIM, the 48 V ring cooks the opto
+> and ESP32; without Cc, the transformer DC-shorts the line and
+> hook/dial detection cannot work.
 
 ## Protection Diodes
 
 | Qty | Component | Value / Part | Label | Purpose |
 |-----|-----------|-------------|-------|--------|
-| 1 | Rectifier diode | 1N4007 (DO-41) | D1 | Anti-parallel across PC817 LED — clamps reverse voltage during ringing |
+| 1 | Small-signal diode | 1N4148 (DO-35) | D1 | **In series** in opto LED leg (anode→Line B) — blocks reverse half of 48 V ring (Rev 2.1; was 1N4007 anti-parallel) |
 | 4 | Rectifier diode | 1N4007 (DO-41) | D2–D5 | Overvoltage clamps on transformer primary (DAC_LP and DAC_LN to +5V and GND) |
 
 > **Why these are needed:** During bell ringing, L293D OUT2 drives LINE_B
-> between 0 V and 48 V. The PC817 cathode and transformer secondary are
-> also on LINE_B. Without D1, the PC817 LED sees 36 V reverse (max
-> rating 6 V) and is destroyed. Without D2–D5, the coupled ring voltage
-> can back-feed through the transformer primary into the MAX98357A
-> output pins.
+> between 0 V and 48 V. The opto LED leg (R_LIM → D1 → PC817) and the
+> transformer secondary (via Cc) are also on LINE_B. **R_LIM** limits the
+> forward ring current through the LED and **D1 (in series)** blocks the
+> reverse half, so the LED is protected both ways. Without D2–D5, the
+> coupled ring voltage can back-feed through the transformer primary into
+> the MAX98357A output pins.
 
 > **Rev 2 change:** Added R4/R5/R6 pull-up resistors. These are
 > essential — GPIO 36/39/35 are input-only and have no internal
