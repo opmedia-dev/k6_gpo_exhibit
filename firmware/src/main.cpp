@@ -31,6 +31,10 @@
 //   A   — toggle auto-ring on/off
 //   V0-9 — set volume (0=min, 9=max)
 //   B   — cycle coin box override (auto → off → on → auto)
+//   T   — bring-up self-test checklist
+//   K   — line-sense calibration wizard
+//   E   — toggle rotary self-confirm (echo digits on lamp)
+//   Q   — audio probe (1 kHz peak/RMS of digital feed)
 // ============================================================================
 
 PhoneController phone;
@@ -53,8 +57,65 @@ extern volatile bool g_audio_hook_debug;
 // Debug flag in phone_line.cpp: when true, logs raw line reading + dial edges.
 extern volatile bool g_line_debug;
 
+// Rotary self-confirm mode: when true, each decoded digit is echoed as lamp
+// blinks so dialling can be verified on the bench with no laptop attached.
+volatile bool g_dial_confirm = false;
+
+// Non-blocking lamp echo for rotary self-confirm mode. Digits are queued and
+// blinked out by serviceDialEcho() from the main loop so dialling and the state
+// machine are never stalled (0 is shown as 10 blinks).
+static uint8_t       s_echo_queue[16];
+static uint8_t       s_echo_head = 0;
+static uint8_t       s_echo_tail = 0;
+static int           s_echo_blinks_left = 0;
+static uint8_t       s_echo_phase = 0;   // 0 idle,1 pre-gap,2 on,3 off,4 done
+static unsigned long s_echo_next  = 0;
+
+static void queueDigitEcho(uint8_t digit) {
+    uint8_t next = (uint8_t)((s_echo_tail + 1) % sizeof(s_echo_queue));
+    if (next == s_echo_head) return;  // queue full: drop
+    s_echo_queue[s_echo_tail] = (digit == 0) ? 10 : digit;
+    s_echo_tail = next;
+}
+
+static void serviceDialEcho() {
+    unsigned long now = millis();
+    if (s_echo_phase == 0) {
+        if (s_echo_head == s_echo_tail) return;  // nothing queued
+        s_echo_blinks_left = s_echo_queue[s_echo_head];
+        s_echo_head = (uint8_t)((s_echo_head + 1) % sizeof(s_echo_queue));
+        s_echo_phase = 1;
+        s_echo_next  = now + 250;  // short gap so separate digits are distinct
+        return;
+    }
+    if (now < s_echo_next) return;
+    switch (s_echo_phase) {
+        case 1:  // pre-gap done -> lamp on
+            digitalWrite(PIN_AUTO_LAMP, HIGH);
+            s_echo_phase = 2;
+            s_echo_next  = now + 150;
+            break;
+        case 2:  // on done -> lamp off, count the blink
+            digitalWrite(PIN_AUTO_LAMP, LOW);
+            s_echo_blinks_left--;
+            s_echo_next  = now + 150;
+            s_echo_phase = (s_echo_blinks_left > 0) ? 3 : 4;
+            break;
+        case 3:  // inter-blink gap done -> next blink on
+            digitalWrite(PIN_AUTO_LAMP, HIGH);
+            s_echo_phase = 2;
+            s_echo_next  = now + 150;
+            break;
+        default: // digit finished -> restore resting state, go idle
+            digitalWrite(PIN_AUTO_LAMP, phone.autoRingEnabled() ? HIGH : LOW);
+            s_echo_phase = 0;
+            break;
+    }
+}
+
 static void onDigit(uint8_t digit) {
     Serial.printf("[app] digit: %d\n", digit);
+    if (g_dial_confirm) queueDigitEcho(digit);
 }
 
 static void onNumber(const char* number) {
@@ -132,10 +193,15 @@ static void onState(PhoneState state) {
 static String readSerialLine() {
     String s;
     unsigned long start = millis();
-    // Wait for the first character.
-    while (!Serial.available() && millis() - start < 10000) { delay(1); }
+    // Wait for the first character (feed the watchdog so an operator taking
+    // their time — e.g. lifting the handset mid-calibration — can't trip it).
+    while (!Serial.available() && millis() - start < 10000) {
+        esp_task_wdt_reset();
+        delay(1);
+    }
     unsigned long t = millis();
     while (millis() - t < 1000) {
+        esp_task_wdt_reset();
         if (Serial.available()) {
             char ch = Serial.read();
             if (ch == '\r' || ch == '\n') break;
@@ -221,6 +287,40 @@ static void handleSerial() {
     case 'N': {
         g_line_debug = !g_line_debug;
         Serial.printf("[cmd] line/dial debug %s\n", g_line_debug ? "ON" : "OFF");
+        break;
+    }
+    case 'T': {
+        // Bring-up self-test checklist.
+        Serial.println(web.selfTest());
+        break;
+    }
+    case 'Q': {
+        // Audio probe: play 1 kHz and report peak/RMS of the digital feed.
+        Serial.println(web.audioProbe());
+        break;
+    }
+    case 'E': {
+        g_dial_confirm = !g_dial_confirm;
+        Serial.printf("[cmd] dial echo %s\n", g_dial_confirm ? "ON" : "OFF");
+        break;
+    }
+    case 'K': {
+        // Line-sense calibration wizard.
+        Serial.println("[cal] Ensure handset is ON-HOOK, then press Enter...");
+        readSerialLine();
+        int on = phone.line().readAveraged(128);
+        Serial.printf("[cal] on-hook raw=%d\n", on);
+        Serial.println("[cal] LIFT the handset (OFF-HOOK), then press Enter...");
+        readSerialLine();
+        int off = phone.line().readAveraged(128);
+        Serial.printf("[cal] off-hook raw=%d\n", off);
+        if (phone.line().applyCalibration(on, off)) {
+            web.persistSettings();
+            Serial.printf("[cal] thresholds set: on>=%d  off<%d  (saved)\n",
+                          phone.line().thresholdOn(), phone.line().thresholdOff());
+        } else {
+            Serial.println("[cal] FAILED: on/off levels too close. Check wiring, retry.");
+        }
         break;
     }
     case 'F': {
@@ -316,6 +416,7 @@ void setup() {
     stats.begin();
 
     Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol  P <path>=play file");
+    Serial.println("[app] diagnostics: T=self-test  K=calibrate line  E=dial echo  Q=audio probe  N=line debug");
     Serial.printf("[app] mode: %s (lamp %s)\n",
                   phone.autoRingEnabled() ? "AUTO" : "MANUAL",
                   phone.autoRingEnabled() ? "ON" : "OFF");
@@ -365,5 +466,6 @@ void loop() {
     }
     stats.update();
     web.update();
+    serviceDialEcho();
     handleSerial();
 }

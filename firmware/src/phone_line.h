@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "config.h"
 
 // ============================================================================
 // Phone line interface — hook detection and raw current sensing
@@ -32,12 +33,29 @@ public:
     // True when the line current is interrupted (dial pulse break period).
     bool isLineBreak() const;
 
+    // Averaged raw ADC read (blocking) — used by the calibration routine.
+    int  readAveraged(uint16_t samples = 64) const;
+
+    // Detection thresholds. Defaults come from config.h but can be tuned at
+    // runtime by the calibration wizard and persisted to settings.json.
+    void setThresholds(int on, int off);
+    int  thresholdOn()  const { return threshold_on_; }
+    int  thresholdOff() const { return threshold_off_; }
+
+    // Compute thresholds from captured on-hook / off-hook raw levels.
+    // Returns false if the two levels are too close to separate reliably.
+    bool applyCalibration(int onhookRaw, int offhookRaw);
+
 private:
     HookState     hook_state_   = HookState::ON_HOOK;
     bool          hook_changed_ = false;
     int           last_raw_     = 0;
     unsigned long last_change_  = 0;
     HookState     pending_      = HookState::ON_HOOK;
+
+    // Runtime-tunable detection thresholds (initialised from config.h).
+    int           threshold_on_  = LINE_THRESHOLD_ON;
+    int           threshold_off_ = LINE_THRESHOLD_OFF;
 
     // Line-sense debug state (used only when g_line_debug is true).
     bool          dbg_break_    = false;

@@ -8,6 +8,7 @@
 #include <SD.h>
 #include <Update.h>
 #include <esp_ota_ops.h>
+#include <esp_task_wdt.h>
 #include <ArduinoJson.h>
 
 static WebServer server(80);
@@ -16,6 +17,94 @@ static StatsTracker* s_stats = nullptr;
 static PhoneController* s_phone = nullptr;
 
 static void saveSettings();
+
+// Audio-probe instrumentation (defined in audio_player.cpp).
+extern volatile bool g_audio_probe;
+void audio_probe_reset();
+void audio_probe_result(int32_t* peak, float* rms, uint32_t* count);
+
+// Rotary self-confirm mode (defined in main.cpp): echoes each decoded digit
+// on the panel lamp so dialling can be verified with no laptop attached.
+extern volatile bool g_dial_confirm;
+
+// Captured on-hook level between the two calibration steps (web flow).
+static int s_cal_onhook = -1;
+
+// Run the one-shot bring-up self-test and return a plain-text checklist.
+static String buildSelfTest(PhoneController& p) {
+    String o = "=== K6 bring-up self-test ===\n";
+
+    o += String("[") + (p.player().sdReady() ? "PASS" : "FAIL") + "] SD card mounted\n";
+
+    int raw = p.line().readAveraged(64);
+    bool lineOk = raw < p.line().thresholdOn();  // on-hook should read low
+    o += String("[") + (lineOk ? "PASS" : "WARN") + "] line-sense raw=" + raw;
+    o += "  (on>=" + String(p.line().thresholdOn()) + " off<" + String(p.line().thresholdOff()) + ")";
+    if (!lineOk) o += "  <- high: handset off-hook, line shorted, or needs calibrate";
+    o += "\n";
+
+    p.bell().strike(150);
+    o += "[ -- ] bell strike fired (listen/feel for a tick; needs 48 V for sound)\n";
+
+    bool tone = p.player().sdReady() && p.player().playTestTone(1000, 2);
+    o += String("[") + (tone ? "PASS" : "FAIL") + "] 1 kHz test tone -> earpiece (2 s)\n";
+
+    // Buttons are active-low; report their instantaneous state to catch a
+    // stuck/shorted button (reads DOWN when nothing is pressed).
+    o += "buttons now: ";
+    o += "RING=" + String(digitalRead(PIN_BTN_RING)   ? "up" : "DOWN") + "  ";
+    o += "CANCEL=" + String(digitalRead(PIN_BTN_CANCEL) ? "up" : "DOWN") + "  ";
+    o += "RESET=" + String(digitalRead(PIN_BTN_RESET)  ? "up" : "DOWN") + "  ";
+    o += "MODE=" + String(digitalRead(PIN_BTN_MODE)    ? "up" : "DOWN") + "\n";
+
+    o += "coinbox: " + String(p.coinBox().isInstalled() ? "detected" : "none") + "\n";
+    o += "heap free: " + String(ESP.getFreeHeap()) + " bytes\n";
+    o += "=== end ===";
+    return o;
+}
+
+// Play a fixed 1 kHz tone and measure the peak/RMS of the samples fed to I2S.
+static String buildProbe(PhoneController& p) {
+    if (!p.player().sdReady()) return "PROBE: SD not available";
+
+    audio_probe_reset();
+    g_audio_probe = true;
+    if (!p.player().playTestTone(1000, 3)) {
+        g_audio_probe = false;
+        return "PROBE: could not start test tone";
+    }
+
+    // Feed I2S for ~2 s while the probe accumulates.
+    unsigned long start = millis();
+    while (millis() - start < 2000) {
+        p.player().update();
+        esp_task_wdt_reset();
+        delay(2);
+    }
+    g_audio_probe = false;
+    p.player().stop();
+
+    int32_t peak = 0; float rms = 0; uint32_t cnt = 0;
+    audio_probe_result(&peak, &rms, &cnt);
+
+    float peakPct = peak * 100.0f / 32767.0f;
+    float rmsPct  = rms  * 100.0f / 32767.0f;
+    // For a clean sine, peak/RMS = sqrt(2) ~ 1.414. Big deviations hint at
+    // clipping (ratio -> 1.0) or a mostly-silent/distorted feed.
+    float crest = (rms > 1.0f) ? (peak / rms) : 0.0f;
+
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "=== audio probe (1 kHz, digital side) ===\n"
+             "samples=%lu\n"
+             "peak=%ld/32767 (%.1f%%)\n"
+             "rms=%.0f/32767 (%.2f%%)\n"
+             "crest(peak/rms)=%.2f (sine~1.41)\n"
+             "note: measures the DIGITAL feed. If this is clean but the\n"
+             "earpiece is distorted, the fault is analog (amp/transformer).",
+             (unsigned long)cnt, (long)peak, peakPct, rms, rmsPct, crest);
+    return String(buf);
+}
 
 // --- HTML UI (served from flash, not SD) ------------------------------------
 
@@ -276,6 +365,14 @@ input[type=text]{width:140px}
 <button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('sd')">sd</button>
 <button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('help')">help</button>
 <button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="termClear()">clear</button>
+</div>
+<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+<span style="font-size:.8em;opacity:.7;align-self:center">Commissioning:</span>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('selftest')">self-test</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('probe')">audio probe</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('calibrate on')">calibrate on (handset down)</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('calibrate off')">calibrate off (handset up)</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('dialecho')">dial echo toggle</button>
 </div>
 </div>
 </div>
@@ -1327,6 +1424,11 @@ static void handleTerminal() {
         out += "  mem                 free heap\n";
         out += "  uptime              time since boot\n";
         out += "  wifi                Wi-Fi AP info\n";
+        out += "  selftest            run bring-up self-test checklist\n";
+        out += "  probe               play 1kHz tone, report peak/RMS\n";
+        out += "  calibrate on        capture ON-HOOK line level (handset down)\n";
+        out += "  calibrate off       capture OFF-HOOK + set thresholds (handset up)\n";
+        out += "  dialecho [on|off]   echo dialled digits on the panel lamp\n";
         out += "  reboot              restart the device";
     } else if (verb == "status" || verb == "s") {
         int m = p.coinBox().overrideMode();
@@ -1458,6 +1560,41 @@ static void handleTerminal() {
         out  = "AP SSID: " + WiFi.softAPSSID() + "\n";
         out += "AP IP: " + WiFi.softAPIP().toString() + "\n";
         out += "connected clients: " + String(WiFi.softAPgetStationNum());
+    } else if (verb == "selftest" || verb == "test") {
+        out = buildSelfTest(p);
+    } else if (verb == "probe") {
+        out = buildProbe(p);
+    } else if (verb == "calibrate" || verb == "cal") {
+        if (larg == "on" || larg.length() == 0) {
+            s_cal_onhook = p.line().readAveraged(128);
+            out  = "on-hook level=" + String(s_cal_onhook) + "\n";
+            out += "now LIFT the handset and run: calibrate off";
+        } else if (larg == "off") {
+            if (s_cal_onhook < 0) {
+                out = "error: run 'calibrate on' first (handset down)";
+            } else {
+                int off = p.line().readAveraged(128);
+                if (p.line().applyCalibration(s_cal_onhook, off)) {
+                    saveSettings();
+                    out  = "calibrated: on-hook=" + String(s_cal_onhook);
+                    out += " off-hook=" + String(off) + "\n";
+                    out += "thresholds -> on>=" + String(p.line().thresholdOn());
+                    out += " off<" + String(p.line().thresholdOff()) + " (saved)";
+                } else {
+                    out  = "FAILED: on-hook=" + String(s_cal_onhook) + " off-hook=" + String(off);
+                    out += " — too close (need off-hook much higher). Check wiring.";
+                }
+                s_cal_onhook = -1;
+            }
+        } else {
+            out = "usage: calibrate on | calibrate off";
+        }
+    } else if (verb == "dialecho") {
+        if (larg == "on")       g_dial_confirm = true;
+        else if (larg == "off") g_dial_confirm = false;
+        else if (larg.length()) { server.send(200, "text/plain", "usage: dialecho [on|off]"); return; }
+        else g_dial_confirm = !g_dial_confirm;
+        out = String("dial echo ") + (g_dial_confirm ? "ON" : "OFF");
     } else if (verb == "reboot") {
         if (s_logger) s_logger->systemLog("Reboot via terminal");
         server.send(200, "text/plain", "rebooting…");
@@ -1653,6 +1790,8 @@ static void loadSettings() {
     if (!doc["coin_override"].isNull()) s_phone->coinBox().setOverride(doc["coin_override"].as<int>());
     if (!doc["bell_freq"].isNull()) s_phone->bell().setRingFreq(doc["bell_freq"].as<int>());
     if (!doc["line_level"].isNull()) s_phone->player().setLineLevel(doc["line_level"].as<uint8_t>());
+    if (!doc["line_on"].isNull() && !doc["line_off"].isNull())
+        s_phone->line().setThresholds(doc["line_on"].as<int>(), doc["line_off"].as<int>());
     Serial.println("[web] settings loaded");
 }
 
@@ -1676,6 +1815,8 @@ static void saveSettings() {
     doc["coin_override"] = s_phone->coinBox().overrideMode();
     doc["bell_freq"] = s_phone->bell().ringFreq();
     doc["line_level"] = s_phone->player().lineLevel();
+    doc["line_on"]  = s_phone->line().thresholdOn();
+    doc["line_off"] = s_phone->line().thresholdOff();
     serializeJson(doc, f);
     f.flush();
     f.close();
@@ -1847,4 +1988,16 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
 
 void WebManager::update() {
     if (active_) server.handleClient();
+}
+
+void WebManager::persistSettings() {
+    saveSettings();
+}
+
+String WebManager::selfTest() {
+    return s_phone ? buildSelfTest(*s_phone) : String("phone not ready");
+}
+
+String WebManager::audioProbe() {
+    return s_phone ? buildProbe(*s_phone) : String("phone not ready");
 }

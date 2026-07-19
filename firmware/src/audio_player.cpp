@@ -16,11 +16,37 @@ static uint32_t   s_hook_calls = 0;
 static int32_t    s_hook_peak  = 0;
 static uint32_t   s_hook_last_ms = 0;
 
+// --- Audio probe: measure peak/RMS of the samples fed to I2S over a window ---
+volatile bool     g_audio_probe = false;
+static volatile int32_t  s_probe_peak  = 0;
+static volatile uint64_t s_probe_sumsq = 0;
+static volatile uint32_t s_probe_count = 0;
+
+void audio_probe_reset() {
+    s_probe_peak  = 0;
+    s_probe_sumsq = 0;
+    s_probe_count = 0;
+}
+
+void audio_probe_result(int32_t* peak, float* rms, uint32_t* count) {
+    uint32_t n = s_probe_count;
+    if (peak)  *peak  = s_probe_peak;
+    if (count) *count = n;
+    if (rms)   *rms   = (n > 0) ? sqrtf((float)((double)s_probe_sumsq / (double)n)) : 0.0f;
+}
+
 void audio_process_i2s(uint32_t* sample, bool* continueI2S) {
     *continueI2S = true;
 
     int16_t l = (int16_t)((*sample >> 16) & 0xFFFF);
     int16_t r = (int16_t)(*sample & 0xFFFF);
+
+    if (g_audio_probe) {
+        int32_t al = l < 0 ? -l : l;
+        if (al > s_probe_peak) s_probe_peak = al;
+        s_probe_sumsq += (uint64_t)((int32_t)l * (int32_t)l);
+        s_probe_count++;
+    }
 
     if (g_audio_hook_debug) {
         s_hook_calls++;

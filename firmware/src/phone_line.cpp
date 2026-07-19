@@ -17,7 +17,7 @@ HookState PhoneLine::update() {
     last_raw_ = analogRead(PIN_LINE_SENSE);
 
     if (g_line_debug) {
-        bool brk = (last_raw_ < LINE_THRESHOLD_OFF);
+        bool brk = (last_raw_ < threshold_off_);
         unsigned long now = millis();
         if (brk != dbg_break_) {
             // Edge: report the reading and, on a make, how long the break was.
@@ -37,12 +37,12 @@ HookState PhoneLine::update() {
         }
     }
 
-    HookState sample = (last_raw_ >= LINE_THRESHOLD_ON)
+    HookState sample = (last_raw_ >= threshold_on_)
                         ? HookState::OFF_HOOK
                         : HookState::ON_HOOK;
 
     // Hysteresis: once off-hook, require a lower threshold to go on-hook
-    if (hook_state_ == HookState::OFF_HOOK && last_raw_ > LINE_THRESHOLD_OFF) {
+    if (hook_state_ == HookState::OFF_HOOK && last_raw_ > threshold_off_) {
         sample = HookState::OFF_HOOK;
     }
 
@@ -61,5 +61,35 @@ HookState PhoneLine::update() {
 }
 
 bool PhoneLine::isLineBreak() const {
-    return (last_raw_ < LINE_THRESHOLD_OFF);
+    return (last_raw_ < threshold_off_);
+}
+
+int PhoneLine::readAveraged(uint16_t samples) const {
+    if (samples == 0) samples = 1;
+    uint32_t sum = 0;
+    for (uint16_t i = 0; i < samples; i++) {
+        sum += analogRead(PIN_LINE_SENSE);
+        delay(1);
+    }
+    return (int)(sum / samples);
+}
+
+void PhoneLine::setThresholds(int on, int off) {
+    // Keep on > off so the hysteresis band is well-formed.
+    if (off >= on) off = on - 1;
+    if (off < 0)   off = 0;
+    threshold_on_  = on;
+    threshold_off_ = off;
+}
+
+bool PhoneLine::applyCalibration(int onhookRaw, int offhookRaw) {
+    // Off-hook (loop closed, opto on) must read clearly higher than on-hook.
+    int span = offhookRaw - onhookRaw;
+    if (span < 300) return false;  // too little separation to trust
+
+    // Place the hysteresis band inside the gap: ON at ~2/3, OFF at ~1/3.
+    int on  = onhookRaw + (span * 2) / 3;
+    int off = onhookRaw + span / 3;
+    setThresholds(on, off);
+    return true;
 }

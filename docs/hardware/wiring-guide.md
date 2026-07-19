@@ -351,6 +351,21 @@ audio files.
 
 ## Testing Procedure
 
+> **Quick start:** once the board boots, send `T` on serial (or the **self-test**
+> button on the web Terminal tab) to run the whole checklist in one shot — SD,
+> line-sense reading, bell strike, 1 kHz earpiece tone, panel buttons, coin box
+> and heap. The individual tests below explain each item and how to fix failures.
+
+### Commissioning commands (serial / web Terminal)
+
+| Command | Serial | Web Terminal | Purpose |
+|---------|--------|--------------|---------|
+| Self-test | `T` | `selftest` | One-shot bring-up checklist (PASS/FAIL/WARN). |
+| Calibrate line | `K` | `calibrate on` then `calibrate off` | Capture on-hook + off-hook ADC levels and auto-set the hook thresholds, saved to `/system/settings.json`. Run this after any change to R_LIM or the opto leg. |
+| Dial echo | `E` | `dialecho` | Toggle rotary self-confirm — each dialled digit is blinked on the panel lamp (0 = 10 blinks) so dialling can be verified with no laptop. |
+| Audio probe | `Q` | `probe` | Play a 1 kHz tone and report the peak/RMS/crest of the samples fed to I2S (digital side only). |
+| Line debug | `N` | — (serial only) | Stream raw `line=` values and dial `BREAK`/`make` pulse timing. |
+
 ### Test 1: Power (no phone connected)
 
 1. Connect the **12 V adapter only** first. Do not connect 48 V yet.
@@ -403,11 +418,16 @@ audio files.
    [phone] → DIAL_TONE
    ```
    You should hear the dial tone in the earpiece.
+4. If on/off-hook aren't cleanly detected, run the calibration wizard: send
+   `K` (or `calibrate on` / `calibrate off` in the web Terminal), which captures
+   both ADC levels and sets the thresholds automatically — no need to edit
+   `config.h`.
 
 ### Test 6: Rotary Dialling
 
 1. With handset lifted, dial digit **5**.
-2. Serial should print `[phone] digit: 5`.
+2. Serial should print `[phone] digit: 5`. (Send `E` first to also blink each
+   digit on the panel lamp for a hands-off check.)
 3. Wait 3 seconds — if `/numbers/5.mp3` exists it plays, otherwise
    you'll hear "number not recognised".
 
@@ -432,11 +452,11 @@ audio files.
 |---------|--------------|
 | ESP32 doesn't boot | Check 5 V rail with multimeter. Ensure VIN (not 3.3 V) is connected to +5 V. |
 | No hook detection | Confirm opto is wired IN SERIES (Line B → R_LIM → D1 → LED → GND), not across the line. Confirm Cc is fitted (a directly-connected transformer secondary DC-shorts the line and holds the opto saturated). Check opto + D1 orientation (dot = pin 1 = anode). Use the `N` serial command to watch the raw `line=` value swing on/off hook. |
-| Dial pulses not counted | Enable the `N` serial command and dial — you should see `BREAK`/`make` pairs with `break_len` of ~20–120 ms. If the raw value doesn't drop below `LINE_THRESHOLD_OFF` on a break, lower R_LIM or adjust `LINE_THRESHOLD_ON/OFF` in `config.h`. |
+| Dial pulses not counted | Enable the `N` serial command and dial — you should see `BREAK`/`make` pairs with `break_len` of ~20–120 ms. If the raw value doesn't drop below the off threshold on a break, run the `K` calibration wizard (or lower R_LIM). Calibration replaces the old need to hand-edit `LINE_THRESHOLD_ON/OFF` in `config.h`. |
 | Bell doesn't ring | Verify 48 V at L293D pin 8. Check all 5 GND pins on L293D. GPO 232 needs an external bellset. |
 | Bell too quiet | 48 V is lower than the GPO spec of 60-80 V. Consider a higher voltage adapter (up to 60 V — check L293D absolute max). |
 | No audio / no sound | Check MAX98357A wiring (BCLK, LRC, DIN). Try `V9` serial command for max volume. Check transformer orientation. |
-| Audio distorted | Confirm Cc (DC-block cap) is fitted in series with the transformer secondary — without it, DC bias current saturates the core. If still distorted with Cc, listen at the amp output (MAX98357A L+/L−) with a small speaker: clean there ⇒ transformer at fault; distorted there ⇒ MAX98357A module at fault. |
+| Audio distorted | First run `Q` (audio probe) — a clean digital feed reads crest ≈ 1.41; a much lower ratio means the samples are already clipped before I2S (lower the line level / volume). If the digital side is clean, confirm Cc (DC-block cap) is fitted in series with the transformer secondary — without it, DC bias current saturates the core. If still distorted with Cc, listen at the amp output (MAX98357A L+/L−) with a small speaker: clean there ⇒ transformer at fault; distorted there ⇒ MAX98357A module at fault. |
 | SD card not detected | Check SPI wiring (CS, MOSI, MISO, SCK). Ensure card is FAT32 formatted. Try a different card. |
 | MP3 doesn't play | Check file paths match exactly (`/system/`, `/history/`, `/numbers/`). Ensure valid MP3 encoding. |
 | Buttons don't work | Check wiring to GND. Verify correct GPIO numbers. Use multimeter to confirm button makes contact. |
