@@ -86,6 +86,10 @@ public:
     int  ringToneMinSecs() const { return ring_tone_min_ms_ / 1000; }
     int  ringToneMaxSecs() const { return ring_tone_max_ms_ / 1000; }
 
+    // Dial-pulse click: play a tick in the earpiece on each rotary pulse.
+    void setDialTicks(bool on) { dial_ticks_ = on; }
+    bool dialTicks() const     { return dial_ticks_; }
+
     // Usage alert: lamp flashes if no activity for this many minutes (0=disabled).
     void setAlertIdleMinutes(int mins) { alert_idle_ms_ = mins * 60000UL; }
     int  alertIdleMinutes() const { return alert_idle_ms_ / 60000; }
@@ -125,6 +129,7 @@ private:
     unsigned long  test_ring_end_    = 0;  // fixed-duration test ring end (0=off)
     unsigned long  last_digit_time_  = 0;
     bool           replace_prompted_ = false;  // "replace handset" already played
+    bool           dial_ticks_       = true;   // click earpiece on each dial pulse
 
     // Auto-ring
     bool           auto_ring_enabled_ = true;

@@ -25,6 +25,11 @@ public:
     // Number of raw pulses counted so far in the current digit.
     uint8_t pulseCount() const { return pulse_count_; }
 
+    // True for the single update() call in which a pulse was just counted.
+    // Lets the controller click the earpiece once per dial pulse, mimicking
+    // the ticks a real GPO earpiece makes as the dial runs back.
+    bool pulsed() const { return pulsed_; }
+
     // Reset the decoder (e.g. on hook-on).
     void reset();
 
@@ -37,6 +42,7 @@ private:
     };
 
     State         state_         = State::IDLE;
+    bool          pulsed_        = false;
     uint8_t       pulse_count_   = 0;
     uint8_t       decoded_digit_ = 0;
     unsigned long edge_time_     = 0;

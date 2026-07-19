@@ -373,6 +373,7 @@ input[type=text]{width:140px}
 <button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('calibrate on')">calibrate on (handset down)</button>
 <button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('calibrate off')">calibrate off (handset up)</button>
 <button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('dialecho')">dial echo toggle</button>
+<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('ticks')">dial ticks toggle</button>
 </div>
 </div>
 </div>
@@ -1429,6 +1430,7 @@ static void handleTerminal() {
         out += "  calibrate on        capture ON-HOOK line level (handset down)\n";
         out += "  calibrate off       capture OFF-HOOK + set thresholds (handset up)\n";
         out += "  dialecho [on|off]   echo dialled digits on the panel lamp\n";
+        out += "  ticks [on|off]      earpiece click on each rotary dial pulse\n";
         out += "  reboot              restart the device";
     } else if (verb == "status" || verb == "s") {
         int m = p.coinBox().overrideMode();
@@ -1595,6 +1597,13 @@ static void handleTerminal() {
         else if (larg.length()) { server.send(200, "text/plain", "usage: dialecho [on|off]"); return; }
         else g_dial_confirm = !g_dial_confirm;
         out = String("dial echo ") + (g_dial_confirm ? "ON" : "OFF");
+    } else if (verb == "ticks") {
+        if (larg == "on")       s_phone->setDialTicks(true);
+        else if (larg == "off") s_phone->setDialTicks(false);
+        else if (larg.length()) { server.send(200, "text/plain", "usage: ticks [on|off]"); return; }
+        else s_phone->setDialTicks(!s_phone->dialTicks());
+        saveSettings();
+        out = String("dial ticks ") + (s_phone->dialTicks() ? "ON" : "OFF");
     } else if (verb == "reboot") {
         if (s_logger) s_logger->systemLog("Reboot via terminal");
         server.send(200, "text/plain", "rebooting…");
@@ -1792,6 +1801,7 @@ static void loadSettings() {
     if (!doc["line_level"].isNull()) s_phone->player().setLineLevel(doc["line_level"].as<uint8_t>());
     if (!doc["line_on"].isNull() && !doc["line_off"].isNull())
         s_phone->line().setThresholds(doc["line_on"].as<int>(), doc["line_off"].as<int>());
+    if (!doc["dial_ticks"].isNull()) s_phone->setDialTicks(doc["dial_ticks"].as<bool>());
     Serial.println("[web] settings loaded");
 }
 
@@ -1817,6 +1827,7 @@ static void saveSettings() {
     doc["line_level"] = s_phone->player().lineLevel();
     doc["line_on"]  = s_phone->line().thresholdOn();
     doc["line_off"] = s_phone->line().thresholdOff();
+    doc["dial_ticks"] = s_phone->dialTicks();
     serializeJson(doc, f);
     f.flush();
     f.close();

@@ -80,6 +80,7 @@ void audio_info(const char* info) {
 }
 
 static const char* ALIASES_FILE = "/system/aliases.json";
+static const char* TICK_FILE    = "/system/_tick.wav";
 
 bool AudioPlayer::begin() {
     // GPIO 5 (CS) is an ESP32 strapping pin that outputs PWM during boot,
@@ -116,7 +117,10 @@ bool AudioPlayer::begin() {
     audio_.setPinout(PIN_I2S_BCLK, PIN_I2S_LRCLK, PIN_I2S_DOUT);
     audio_.setVolume(15);  // 0-21
 
-    if (sd_ok_) loadAliases();
+    if (sd_ok_) {
+        loadAliases();
+        generateTickFile();  // pre-build the dial-pulse click so playClick() is fast
+    }
 
     return sd_ok_;
 }
@@ -195,6 +199,61 @@ bool AudioPlayer::playTestTone(int hz, int secs) {
         Serial.printf("[audio] test tone %d Hz for %ds\n", hz, secs);
     }
     return ok;
+}
+
+bool AudioPlayer::generateTickFile() {
+    if (!sd_ok_) return false;
+    if (SD.exists(TICK_FILE)) return true;  // already built
+
+    const uint32_t sampleRate = 16000;
+    const uint32_t numSamples = 176;        // ~11 ms click
+    const uint32_t dataBytes  = numSamples * 2;
+
+    if (!SD.exists("/system")) SD.mkdir("/system");
+    File f = SD.open(TICK_FILE, FILE_WRITE);
+    if (!f) {
+        Serial.println("[audio] could not create tick file");
+        return false;
+    }
+
+    auto w32 = [&](uint32_t v){ uint8_t b[4]={(uint8_t)v,(uint8_t)(v>>8),(uint8_t)(v>>16),(uint8_t)(v>>24)}; f.write(b,4); };
+    auto w16 = [&](uint16_t v){ uint8_t b[2]={(uint8_t)v,(uint8_t)(v>>8)}; f.write(b,2); };
+    f.write((const uint8_t*)"RIFF", 4);  w32(36 + dataBytes);
+    f.write((const uint8_t*)"WAVE", 4);
+    f.write((const uint8_t*)"fmt ", 4);  w32(16);
+    w16(1);                    // PCM
+    w16(1);                    // channels
+    w32(sampleRate);
+    w32(sampleRate * 2);       // byte rate
+    w16(2);                    // block align
+    w16(16);                   // bits per sample
+    f.write((const uint8_t*)"data", 4);  w32(dataBytes);
+
+    // A sharp exponentially-decaying ~1.8 kHz burst — sounds like the click a
+    // GPO earpiece makes on each dial pulse rather than a musical tone.
+    const float freq = 1800.0f;
+    const float tau  = 0.0025f;            // ~2.5 ms decay
+    const float amp  = 0.7f * 32767.0f;
+    uint8_t buf[512];
+    int bi = 0;
+    for (uint32_t i = 0; i < numSamples; i++) {
+        float t = (float)i / (float)sampleRate;
+        int16_t s = (int16_t)(amp * expf(-t / tau) * sinf(2.0f * PI * freq * t));
+        buf[bi++] = (uint8_t)s;
+        buf[bi++] = (uint8_t)(s >> 8);
+        if (bi >= (int)sizeof(buf)) { f.write(buf, bi); bi = 0; }
+    }
+    if (bi) f.write(buf, bi);
+    f.close();
+    return true;
+}
+
+bool AudioPlayer::playClick() {
+    if (!sd_ok_) return false;
+    if (!SD.exists(TICK_FILE) && !generateTickFile()) return false;
+    looping_   = false;
+    loop_path_ = "";                       // one-shot: don't auto-restart
+    return audio_.connecttoFS(SD, TICK_FILE);
 }
 
 bool AudioPlayer::playDialTone() {

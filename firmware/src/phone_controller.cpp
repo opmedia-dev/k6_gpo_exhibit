@@ -123,21 +123,27 @@ void PhoneController::update() {
             enterState(PhoneState::IDLE);
             break;
         }
-        if (dial_.update(line_.isLineBreak())) {
-            player_.stop();
-            uint8_t d = dial_.digit();
-            if (dial_pos_ < MAX_DIALLED_DIGITS) {
-                dialled_[dial_pos_++] = '0' + d;
-                dialled_[dial_pos_]   = '\0';
+        {
+            bool digitDone = dial_.update(line_.isLineBreak());
+            if (dial_.pulsed()) {
+                // Dialling has started — click the earpiece per pulse, or at
+                // least silence the dial tone if ticks are disabled.
+                if (dial_ticks_) player_.playClick();
+            } else if (line_.isLineBreak()) {
+                player_.stop();  // kill the dial tone the moment dialling starts
             }
-            last_digit_time_ = millis();
-            if (digit_cb_) digit_cb_(d);
-            Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
-            enterState(PhoneState::DIALING);
-            break;
-        }
-        if (line_.isLineBreak()) {
-            player_.stop();
+            if (digitDone) {
+                uint8_t d = dial_.digit();
+                if (dial_pos_ < MAX_DIALLED_DIGITS) {
+                    dialled_[dial_pos_++] = '0' + d;
+                    dialled_[dial_pos_]   = '\0';
+                }
+                last_digit_time_ = millis();
+                if (digit_cb_) digit_cb_(d);
+                Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
+                enterState(PhoneState::DIALING);
+                break;
+            }
         }
         if (millis() - state_enter_time_ > DIAL_TONE_TIMEOUT_MS) {
             player_.stop();
@@ -152,15 +158,19 @@ void PhoneController::update() {
             enterState(PhoneState::IDLE);
             break;
         }
-        if (dial_.update(line_.isLineBreak())) {
-            uint8_t d = dial_.digit();
-            if (dial_pos_ < MAX_DIALLED_DIGITS) {
-                dialled_[dial_pos_++] = '0' + d;
-                dialled_[dial_pos_]   = '\0';
+        {
+            bool digitDone = dial_.update(line_.isLineBreak());
+            if (dial_.pulsed() && dial_ticks_) player_.playClick();
+            if (digitDone) {
+                uint8_t d = dial_.digit();
+                if (dial_pos_ < MAX_DIALLED_DIGITS) {
+                    dialled_[dial_pos_++] = '0' + d;
+                    dialled_[dial_pos_]   = '\0';
+                }
+                last_digit_time_ = millis();
+                if (digit_cb_) digit_cb_(d);
+                Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
             }
-            last_digit_time_ = millis();
-            if (digit_cb_) digit_cb_(d);
-            Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
         }
         // Number complete after inter-digit timeout.
         if (dial_pos_ > 0 &&

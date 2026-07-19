@@ -31,6 +31,11 @@ public:
     // auto-stops after `secs`.  Useful for measuring the line output.
     bool playTestTone(int hz, int secs);
 
+    // Play a single short "tick" in the earpiece — one per rotary dial pulse,
+    // to reproduce the clicks a real GPO dial makes as it runs back.  The
+    // click WAV is generated once at begin() so this is just a fast reconnect.
+    bool playClick();
+
     // Play the built-in dial tone (file-based).
     bool playDialTone();
 
@@ -95,6 +100,7 @@ private:
 
     int  countFilesIn(const char* dir);
     bool fileExists(const char* path);
+    bool generateTickFile();  // write the dial-pulse click WAV to SD once
     unsigned long last_sd_check_ = 0;
     static const int MAX_ALIASES = 32;
     struct Alias { char number[12]; char name[32]; };

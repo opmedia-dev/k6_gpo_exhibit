@@ -363,6 +363,7 @@ audio files.
 | Self-test | `T` | `selftest` | One-shot bring-up checklist (PASS/FAIL/WARN). |
 | Calibrate line | `K` | `calibrate on` then `calibrate off` | Capture on-hook + off-hook ADC levels and auto-set the hook thresholds, saved to `/system/settings.json`. Run this after any change to R_LIM or the opto leg. |
 | Dial echo | `E` | `dialecho` | Toggle rotary self-confirm — each dialled digit is blinked on the panel lamp (0 = 10 blinks) so dialling can be verified with no laptop. |
+| Dial ticks | `I` | `ticks` | Toggle the earpiece click heard on each rotary pulse (on by default), reproducing the ticks a real GPO dial makes as it runs back. Saved to `/system/settings.json`. |
 | Audio probe | `Q` | `probe` | Play a 1 kHz tone and report the peak/RMS/crest of the samples fed to I2S (digital side only). |
 | Line debug | `N` | — (serial only) | Stream raw `line=` values and dial `BREAK`/`make` pulse timing. |
 
@@ -428,6 +429,8 @@ audio files.
 1. With handset lifted, dial digit **5**.
 2. Serial should print `[phone] digit: 5`. (Send `E` first to also blink each
    digit on the panel lamp for a hands-off check.)
+   You should also hear a click in the earpiece on each pulse — the authentic
+   GPO dialling sound. Send `I` (or `ticks`) to turn these clicks off.
 3. Wait 3 seconds — if `/numbers/5.mp3` exists it plays, otherwise
    you'll hear "number not recognised".
 

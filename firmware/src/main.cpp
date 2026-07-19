@@ -34,6 +34,7 @@
 //   T   — bring-up self-test checklist
 //   K   — line-sense calibration wizard
 //   E   — toggle rotary self-confirm (echo digits on lamp)
+//   I   — toggle earpiece dial-pulse clicks
 //   Q   — audio probe (1 kHz peak/RMS of digital feed)
 // ============================================================================
 
@@ -304,6 +305,13 @@ static void handleSerial() {
         Serial.printf("[cmd] dial echo %s\n", g_dial_confirm ? "ON" : "OFF");
         break;
     }
+    case 'I': {
+        // Toggle the earpiece dial-pulse clicks.
+        phone.setDialTicks(!phone.dialTicks());
+        web.persistSettings();
+        Serial.printf("[cmd] dial ticks %s\n", phone.dialTicks() ? "ON" : "OFF");
+        break;
+    }
     case 'K': {
         // Line-sense calibration wizard.
         Serial.println("[cal] Ensure handset is ON-HOOK, then press Enter...");
@@ -416,7 +424,7 @@ void setup() {
     stats.begin();
 
     Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol  P <path>=play file");
-    Serial.println("[app] diagnostics: T=self-test  K=calibrate line  E=dial echo  Q=audio probe  N=line debug");
+    Serial.println("[app] diagnostics: T=self-test  K=calibrate line  E=dial echo  I=dial ticks  Q=audio probe  N=line debug");
     Serial.printf("[app] mode: %s (lamp %s)\n",
                   phone.autoRingEnabled() ? "AUTO" : "MANUAL",
                   phone.autoRingEnabled() ? "ON" : "OFF");
