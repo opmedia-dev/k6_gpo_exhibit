@@ -441,9 +441,12 @@ bool AudioPlayer::checkSdCard() {
     // Attempt remount.
     SD.end();
     if (SD.begin(PIN_SD_CS)) {
-        Serial.println("[audio] SD card remounted OK");
+        Serial.println("[audio] SD card remounted OK — reinitialising audio");
         sd_ok_ = true;
+        // Restore everything the audio path needs so playback self-heals
+        // without a power cycle: aliases and the pre-built dial-pulse click.
         loadAliases();
+        generateTickFile();
     }
     return sd_ok_;
 }

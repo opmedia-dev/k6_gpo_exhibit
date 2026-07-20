@@ -7,12 +7,18 @@ static const char* STATS_FILE = "/logs/stats.json";
 static const char* STATS_TMP  = "/logs/stats.tmp";
 static const char* DISC_FILE  = "/logs/discovery.json";
 static const char* DISC_TMP   = "/logs/discovery.tmp";
+static const char* DIAG_FILE  = "/logs/diag.json";
+static const char* DIAG_TMP   = "/logs/diag.tmp";
 static const unsigned long SAVE_INTERVAL_MS = 60000;  // save every 60s if dirty
 
 void StatsTracker::begin() {
     boot_time_ms_ = millis();
+    session_ = {};
+    session_num_count_ = 0;
+    memset(session_numbers_, 0, sizeof(session_numbers_));
     load();
     loadDiscovery();
+    loadDiag();
 }
 
 void StatsTracker::update() {
@@ -26,23 +32,29 @@ void StatsTracker::update() {
 
 void StatsTracker::recordIncomingRing() {
     stats_.total_incoming++;
+    session_.incoming++;
     dirty_ = true;
 }
 
 void StatsTracker::recordIncomingAnswered() {
     stats_.total_answered++;
+    session_.answered++;
     dirty_ = true;
 }
 
 void StatsTracker::recordOutgoingCall(const char* number) {
     stats_.total_outgoing++;
+    session_.outgoing++;
     incrementNumber(number);
+    incrementSessionNumber(number);
     dirty_ = true;
 }
 
 void StatsTracker::recordNotRecognised(const char* number) {
     stats_.total_not_recognised++;
+    session_.not_recognised++;
     incrementNumber(number);
+    incrementSessionNumber(number);
     dirty_ = true;
 }
 
@@ -62,6 +74,7 @@ void StatsTracker::recordCoinRefunded() {
 
 void StatsTracker::recordPickup() {
     stats_.total_pickups++;
+    session_.pickups++;
     dirty_ = true;
 }
 
@@ -73,6 +86,7 @@ void StatsTracker::recordFirstDigit(unsigned long dialToneMs) {
 
 void StatsTracker::recordCompletion() {
     stats_.total_completions++;
+    session_.completions++;
     dirty_ = true;
 }
 
@@ -132,24 +146,49 @@ void StatsTracker::incrementNumber(const char* number) {
     }
 }
 
-int StatsTracker::topNumbers(NumberEntry* out, int maxEntries) const {
-    // Copy and sort by count descending.
-    NumberEntry sorted[MAX_NUMBERS];
-    memcpy(sorted, numbers_, sizeof(NumberEntry) * num_count_);
+void StatsTracker::incrementSessionNumber(const char* number) {
+    for (int i = 0; i < session_num_count_; i++) {
+        if (strcmp(session_numbers_[i].number, number) == 0) {
+            session_numbers_[i].count++;
+            return;
+        }
+    }
+    if (session_num_count_ < MAX_NUMBERS) {
+        strncpy(session_numbers_[session_num_count_].number, number, 11);
+        session_numbers_[session_num_count_].number[11] = '\0';
+        session_numbers_[session_num_count_].count = 1;
+        session_num_count_++;
+    }
+}
 
-    for (int i = 0; i < num_count_ - 1; i++) {
-        for (int j = i + 1; j < num_count_; j++) {
+// Sort a copy of `src` (count elements) by count descending into `out`.
+static int topOf(const StatsTracker::NumberEntry* src, int count,
+                 StatsTracker::NumberEntry* out, int maxEntries) {
+    StatsTracker::NumberEntry sorted[32];
+    if (count > 32) count = 32;
+    memcpy(sorted, src, sizeof(StatsTracker::NumberEntry) * count);
+
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = i + 1; j < count; j++) {
             if (sorted[j].count > sorted[i].count) {
-                NumberEntry tmp = sorted[i];
+                StatsTracker::NumberEntry tmp = sorted[i];
                 sorted[i] = sorted[j];
                 sorted[j] = tmp;
             }
         }
     }
 
-    int n = num_count_ < maxEntries ? num_count_ : maxEntries;
-    memcpy(out, sorted, sizeof(NumberEntry) * n);
+    int n = count < maxEntries ? count : maxEntries;
+    memcpy(out, sorted, sizeof(StatsTracker::NumberEntry) * n);
     return n;
+}
+
+int StatsTracker::topNumbers(NumberEntry* out, int maxEntries) const {
+    return topOf(numbers_, num_count_, out, maxEntries);
+}
+
+int StatsTracker::topSessionNumbers(NumberEntry* out, int maxEntries) const {
+    return topOf(session_numbers_, session_num_count_, out, maxEntries);
 }
 
 void StatsTracker::save() {
@@ -333,4 +372,82 @@ void StatsTracker::loadDiscovery() {
         disc_count_++;
     }
     Serial.printf("[stats] discovery loaded: %d entries\n", disc_count_);
+}
+
+// --- Persisted diagnostics (drift tracking) ----------------------------------
+
+void StatsTracker::recordBootLine(uint16_t bootNumber, int raw) {
+    if (bootline_count_ >= MAX_BOOTLINES) {
+        // Drop the oldest entry to make room.
+        for (int i = 0; i < MAX_BOOTLINES - 1; i++) bootlines_[i] = bootlines_[i + 1];
+        bootline_count_ = MAX_BOOTLINES - 1;
+    }
+    bootlines_[bootline_count_].boot = bootNumber;
+    bootlines_[bootline_count_].raw  = (int16_t)raw;
+    bootline_count_++;
+    saveDiag();
+}
+
+void StatsTracker::recordSelfTest(const char* text, uint32_t uptimeSecs) {
+    if (text) {
+        strncpy(last_selftest_, text, sizeof(last_selftest_) - 1);
+        last_selftest_[sizeof(last_selftest_) - 1] = '\0';
+    } else {
+        last_selftest_[0] = '\0';
+    }
+    last_selftest_uptime_ = uptimeSecs;
+    saveDiag();
+}
+
+void StatsTracker::saveDiag() {
+    if (!SD.exists("/logs")) SD.mkdir("/logs");
+
+    File f = SD.open(DIAG_TMP, FILE_WRITE);
+    if (!f) return;
+
+    JsonDocument doc;
+    JsonArray arr = doc["boot_lines"].to<JsonArray>();
+    for (int i = 0; i < bootline_count_; i++) {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["b"] = bootlines_[i].boot;
+        obj["r"] = bootlines_[i].raw;
+    }
+    doc["selftest"]        = last_selftest_;
+    doc["selftest_uptime"] = last_selftest_uptime_;
+
+    serializeJson(doc, f);
+    f.flush();
+    f.close();
+
+    SD.remove(DIAG_FILE);
+    SD.rename(DIAG_TMP, DIAG_FILE);
+}
+
+void StatsTracker::loadDiag() {
+    if (!SD.exists(DIAG_FILE) && SD.exists(DIAG_TMP)) {
+        SD.rename(DIAG_TMP, DIAG_FILE);
+    }
+    File f = SD.open(DIAG_FILE, FILE_READ);
+    if (!f) return;
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, f);
+    f.close();
+    if (err) {
+        Serial.printf("[stats] diag parse error: %s\n", err.c_str());
+        return;
+    }
+
+    bootline_count_ = 0;
+    JsonArray arr = doc["boot_lines"].as<JsonArray>();
+    for (JsonObject obj : arr) {
+        if (bootline_count_ >= MAX_BOOTLINES) break;
+        bootlines_[bootline_count_].boot = obj["b"] | 0;
+        bootlines_[bootline_count_].raw  = obj["r"] | 0;
+        bootline_count_++;
+    }
+    strncpy(last_selftest_, doc["selftest"] | "", sizeof(last_selftest_) - 1);
+    last_selftest_[sizeof(last_selftest_) - 1] = '\0';
+    last_selftest_uptime_ = doc["selftest_uptime"] | 0;
+    Serial.printf("[stats] diag loaded: %d boot-line samples\n", bootline_count_);
 }

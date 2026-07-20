@@ -60,6 +60,9 @@ static String buildSelfTest(PhoneController& p) {
     o += "coinbox: " + String(p.coinBox().isInstalled() ? "detected" : "none") + "\n";
     o += "heap free: " + String(ESP.getFreeHeap()) + " bytes\n";
     o += "=== end ===";
+
+    // Persist the result so it survives a reboot and drift can be reviewed.
+    if (s_stats) s_stats->recordSelfTest(o.c_str(), millis() / 1000);
     return o;
 }
 
@@ -279,6 +282,7 @@ input[type=text]{width:140px}
 <div class="card">
 <h2><span class="section-icon">&#128994;</span> Quick Health</h2>
 <p class="hint">At-a-glance system status.</p>
+<div id="healthbadge" style="margin-bottom:8px"><span class="badge badge-amber">Checking…</span></div>
 <div id="healthbox" style="font-size:.85em;line-height:1.8">Loading...</div>
 </div>
 
@@ -336,6 +340,18 @@ input[type=text]{width:140px}
 <button onclick="clearLog()" class="btn-danger">Clear Log</button>
 </div>
 <pre id="logview" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128200;</span> Line-Sense Drift</h2>
+<p class="hint">On-hook line reading captured at each power-on, tagged by boot number. Steady numbers mean the analogue front-end is stable; a creeping value hints at a developing fault.</p>
+<div id="driftbox" style="font-size:.85em;color:var(--fg3)">Loading...</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#9989;</span> Last Self-Test</h2>
+<p class="hint">Most recent bring-up self-test result (persists across reboots). Run a fresh one from the Terminal tab.</p>
+<pre id="selftestbox" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word">Loading...</pre>
 </div>
 
 <div class="card">
@@ -529,7 +545,7 @@ function switchTab(id,btn){
   closeMenu();
   try{localStorage.setItem('k6tab',id)}catch(e){}
   if(id==='stats'){loadStats();loadDiscovery();loadAliases();}
-  if(id==='diagnostics'){loadErrors();loadLog('system');}
+  if(id==='diagnostics'){loadErrors();loadDiag();loadLog('system');}
   if(id==='terminal'){setTimeout(function(){document.getElementById('termin').focus()},50);}
   if(id==='settings'){loadFiles();}
 }
@@ -762,10 +778,21 @@ function loadStatus(){
       let m=Math.floor(d.call_secs/60),s=d.call_secs%60;
       ct.textContent=m+':'+(s<10?'0':'')+s;
     } else { ct.textContent='\u2014'; }
-    // Quick Health
+    // Quick Health — one-line badge + detail lines.
+    let heapKB=Math.round(d.heap/1024);
+    let sdOk=!!d.sd, calOk=!!d.line_cal, lowHeap=heapKB<40;
+    let cls='badge-green',word='Healthy';
+    if(!sdOk){cls='badge-red';word='SD fault';}
+    else if(!calOk||lowHeap||(d.errors&&d.errors>0)){cls='badge-amber';word='Check';}
+    let badge='<span class="badge '+cls+'">'+word+'</span> ';
+    badge+='<span style="font-size:.85em;color:var(--fg3)">SD '+(sdOk?'OK':'FAULT')
+      +' \u00b7 Line '+(calOk?'calibrated':'not calibrated')
+      +' \u00b7 '+heapKB+' KB free</span>';
+    document.getElementById('healthbadge').innerHTML=badge;
     let hb=document.getElementById('healthbox');
-    let hh='SD Card: '+(d.sd?'<span class="ok">OK</span>':'<span class="err">Not detected</span>');
-    hh+='<br>Memory: '+(d.heap/1024).toFixed(0)+' KB free';
+    let hh='SD Card: '+(sdOk?'<span class="ok">OK</span>':'<span class="err">Not detected</span>');
+    hh+='<br>Line sensing: '+(calOk?'<span class="ok">Calibrated</span>':'<span class="warn">Not calibrated (using defaults)</span>');
+    hh+='<br>Memory: '+(lowHeap?'<span class="warn">':'<span class="ok">')+heapKB+' KB free</span>';
     hh+='<br>Uptime: '+uH+'h '+uM+'m';
     if(d.errors&&d.errors>0) hh+='<br><span class="err">&#9888; '+d.errors+' error'+(d.errors>1?'s':'')+' recorded</span> <span style="font-size:.8em;color:var(--link);cursor:pointer" onclick="switchTab(\'diagnostics\',document.querySelector(\'.tab-nav button:nth-child(3)\'))">(view)</span>';
     else hh+='<br>Errors: <span class="ok">None</span>';
@@ -774,19 +801,22 @@ function loadStatus(){
 }
 function loadSession(){
   fetch('/api/stats').then(r=>r.json()).then(d=>{
+    let s=d.session||{};
     let sb=document.getElementById('sessionbox');
     let h='';
-    h+='<span class="stat"><span class="stat-label">Pickups</span><b>'+d.pickups+'</b></span>';
-    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+d.outgoing+'</b></span>';
-    if(d.completions!==undefined){
-      let rate=d.pickups>0?Math.round(d.completions/d.pickups*100):0;
+    h+='<span class="stat"><span class="stat-label">Pickups Today</span><b>'+(s.pickups||0)+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+(s.outgoing||0)+'</b></span>';
+    h+='<span class="stat"><span class="stat-label">Times Rung</span><b>'+(s.incoming||0)+'</b></span>';
+    let pk=s.pickups||0;
+    if(pk>0){
+      let rate=Math.round((s.completions||0)/pk*100);
       h+='<span class="stat"><span class="stat-label">Completion Rate</span><b>'+rate+'%</b></span>';
     }
-    if(d.top_numbers&&d.top_numbers.length){
-      h+='<span class="stat"><span class="stat-label">Last Popular</span><b>'+d.top_numbers[0].number+'</b></span>';
+    if(s.top_numbers&&s.top_numbers.length){
+      h+='<span class="stat"><span class="stat-label">Most Dialled</span><b>'+s.top_numbers[0].number+'</b> &times;'+s.top_numbers[0].count+'</span>';
     }
-    let uH=Math.floor(d.total_uptime/3600),uM=Math.floor(d.total_uptime%3600/60);
-    h+='<span class="stat"><span class="stat-label">Running Time</span><b>'+uH+'h '+uM+'m</b></span>';
+    let up=s.uptime||0,uH=Math.floor(up/3600),uM=Math.floor(up%3600/60);
+    h+='<span class="stat"><span class="stat-label">Powered On</span><b>'+uH+'h '+uM+'m</b></span>';
     sb.innerHTML=h;
   });
 }
@@ -978,6 +1008,26 @@ function loadErrors(){
     box.innerHTML=h;
   }).catch(()=>{document.getElementById('errorbox').innerHTML='<span class="err">Failed to load error log</span>';});
 }
+function loadDiag(){
+  fetch('/api/diag').then(r=>r.json()).then(d=>{
+    let db=document.getElementById('driftbox');
+    if(!d.boot_lines||!d.boot_lines.length){db.innerHTML='<span style="color:var(--fg4)">No boot readings recorded yet.</span>';}
+    else{
+      let bl=d.boot_lines;
+      let h='<table style="width:100%;border-collapse:collapse"><thead><tr><td style="color:var(--fg3);padding:4px 8px">Boot #</td><td style="color:var(--fg3);padding:4px 8px">On-Hook Reading</td></tr></thead><tbody>';
+      for(let i=bl.length-1;i>=0;i--){
+        h+='<tr><td style="padding:4px 8px;font-family:monospace">'+bl[i].boot+'</td><td style="padding:4px 8px;font-family:monospace">'+bl[i].raw+'</td></tr>';
+      }
+      h+='</tbody></table>';
+      db.innerHTML=h;
+    }
+    let stb=document.getElementById('selftestbox');
+    if(d.selftest&&d.selftest.length){
+      let up=d.selftest_uptime||0,uH=Math.floor(up/3600),uM=Math.floor(up%3600/60);
+      stb.textContent='(ran at uptime '+uH+'h '+uM+'m)\n\n'+d.selftest;
+    } else { stb.textContent='No self-test has been run yet. Run one from the Terminal tab.'; }
+  }).catch(()=>{document.getElementById('driftbox').innerHTML='<span class="err">Failed to load diagnostics</span>';});
+}
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
 loadStatus();loadSession();loadStats();loadAliases();loadDiscovery();
 setInterval(loadStatus,5000);
@@ -1143,6 +1193,8 @@ static void handleStatus() {
     json += ",\"bell_vol\":"; json += String(s_phone->bell().bellVolume());
     json += ",\"bell_freq\":"; json += String(s_phone->bell().ringFreq());
     json += ",\"line_level\":"; json += String(s_phone->player().lineLevel());
+    json += ",\"line_cal\":"; json += s_phone->line().calibrated() ? "true" : "false";
+    json += ",\"errors\":"; json += String(s_stats ? s_stats->errorCount() : 0);
     json += ",\"ar_min\":";  json += String(s_phone->autoRingMinMs());
     json += ",\"ar_max\":";  json += String(s_phone->autoRingMaxMs());
     json += ",\"ring_max\":"; json += String(s_phone->maxRingCadences());
@@ -1653,7 +1705,31 @@ static void handleStats() {
         json += String(top[i].count);
         json += "}";
     }
+    json += "]";
+
+    // Since-boot ("today") summary — the exhibit is powered down out of hours.
+    const SessionStats& se = s_stats->session();
+    json += ",\"session\":{";
+    json += "\"incoming\":";       json += String(se.incoming);
+    json += ",\"outgoing\":";      json += String(se.outgoing);
+    json += ",\"answered\":";      json += String(se.answered);
+    json += ",\"not_recognised\":"; json += String(se.not_recognised);
+    json += ",\"pickups\":";       json += String(se.pickups);
+    json += ",\"completions\":";   json += String(se.completions);
+    json += ",\"uptime\":";        json += String(session_secs);
+    StatsTracker::NumberEntry stop[5];
+    int sn = s_stats->topSessionNumbers(stop, 5);
+    json += ",\"top_numbers\":[";
+    for (int i = 0; i < sn; i++) {
+        if (i > 0) json += ",";
+        json += "{\"number\":\"";
+        json += stop[i].number;
+        json += "\",\"count\":";
+        json += String(stop[i].count);
+        json += "}";
+    }
     json += "]}";
+    json += "}";
 
     server.send(200, "application/json", json);
 }
@@ -1702,6 +1778,33 @@ static void handleDiagnostics() {
     }
     json += "]";
 
+    server.send(200, "application/json", json);
+}
+
+// Persisted diagnostics: boot-time line-sense readings (drift) + last self-test.
+static void handleDiag() {
+    if (!s_stats) { server.send(200, "application/json", "{}"); return; }
+
+    String json = "{\"boot_lines\":[";
+    int n = s_stats->bootLineCount();
+    const StatsTracker::BootLineEntry* bl = s_stats->bootLineEntries();
+    for (int i = 0; i < n; i++) {
+        if (i > 0) json += ",";
+        json += "{\"boot\":"; json += String(bl[i].boot);
+        json += ",\"raw\":";  json += String(bl[i].raw);
+        json += "}";
+    }
+    json += "],\"selftest_uptime\":";
+    json += String(s_stats->lastSelfTestUptime());
+    json += ",\"selftest\":\"";
+    for (const char* p = s_stats->lastSelfTest(); *p; p++) {
+        if (*p == '"') json += "\\\"";
+        else if (*p == '\\') json += "\\\\";
+        else if (*p == '\n') json += "\\n";
+        else if (*p == '\r') { /* skip */ }
+        else json += *p;
+    }
+    json += "\"}";
     server.send(200, "application/json", json);
 }
 
@@ -1801,6 +1904,7 @@ static void loadSettings() {
     if (!doc["line_level"].isNull()) s_phone->player().setLineLevel(doc["line_level"].as<uint8_t>());
     if (!doc["line_on"].isNull() && !doc["line_off"].isNull())
         s_phone->line().setThresholds(doc["line_on"].as<int>(), doc["line_off"].as<int>());
+    if (!doc["line_cal"].isNull()) s_phone->line().setCalibrated(doc["line_cal"].as<bool>());
     if (!doc["dial_ticks"].isNull()) s_phone->setDialTicks(doc["dial_ticks"].as<bool>());
     Serial.println("[web] settings loaded");
 }
@@ -1827,6 +1931,7 @@ static void saveSettings() {
     doc["line_level"] = s_phone->player().lineLevel();
     doc["line_on"]  = s_phone->line().thresholdOn();
     doc["line_off"] = s_phone->line().thresholdOff();
+    doc["line_cal"] = s_phone->line().calibrated();
     doc["dial_ticks"] = s_phone->dialTicks();
     serializeJson(doc, f);
     f.flush();
@@ -1980,6 +2085,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/stats",       HTTP_GET,  handleStats);
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
     server.on("/api/diagnostics", HTTP_GET,  handleDiagnostics);
+    server.on("/api/diag",        HTTP_GET,  handleDiag);
     server.on("/api/discovery",       HTTP_GET,  handleDiscovery);
     server.on("/api/discovery/clear",  HTTP_POST, handleDiscoveryClear);
     server.on("/api/discovery/remove", HTTP_POST, handleDiscoveryRemove);

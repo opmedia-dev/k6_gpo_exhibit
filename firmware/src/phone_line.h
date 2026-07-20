@@ -46,6 +46,11 @@ public:
     // Returns false if the two levels are too close to separate reliably.
     bool applyCalibration(int onhookRaw, int offhookRaw);
 
+    // True once the line has been calibrated (or a saved calibration loaded),
+    // rather than running on the compile-time defaults.
+    bool calibrated() const { return calibrated_; }
+    void setCalibrated(bool on) { calibrated_ = on; }
+
 private:
     HookState     hook_state_   = HookState::ON_HOOK;
     bool          hook_changed_ = false;
@@ -56,6 +61,7 @@ private:
     // Runtime-tunable detection thresholds (initialised from config.h).
     int           threshold_on_  = LINE_THRESHOLD_ON;
     int           threshold_off_ = LINE_THRESHOLD_OFF;
+    bool          calibrated_    = false;
 
     // Line-sense debug state (used only when g_line_debug is true).
     bool          dbg_break_    = false;

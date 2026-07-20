@@ -445,6 +445,14 @@ void setup() {
     esp_ota_mark_app_valid_cancel_rollback();
     Serial.println("[app] firmware marked valid");
 
+    // Capture the on-hook line-sense level at boot and persist it (tagged with
+    // the boot number) so line-level drift is visible across power cycles.
+    int boot_line = phone.line().readAveraged(64);
+    stats.recordBootLine(logger.bootNumber(), boot_line);
+    logger.systemLog("LINE boot-level raw=%d cal=%s on>=%d off<%d",
+                     boot_line, phone.line().calibrated() ? "yes" : "no",
+                     phone.line().thresholdOn(), phone.line().thresholdOff());
+
     // Boot complete — single bell strike and steady lamp.
     phone.bell().strike(150);
     digitalWrite(PIN_AUTO_LAMP, phone.autoRingEnabled() ? HIGH : LOW);
@@ -453,6 +461,24 @@ void setup() {
     // Hardware watchdog: reboot if loop() stops for 15 seconds.
     esp_task_wdt_init(15, true);
     esp_task_wdt_add(NULL);
+}
+
+// Periodic heartbeat: a liveness line in the system log with uptime and heap
+// so an unattended exhibit's health can be reviewed after the fact.
+static const unsigned long HEARTBEAT_INTERVAL_MS = 3600000;  // hourly
+static unsigned long s_last_heartbeat_ms = 0;
+static uint32_t      s_min_heap = 0xFFFFFFFF;
+
+static void serviceHeartbeat() {
+    uint32_t heap = ESP.getFreeHeap();
+    if (heap < s_min_heap) s_min_heap = heap;
+
+    if (millis() - s_last_heartbeat_ms < HEARTBEAT_INTERVAL_MS) return;
+    s_last_heartbeat_ms = millis();
+    logger.systemLog("HEARTBEAT uptime=%lus heap=%u min_heap=%u sd=%s state=%s",
+                     millis() / 1000, heap, s_min_heap,
+                     phone.player().sdReady() ? "ok" : "FAIL",
+                     phone.stateName());
 }
 
 void loop() {
@@ -466,14 +492,20 @@ void loop() {
     if (!safe_mode) {
         phone.update();
         bool sd_was_ok = phone.player().sdReady();
+        // checkSdCard() auto-remounts a lost card and rebuilds the audio path,
+        // so a wedged SD/audio subsystem self-heals without a power cycle.
         phone.player().checkSdCard();
-        if (sd_was_ok && !phone.player().sdReady()) {
+        bool sd_now_ok = phone.player().sdReady();
+        if (sd_was_ok && !sd_now_ok) {
             stats.recordError(StatsTracker::ErrorType::SD_FAILURE, "SD card lost during operation");
-            logger.systemLog("ERROR: SD card lost");
+            logger.systemLog("ERROR: SD card lost — attempting auto-recovery");
+        } else if (!sd_was_ok && sd_now_ok) {
+            logger.systemLog("RECOVERED: SD card remounted, audio path reinitialised");
         }
     }
     stats.update();
     web.update();
     serviceDialEcho();
+    serviceHeartbeat();
     handleSerial();
 }

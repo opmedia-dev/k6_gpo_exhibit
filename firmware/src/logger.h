@@ -31,6 +31,9 @@ public:
     void clearSystemLog();
     void clearCallLog();
 
+    // Sequential boot counter (persisted to SD), for tagging diagnostics.
+    uint16_t bootNumber() const { return boot_number_; }
+
 private:
     void appendLog(const char* path, const char* line);
     void rotateIfNeeded(const char* path);

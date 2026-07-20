@@ -91,5 +91,6 @@ bool PhoneLine::applyCalibration(int onhookRaw, int offhookRaw) {
     int on  = onhookRaw + (span * 2) / 3;
     int off = onhookRaw + span / 3;
     setThresholds(on, off);
+    calibrated_ = true;
     return true;
 }
