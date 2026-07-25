@@ -17,7 +17,7 @@ HookState PhoneLine::update() {
     last_raw_ = analogRead(PIN_LINE_SENSE);
 
     if (g_line_debug) {
-        bool brk = (last_raw_ < threshold_off_);
+        bool brk = (last_raw_ < pulse_threshold_);
         unsigned long now = millis();
         if (brk != dbg_break_) {
             // Edge: report the reading and, on a make, how long the break was.
@@ -31,8 +31,10 @@ HookState PhoneLine::update() {
             dbg_edge_ms_ = now;
         }
         if (now - dbg_last_ms_ >= 500) {
-            Serial.printf("[linedbg] raw=%d  hook=%s\n", last_raw_,
-                          hook_state_ == HookState::OFF_HOOK ? "OFF" : "ON");
+            Serial.printf("[linedbg] raw=%d  hook=%s  pulse<%d off<%d on>=%d\n",
+                          last_raw_,
+                          hook_state_ == HookState::OFF_HOOK ? "OFF" : "ON",
+                          pulse_threshold_, threshold_off_, threshold_on_);
             dbg_last_ms_ = now;
         }
     }
@@ -61,7 +63,7 @@ HookState PhoneLine::update() {
 }
 
 bool PhoneLine::isLineBreak() const {
-    return (last_raw_ < threshold_off_);
+    return (last_raw_ < pulse_threshold_);
 }
 
 int PhoneLine::readAveraged(uint16_t samples) const {
@@ -80,6 +82,10 @@ void PhoneLine::setThresholds(int on, int off) {
     if (off < 0)   off = 0;
     threshold_on_  = on;
     threshold_off_ = off;
+    // Detect dial-pulse breaks against the (higher) ON threshold so each break
+    // is caught for most of its duration as the reading decays, not just the
+    // brief moment it dips below the lower hook OFF threshold.
+    pulse_threshold_ = on;
 }
 
 bool PhoneLine::applyCalibration(int onhookRaw, int offhookRaw) {

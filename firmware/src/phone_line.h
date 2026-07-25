@@ -42,6 +42,14 @@ public:
     int  thresholdOn()  const { return threshold_on_; }
     int  thresholdOff() const { return threshold_off_; }
 
+    // Threshold used to detect rotary dial-pulse breaks.  A break (line open)
+    // must be caught for enough of its ~66 ms duration to be timed reliably.
+    // Off-hook the loop reads near full-scale, so we detect a break as a large
+    // drop below this level — set higher than the hook OFF threshold so each
+    // pulse registers for most of its duration rather than only the bottom
+    // sliver as the reading decays.
+    int  pulseThreshold() const { return pulse_threshold_; }
+
     // Compute thresholds from captured on-hook / off-hook raw levels.
     // Returns false if the two levels are too close to separate reliably.
     bool applyCalibration(int onhookRaw, int offhookRaw);
@@ -61,6 +69,7 @@ private:
     // Runtime-tunable detection thresholds (initialised from config.h).
     int           threshold_on_  = LINE_THRESHOLD_ON;
     int           threshold_off_ = LINE_THRESHOLD_OFF;
+    int           pulse_threshold_ = LINE_THRESHOLD_ON;
     bool          calibrated_    = false;
 
     // Line-sense debug state (used only when g_line_debug is true).

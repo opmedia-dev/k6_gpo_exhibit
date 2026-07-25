@@ -58,7 +58,7 @@ constexpr int           LINE_THRESHOLD_ON     = 800;   // ADC value: phone off-h
 constexpr int           LINE_THRESHOLD_OFF    = 300;   // ADC value: phone on-hook
 
 // Rotary dial pulse decoding
-constexpr unsigned long PULSE_MIN_BREAK_MS    = 20;
+constexpr unsigned long PULSE_MIN_BREAK_MS    = 8;
 constexpr unsigned long PULSE_MAX_BREAK_MS    = 120;
 constexpr unsigned long INTER_DIGIT_TIMEOUT_MS = 300;
 
