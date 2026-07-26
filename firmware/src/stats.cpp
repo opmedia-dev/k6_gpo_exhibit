@@ -75,6 +75,7 @@ void StatsTracker::recordCoinRefunded() {
 void StatsTracker::recordPickup() {
     stats_.total_pickups++;
     session_.pickups++;
+    completed_session_ = false;  // new session — allow one completion
     dirty_ = true;
 }
 
@@ -85,6 +86,11 @@ void StatsTracker::recordFirstDigit(unsigned long dialToneMs) {
 }
 
 void StatsTracker::recordCompletion() {
+    // Count at most one completion per pickup: a single call can pass through
+    // several "completed" states (e.g. AWAIT_COINS then PLAYING_NUMBER), which
+    // would otherwise push the completion rate above 100%.
+    if (completed_session_) return;
+    completed_session_ = true;
     stats_.total_completions++;
     session_.completions++;
     dirty_ = true;

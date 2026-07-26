@@ -858,7 +858,7 @@ function loadStats(){
     // Engagement metrics
     h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
     if(d.pickups>0){
-      let compRate=d.completions>0?Math.round(d.completions/d.pickups*100):0;
+      let compRate=d.completions>0?Math.min(100,Math.round(d.completions/d.pickups*100)):0;
       h+='<span class="stat"><span class="stat-label">Completion Rate</span><b>'+compRate+'%</b></span>';
     }
     if(d.first_digit_n>0){

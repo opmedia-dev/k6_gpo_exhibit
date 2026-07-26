@@ -140,6 +140,7 @@ private:
 
     unsigned long call_start_ms_ = 0;
     bool in_call_ = false;
+    bool completed_session_ = false;  // completion already counted this pickup
 
     // Discovery log — numbers visitors dialled that weren't recognised.
     static const int MAX_DISCOVERY = 50;
