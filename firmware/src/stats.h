@@ -101,6 +101,10 @@ public:
     // Save stats to SD now (also called periodically by update()).
     void save();
 
+    // Erase all visitor statistics: zero the cumulative + session counters and
+    // most-dialled lists in RAM and persist the cleared state to SD.
+    void resetStats();
+
 private:
     void load();
 

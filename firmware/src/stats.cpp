@@ -236,6 +236,25 @@ void StatsTracker::save() {
     Serial.println("[stats] saved");
 }
 
+void StatsTracker::resetStats() {
+    // Zero everything in RAM. load() bails out when the file is missing, so
+    // removing the file alone would leave the old counters live in memory (and
+    // they'd be written straight back on the next save).
+    stats_ = {};
+    session_ = {};
+    num_count_ = 0;
+    memset(numbers_, 0, sizeof(numbers_));
+    session_num_count_ = 0;
+    memset(session_numbers_, 0, sizeof(session_numbers_));
+    boot_time_ms_ = millis();
+    dirty_ = false;
+
+    SD.remove(STATS_FILE);
+    SD.remove(STATS_TMP);
+    save();  // persist the cleared state immediately
+    Serial.println("[stats] reset");
+}
+
 void StatsTracker::load() {
     // If previous save was interrupted, recover from temp file.
     if (!SD.exists(STATS_FILE) && SD.exists(STATS_TMP)) {

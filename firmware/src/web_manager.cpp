@@ -1765,9 +1765,7 @@ static void handleStats() {
 
 static void handleStatsReset() {
     if (s_stats) {
-        // Remove stats file and reinitialize.
-        SD.remove("/logs/stats.json");
-        s_stats->begin();
+        s_stats->resetStats();
         if (s_logger) s_logger->systemLog("Stats reset via web");
     }
     server.send(200, "application/json", "{\"ok\":true}");
