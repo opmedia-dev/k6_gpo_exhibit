@@ -686,42 +686,51 @@ function otaUpload(){
   let fd=new FormData(); fd.append('firmware',f);
   xhr.send(fd);
 }
+var uiEdit=0;var _dbt={};
+function touchUI(){uiEdit=Date.now();}
+function debPost(key,url){touchUI();clearTimeout(_dbt[key]);_dbt[key]=setTimeout(function(){fetch(url,{method:'POST'})},150);}
 function setVol(v){
   document.getElementById('vollbl').textContent=v;
-  fetch('/api/volume?v='+v,{method:'POST'});
+  debPost('vol','/api/volume?v='+v);
 }
 function setBell(v){
   document.getElementById('belllbl').textContent=v;
-  fetch('/api/bellvol?v='+v,{method:'POST'});
+  debPost('bell','/api/bellvol?v='+v);
 }
 function setBellFreq(){
+  touchUI();
   let hz=document.getElementById('bellfreq').value;
   fetch('/api/bellfreq?hz='+hz,{method:'POST'});
 }
 function setLineLevel(v){
   document.getElementById('linelevellbl').textContent=v+'%';
-  fetch('/api/linelevel?v='+v,{method:'POST'});
+  debPost('linelevel','/api/linelevel?v='+v);
 }
 function testTone(){fetch('/api/tone?hz=1000&secs=5',{method:'POST'})}
 function setRingCount(){
+  touchUI();
   let n=document.getElementById('ringmax').value;
   fetch('/api/ringcount?n='+n,{method:'POST'});
 }
 function setRingTone(){
+  touchUI();
   let mn=document.getElementById('rtmin').value;
   let mx=document.getElementById('rtmax').value;
   fetch('/api/ringtone?min='+mn+'&max='+mx,{method:'POST'});
 }
 function setAlertIdle(){
+  touchUI();
   let v=document.getElementById('alertidle').value;
   fetch('/api/alertidle?v='+v,{method:'POST'});
 }
 function setCoinMode(v){
+  touchUI();
   fetch('/api/coinmode?v='+v,{method:'POST'}).then(r=>r.json()).then(d=>{
     document.getElementById('coinstatus').textContent=d.active?'Coin logic active':'Coin logic disabled';
   });
 }
 function setAutoRing(){
+  touchUI();
   let mn=document.getElementById('armin').value;
   let mx=document.getElementById('armax').value;
   fetch('/api/autoring?min='+mn+'&max='+mx,{method:'POST'});
@@ -749,6 +758,10 @@ function loadStatus(){
       (d.sd_total?' ('+d.sd_used+'MB used of '+d.sd_total+'MB)':'')+
       '<br>Running for: '+uH+' hours '+uM+' minutes<br>'+
       'Firmware version: '+d.firmware;
+    // Don't clobber controls the visitor is actively adjusting: skip syncing
+    // input values for a few seconds after any edit (otherwise this poll snaps
+    // a slider back to a stale server value mid-drag).
+    if(Date.now()-uiEdit>4000){
     document.getElementById('vol').value=d.volume;
     document.getElementById('vollbl').textContent=d.volume;
     document.getElementById('bell').value=d.bell_vol;
@@ -763,9 +776,10 @@ function loadStatus(){
       let cs=document.getElementById('coinstatus');
       cs.textContent=d.coin_active?'Coin logic active':'Coin logic disabled';
     }
-    document.getElementById('alertbanner').style.display=d.alert_on?'block':'none';
     document.getElementById('armin').value=Math.round(d.ar_min/60000);
     document.getElementById('armax').value=Math.round(d.ar_max/60000);
+    }
+    document.getElementById('alertbanner').style.display=d.alert_on?'block':'none';
     let ml=document.getElementById('modelbl');
     let mb=document.getElementById('modebtn');
     if(d.mode=='AUTO'){ml.textContent='AUTOMATIC';ml.className='badge badge-green';mb.textContent='Switch to Manual Mode';}
@@ -2113,7 +2127,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
         if (server.method() == HTTP_GET && !server.uri().startsWith("/api/")) {
             server.sendHeader("Location",
                               String("http://") + WiFi.softAPIP().toString() + "/");
-            server.send(302, "text/plain", "");
+            server.send(302, "text/plain", "redirecting");
         } else {
             server.send(404, "text/plain", "not found");
         }
