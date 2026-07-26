@@ -129,7 +129,7 @@ private:
     unsigned long  test_ring_end_    = 0;  // fixed-duration test ring end (0=off)
     unsigned long  last_digit_time_  = 0;
     bool           replace_prompted_ = false;  // "replace handset" already played
-    bool           dial_ticks_       = true;   // click earpiece on each dial pulse
+    bool           dial_ticks_       = false;  // click earpiece on each dial pulse
 
     // Auto-ring
     bool           auto_ring_enabled_ = true;
