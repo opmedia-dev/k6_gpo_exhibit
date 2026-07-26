@@ -32,7 +32,11 @@ void PhoneController::update() {
     player_.update();
     coin_box_.update();
 
-    if (line_.hookChanged() && hook_cb_) {
+    // Suppress hook-change callbacks while the bell is striking: the 48 V drive
+    // couples onto the line and produces spurious off-hook edges that would
+    // otherwise spam the log. Only report changes seen in a settled silent gap.
+    if (line_.hookChanged() && hook_cb_ &&
+        (!bell_.isRinging() || bell_.inSilentGap(RING_ANSWER_GUARD_MS))) {
         hook_cb_(line_.hookState());
     }
 
@@ -74,12 +78,15 @@ void PhoneController::update() {
     // ----- RINGING -----------------------------------------------------------
     case PhoneState::RINGING:
         // Answering an incoming ring — no A+B interaction required.
-        // The 48 V bell drive couples onto the line and pins the hook sense to
-        // "off-hook" while striking, so only trust the hook state during the
-        // silent gaps of the cadence (guarded by the hook debounce). A genuine
-        // handset lift is caught within one cadence cycle (<3 s).
-        if (bell_.inSilentGap(HOOK_DEBOUNCE_MS) &&
+        // The 48 V bell drive couples onto the line and holds the hook sense
+        // high while striking (and briefly after, from rectified charge), so
+        // only trust the hook state deep inside a settled silent gap — in
+        // practice the long 2 s gap. A genuine handset lift is caught within
+        // one cadence cycle (<3 s).
+        if (bell_.inSilentGap(RING_ANSWER_GUARD_MS) &&
             line_.hookState() == HookState::OFF_HOOK) {
+            Serial.printf("[phone] ring answered in silent gap (raw=%d)\n",
+                          line_.lastRawReading());
             bell_.stopRinging();
             enterState(PhoneState::PLAYING_HISTORY);
             break;

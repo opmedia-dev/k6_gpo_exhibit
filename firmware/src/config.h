@@ -69,6 +69,13 @@ constexpr unsigned long RING_ON_2_MS          = 400;
 constexpr unsigned long RING_OFF_2_MS         = 2000;
 constexpr int           RING_FREQ_HZ          = 25;
 
+// The 48 V bell drive couples onto the line and pins the hook sense high while
+// striking; the rectified charge also lingers briefly after the bell stops.
+// Only trust the hook state this far into a silent cadence gap, so a false
+// "answer" can't be triggered by coupling. Set larger than the short 200 ms
+// gap so only the long 2000 ms gap qualifies (line fully settled by then).
+constexpr unsigned long RING_ANSWER_GUARD_MS  = 350;
+
 // Random auto-ring interval (ms).  The phone will ring automatically at a
 // random interval between these two bounds.
 constexpr unsigned long AUTO_RING_MIN_MS      = 300000;   // 5 minutes
