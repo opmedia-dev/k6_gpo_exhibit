@@ -1277,12 +1277,23 @@ static void handleOTAUpload() {
 
 // --- Log API handlers -------------------------------------------------------
 
+// Stream a heap text buffer to the client without forcing a single large
+// String allocation. Passing a long char* to server.send() makes the core
+// build a String copy that fails ("String cast failed") under heap pressure
+// and leaves a slow/closed client mid-write (the fd EAGAIN spam). Sending the
+// buffer directly with a known content length avoids both.
+static void sendTextBuffer(const char* buf, size_t len) {
+    server.setContentLength(len);
+    server.send(200, "text/plain", "");
+    server.sendContent(buf, len);
+}
+
 static void handleLogSystem() {
     if (!s_logger) { server.send(200, "text/plain", ""); return; }
     size_t len;
     char* buf = s_logger->readSystemLog(&len);
     if (buf) {
-        server.send(200, "text/plain", buf);
+        sendTextBuffer(buf, len);
         free(buf);
     } else {
         server.send(200, "text/plain", "(empty)");
@@ -1294,7 +1305,7 @@ static void handleLogCalls() {
     size_t len;
     char* buf = s_logger->readCallLog(&len);
     if (buf) {
-        server.send(200, "text/plain", buf);
+        sendTextBuffer(buf, len);
         free(buf);
     } else {
         server.send(200, "text/plain", "(empty)");
@@ -2095,6 +2106,18 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/reboot",      HTTP_POST, handleReboot);
     server.on("/manifest.json",   HTTP_GET,  handleManifest);
     server.on("/sw.js",           HTTP_GET,  handleServiceWorker);
+
+    // Silence the "request handler not found" spam from favicon/OS captive-
+    // portal probes: redirect stray GETs to the portal, 404 everything else.
+    server.onNotFound([]() {
+        if (server.method() == HTTP_GET && !server.uri().startsWith("/api/")) {
+            server.sendHeader("Location",
+                              String("http://") + WiFi.softAPIP().toString() + "/");
+            server.send(302, "text/plain", "");
+        } else {
+            server.send(404, "text/plain", "not found");
+        }
+    });
 
     server.begin();
     active_ = true;
