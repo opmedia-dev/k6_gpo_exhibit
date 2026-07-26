@@ -1294,16 +1294,20 @@ static void handleOTAUpload() {
 // Stream a heap text buffer to the client without forcing a single large
 // String allocation. Passing a long char* to server.send() makes the core
 // build a String copy that fails ("String cast failed") under heap pressure
-// and leaves a slow/closed client mid-write (the fd EAGAIN spam). Sending the
-// buffer directly with a known content length avoids both.
+// and leaves a slow/closed client mid-write (the fd EAGAIN spam). Writing the
+// response directly avoids that, and avoids the core's "content length is
+// zero" warning that an empty send() would emit before sendContent().
 static void sendTextBuffer(const char* buf, size_t len) {
-    server.setContentLength(len);
-    server.send(200, "text/plain", "");
-    server.sendContent(buf, len);
+    WiFiClient client = server.client();
+    client.print(F("HTTP/1.1 200 OK\r\n"));
+    client.print(F("Content-Type: text/plain\r\n"));
+    client.printf("Content-Length: %u\r\n", (unsigned)len);
+    client.print(F("Connection: close\r\n\r\n"));
+    client.write((const uint8_t*)buf, len);
 }
 
 static void handleLogSystem() {
-    if (!s_logger) { server.send(200, "text/plain", ""); return; }
+    if (!s_logger) { server.send(200, "text/plain", "(empty)"); return; }
     size_t len;
     char* buf = s_logger->readSystemLog(&len);
     if (buf) {
@@ -1315,7 +1319,7 @@ static void handleLogSystem() {
 }
 
 static void handleLogCalls() {
-    if (!s_logger) { server.send(200, "text/plain", ""); return; }
+    if (!s_logger) { server.send(200, "text/plain", "(empty)"); return; }
     size_t len;
     char* buf = s_logger->readCallLog(&len);
     if (buf) {
@@ -1468,7 +1472,7 @@ static void handleTerminal() {
     if (!s_phone) { server.send(200, "text/plain", "error: phone not ready"); return; }
     String cmd = server.arg("cmd");
     cmd.trim();
-    if (cmd.length() == 0) { server.send(200, "text/plain", ""); return; }
+    if (cmd.length() == 0) { server.send(200, "text/plain", "(no command)"); return; }
 
     String verb = cmd, arg = "";
     int sp = cmd.indexOf(' ');
