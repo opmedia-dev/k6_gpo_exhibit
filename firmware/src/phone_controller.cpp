@@ -74,7 +74,12 @@ void PhoneController::update() {
     // ----- RINGING -----------------------------------------------------------
     case PhoneState::RINGING:
         // Answering an incoming ring — no A+B interaction required.
-        if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
+        // The 48 V bell drive couples onto the line and pins the hook sense to
+        // "off-hook" while striking, so only trust the hook state during the
+        // silent gaps of the cadence (guarded by the hook debounce). A genuine
+        // handset lift is caught within one cadence cycle (<3 s).
+        if (bell_.inSilentGap(HOOK_DEBOUNCE_MS) &&
+            line_.hookState() == HookState::OFF_HOOK) {
             bell_.stopRinging();
             enterState(PhoneState::PLAYING_HISTORY);
             break;

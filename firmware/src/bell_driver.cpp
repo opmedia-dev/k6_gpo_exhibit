@@ -71,6 +71,12 @@ void BellDriver::update() {
     }
 }
 
+bool BellDriver::inSilentGap(unsigned long guardMs) const {
+    if (!ringing_) return true;                       // not ringing — line clean
+    if (CADENCE[cadence_step_].active) return false;  // bell striking — coupling
+    return (millis() - cadence_start_) >= guardMs;     // settled silent gap
+}
+
 void BellDriver::strike(unsigned long durationMs) {
     unsigned long start = millis();
     bool ph = false;

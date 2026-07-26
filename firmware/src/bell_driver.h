@@ -43,6 +43,13 @@ public:
 
     bool isRinging() const { return ringing_; }
 
+    // True when the cadence is in a silent (bell-off) step and has been for
+    // at least guardMs. The 48 V bell drive couples onto the phone line and
+    // pins the hook sense to "off-hook" while striking, so hook state can only
+    // be trusted during these silent gaps. guardMs should be >= the hook
+    // debounce so the debounced reading reflects the line, not stale coupling.
+    bool inSilentGap(unsigned long guardMs) const;
+
 private:
     void setBridgeOutput(bool phaseA);
     void setBridgeOff();
