@@ -1,9 +1,16 @@
-# Hardware Schematic — ESP32 GPO Phone Interface (Rev 2)
+# Hardware Schematic — ESP32 GPO Phone Interface (Rev 2.1)
 
 > **Revision 2** — redesigned for two separate DC supplies (12 V + 48 V),
 > corrected pull-ups on input-only GPIOs, four control buttons,
 > development access holes on every ESP32 pin, and a 6-pin daughter
 > board header.
+
+> **Revision 2.1 (as-built, bench-proven)** — the optocoupler is wired
+> *in series* in the loop return leg with **R7 (R_LIM, 2.2 kΩ)** current
+> limit and **D1 (1N4007)** reverse block; **C3 (Cc, 10 µF/63 V)** DC-block
+> coupling cap in series with the transformer secondary; **R2 (470 Ω)**
+> shunt across the PC817 LED. The hand-routed manufacturing master for
+> this revision is `pcb/k6_carrier_rev2-8.kicad_pcb` — use it for reorders.
 
 > All components are housed in a **separate enclosure** connected to the
 > phone via an extended 3-core lead.
@@ -92,9 +99,12 @@ GPIO pin.
 > having no return to ground. That topology can carry **no loop current
 > in any hook state**, so hook and dial detection never worked. The LED
 > is now in series in the return leg: **+12 V → R1 → Line A → phone →
-> Line B → R_LIM → D1 → LED → GND.** R2 is deleted. This was verified on
-> the bench (hook + dial both decode correctly). See the warning below
-> before ever applying the 48 V bell supply.
+> Line B → R7 (R_LIM) → D1 → LED → GND.** R2 is **repurposed** as a
+> 470 Ω shunt across the PC817 LED (pin 1 ↔ pin 2), which diverts the
+> coupling cap's small DC leakage so the opto only lights on real
+> off-hook current. This was verified on the bench (hook + dial both
+> decode correctly). See the warning below before ever applying the 48 V
+> bell supply.
 
 ```
     +12 V ────────┐
@@ -109,9 +119,9 @@ GPIO pin.
     (WHITE wire   │
      = Line B)   [R_LIM]  2.2 kΩ        ← current limit (MANDATORY, see warning)
                   │
-                  ▼  D1  (1N4148, anode → Line B side)
+                  ▼  D1  (1N4007, anode → Line B side)
                   │
-             ┌────┴────┐
+             ┌────┴────┐   R2 470 Ω shunt across LED (pin 1 ↔ pin 2)
              │  PC817   │
              │ OPTO-    │
              │ COUPLER  │
@@ -261,11 +271,17 @@ induction coil to the earpiece.
 >    flowing (+12 V → R1 → Line A → secondary → Line B → LED → GND),
 >    adding gross distortion.
 >
-> Fit **Cc in series with one secondary leg** (Line A leg shown):
-> - **10 µF non-polar / bipolar, ≥63 V** (film or bipolar electrolytic), **or**
-> - **two 10 µF 63 V electrolytics in series, back-to-back** (join the
->   two like terminals, − to −) ≈ **5 µF non-polar, 63 V** — perfectly
->   adequate for telephone-band voice (~106 Ω at 300 Hz).
+> Fit **Cc (C3) in series with one secondary leg** (Line A leg shown):
+> - **As-built (bench-proven):** a single **10 µF / 63 V electrolytic**,
+>   **+ terminal toward Line A** so it stays forward-biased on the +12 V
+>   line. Its small DC leakage is handled by the **R2 470 Ω shunt across
+>   the PC817 LED** — without that shunt the leakage lights the opto and
+>   holds the line "off-hook".
+> - **Cleaner production option:** a **non-polar film / bipolar ≥63 V**
+>   cap (metallised polyester/MKT or polypropylene/MKP). Film caps have
+>   negligible DC leakage, so **R2 can be omitted**. Do **not** use two
+>   back-to-back electrolytics — one half is always reverse-biased and
+>   leaks enough to break hook detection.
 >
 > Cc passes voice but blocks DC, so the line is no longer shorted:
 > hook + dial work, the core no longer saturates, and 25 Hz ring bleed
@@ -416,7 +432,7 @@ optocoupler and can back-feed into the DAC.
 ```
     Terminal 2 (LINE_B) ──[R_LIM 2.2 kΩ]──►|── PC817 pin 1 (Anode)
                                           D1
-                                       (1N4148,
+                                       (1N4007,
                                     anode→Line B side)
 
     PC817 pin 2 (Cathode) ──── GND
@@ -478,10 +494,12 @@ Every wire in the system, listed by destination:
 | ESP32 3.3 V | R4, R5, R6 (top) | Coin box GPIO pull-ups |
 | ESP32 3.3 V | Header pin 4 | Daughter board power |
 | ESP32 3.3 V | SD card VCC (if 3.3 V module) | Some modules need 3.3 V |
-| R1 (470 Ω) bottom | Terminal 1 (Line A) | Line A feed (R2 deleted in Rev 2.1) |
-| Terminal 2 (Line B) | R_LIM (2.2 kΩ) top | Opto LED leg current limit |
+| R1 (470 Ω) bottom | Terminal 1 (Line A) | Line A feed |
+| Terminal 2 (Line B) | R7 / R_LIM (2.2 kΩ) top | Opto LED leg current limit |
+| R2 (470 Ω) pin 1 | PC817 Anode (pin 1) / OPTO_A | Shunt across LED (diverts Cc leakage) |
+| R2 (470 Ω) pin 2 | GND | Shunt across LED |
 | R_LIM (2.2 kΩ) bottom | D1 anode | Series limit → reverse block |
-| D1 cathode (1N4148) | PC817 Anode (pin 1) | Loop drive, reverse-blocked |
+| D1 cathode (1N4007) | PC817 Anode (pin 1) | Loop drive, reverse-blocked |
 | PC817 Cathode (pin 2) | GND | Loop return to ground |
 | PC817 Emitter (pin 3) | GPIO 34 + R3 to GND | Hook/dial sense |
 | L293D OUT1 (pin 3) | Terminal 3 (Blue/Bell) | Ring signal |
@@ -605,9 +623,14 @@ module, spaced 2.54 mm (standard 0.1" pitch).
    path short and clean.
 8. **D1** should be placed close to the PC817 (Zone D, near Zone C
    peripherals). D2–D5 should be near the DAC speaker terminal (J_SPK).
-9. **48 V trace width:** Use 0.75–1.0 mm traces for +48V, BELL, and
-   LINE_B nets. Use 0.5 mm for +5V/+12V/+3V3 power rails. Increase
-   clearance around 48 V nets to 0.5 mm minimum.
+9. **Trace widths (as-built master):** width is set by *current*, not
+   voltage. **+5V is the highest-current net** (ESP32 Wi-Fi bursts +
+   MAX98357A + L293D logic, ~1 A peaks) → **0.6–0.8 mm**. +12V → 0.5 mm.
+   The **+48V / BELL / LINE_B** ring path only carries a few tens of mA,
+   so **0.5 mm is plenty** — they don't need to be wider than +5V. What
+   the 48 V nets *do* need is **clearance**: keep ≥0.4–0.5 mm gap (and
+   ideally the 10 mm zone separation in rule 1) from logic traces.
+   Signal/GPIO nets stay at 0.2–0.25 mm.
 
 ### Recommended board size
 

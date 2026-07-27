@@ -4,6 +4,17 @@ Full pinout for every connector and IC on the carrier board. Silkscreen
 labels on the PCB use short abbreviations — this document provides the
 complete mapping.
 
+> **Note — this documents the auto-generated reference layout**
+> (`k6_gpo_carrier.kicad_pcb`, on-board LM2596 + boost stage). The
+> **as-built manufacturing master is `k6_carrier_rev2-8.kicad_pcb`**
+> (see [README.md](README.md)), which uses plug-in buck/48 V supplies and
+> the **Rev 2.1 opto fix**: the PC817 LED is *in series* in the loop
+> return leg via **R7 (R_LIM 2.2 kΩ) → D1 (1N4007) → LED → GND**, with
+> **R2 = 470 Ω** as a shunt across the LED and **C3 (Cc, 10 µF/63 V)** as
+> a DC-block coupling cap in series with the transformer secondary. Where
+> this reference layout differs (opto pin 2 → LINE_B, R2 = 220 Ω, +50 V
+> boost), the Rev 2.1 values below and in the schematic take precedence.
+
 ## Silkscreen Abbreviation Legend
 
 | Abbreviation | Meaning |
@@ -70,15 +81,20 @@ TO-220-5 package, on-board with supporting passives.
 D1 cathode connects to pin 2/L1 junction (SW_OUT); D1 anode to GND.
 COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 
-## J2 — XL6009 Boost Converter (12V → 50V)
+## J2 — 48 V Bell Supply Input
 
-4-pin header
+> **Rev 2 / 2.1:** the bell is powered from a **dedicated 48 V DC
+> adapter**, not the Rev 1 XL6009 boost converter. On the as-built master
+> J2 is a 2-pin +48V/GND input feeding L293D pin 8. The 4-pin boost
+> pinout below is retained only for the legacy auto-generated layout.
+
+4-pin header (legacy boost layout)
 
 | Pin | Silk | Net | Description |
 |-----|------|-----|-------------|
 | 1 | 12V+ | +12V | Input positive |
 | 2 | GND | GND | Input negative |
-| 3 | 50V+ | +50V | Output positive (adjust trimpot) |
+| 3 | 48V+ | +48V | Output positive (dedicated 48 V adapter in Rev 2/2.1) |
 | 4 | GND | GND | Output negative |
 
 ## U1 — ESP32 DevKit V1
@@ -220,7 +236,7 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 | 5 | L | GND | GND | Ground |
 | 6 | L | LnB | LINE_B | Output 2 → phone Line B |
 | 7 | L | IN2 | RING_B | Input 2 → ESP32 GPIO 17 |
-| 8 | L | 50V | +50V | Motor supply (from boost) |
+| 8 | L | 48V | +48V | Bell supply (dedicated 48 V adapter; +50V on legacy boost layout) |
 | 9 | R | GND | GND | Ground |
 | 10 | R | — | — | Not connected |
 | 11 | R | — | — | Not connected |
@@ -234,20 +250,32 @@ COUT (C3) smooths the +5V output. Pin 5 tied to GND for always-on operation.
 
 | Pin | Side | Silk | Net | Description |
 |-----|------|------|-----|-------------|
-| 1 | L | An | OPTO_ANODE | LED anode (from R2) |
-| 2 | L | Kth | LINE_B | LED cathode → Line B |
-| 3 | R | Em | OPTO_EMIT | Phototransistor emitter → R3 → GND |
+| 1 | L | An | OPTO_A | LED anode — from D1 cathode (Rev 2.1); R2 470 Ω shunt to GND across the LED |
+| 2 | L | Kth | GND | LED cathode → GND (Rev 2.1). *Legacy auto-layout: → LINE_B* |
+| 3 | R | Em | OPTO_EMIT | Phototransistor emitter → R3 → GND, and → GPIO 34 |
 | 4 | R | Col | +3V3 | Phototransistor collector → 3.3V |
 
-**Hook detect circuit:** +12V → R1 (470 Ω) → junction → R2 (220 Ω) → PC817 anode (pin 1). PC817 cathode (pin 2) → LINE_B. When phone is off-hook, current flows through the loop, illuminating the optocoupler LED. The phototransistor output (pin 3) is read by ESP32 GPIO 34 (ADC).
+**Hook detect circuit (Rev 2.1, as-built):** the opto LED is *in series*
+in the loop return leg: +12V → R1 (470 Ω) → Line A → phone → Line B →
+**R7 / R_LIM (2.2 kΩ)** → **D1 (1N4007, anode→Line B side)** → PC817 pin 1
+(anode) → PC817 pin 2 (cathode) → GND, with **R2 (470 Ω)** across pins 1↔2.
+When the phone is off-hook, loop current lights the LED; the
+phototransistor output (pin 3) is read by ESP32 GPIO 34 (ADC). R7 is
+**mandatory before applying 48 V** — it is the only current limit in this
+leg. *(The legacy auto-generated layout wired R2 220 Ω in series and pin 2
+to LINE_B, which carries no loop current and does not detect hook.)*
 
 ## Passive Components
 
 | Ref | Value | Silk | Net 1 | Net 2 | Function |
 |-----|-------|------|-------|-------|----------|
-| R1 | 470 Ω 1W | R1 470R | +12V | JUNC_A | Line current limit |
-| R2 | 220 Ω ¼W | R2 220R | JUNC_A | OPTO_ANODE | Opto LED current limit |
+| R1 | 470 Ω 1W | R1 470R | +12V | LINE_A | Line current limit |
+| R2 | 470 Ω ¼W | R2 470R | OPTO_A | GND | Shunt across PC817 LED (Rev 2.1; was 220 Ω in-series in legacy layout) |
 | R3 | 10 kΩ ¼W | R3 10K | OPTO_EMIT | GND | Opto output pull-down |
+| R7 | 2.2 kΩ ¼W | R7 2K2 | LINE_B | OPTO_LIM | Opto LED leg current limit — MANDATORY before 48 V (Rev 2.1) |
+| C3(Cc) | 10 µF 63V | Cc 10µF | XFMR_SEC | LINE_A | DC-block coupling cap in series with transformer secondary (Rev 2.1) |
+| D1 | 1N4007 | D1 | OPTO_LIM | OPTO_A | Series reverse-block in opto LED leg (Rev 2.1) |
+| D2–D5 | 1N4007 | D2–D5 | — | — | Transformer-primary overvoltage clamps (Rev 2.1) |
 | C1 | 100 nF | C1 100nF | +5V | GND | L293D decoupling |
 | C2 | 680 µF 25V | C2 680µF | +12V | GND | LM2596 input filter |
 | C3 | 220 µF 25V | C3 220µF | +5V | GND | LM2596 output filter |
@@ -261,6 +289,6 @@ Do not place tall components within these zones.
 
 | Module | Size (mm) | Header | Orientation |
 |--------|-----------|--------|-------------|
-| XL6009 Boost | 43 × 21 | J2 (4-pin) | Extends right from header |
+| 48 V input (was XL6009 Boost) | 43 × 21 | J2 | Dedicated 48 V adapter in Rev 2/2.1 |
 | MAX98357A DAC | 19 × 18 | J5 (7-pin) | Extends left from header |
 | Micro-SD Card | 25 × 20 | J7 (6-pin) | Extends right from header |

@@ -1,7 +1,12 @@
-# Wiring Guide (Rev 2)
+# Wiring Guide (Rev 2.1)
 
 > **Revision 2** — updated for dual DC supply, four buttons, external
 > pull-ups, panel lamp, and 6-pin daughter board header.
+>
+> **Revision 2.1 (as-built)** — optocoupler in series in the loop return
+> leg (R7/R_LIM 2.2 kΩ + D1 1N4007), C3 (10 µF/63 V) DC-block coupling
+> cap on the transformer secondary, and R2 (470 Ω) shunt across the
+> PC817 LED. The matching PCB is `pcb/k6_carrier_rev2-8.kicad_pcb`.
 
 ## Before You Start
 
@@ -32,9 +37,10 @@
 | 8 | Micro-SD card breakout module | SPI interface |
 | 9 | 600 Ω : 600 Ω audio transformer | 1:1, telephone line coupling |
 | 10 | 470 Ω resistor (1 W) | R1 — line current limit |
-| 11 | 1.5–2.2 kΩ resistor (¼ W) | R_LIM — opto LED leg current limit (Rev 2.1, replaces R2). Mandatory before 48 V |
-| 11b | 10 µF ≥63 V non-polar cap (or 2× 10 µF 63 V electrolytic back-to-back) | Cc — DC-block coupling cap on transformer secondary (Rev 2.1) |
-| 11c | 1N4148 diode | D1 — series in opto LED leg, blocks reverse ring (Rev 2.1) |
+| 11 | 2.2 kΩ resistor (¼ W) | R7 (R_LIM) — opto LED leg current limit (Rev 2.1). Mandatory before 48 V |
+| 11b | 10 µF / 63 V electrolytic (radial) | C3 (Cc) — DC-block coupling cap on transformer secondary, + toward Line A (Rev 2.1). Film/bipolar ≥63 V is the cleaner alternative |
+| 11c | 470 Ω resistor (¼ W) | R2 — shunt across PC817 LED (needed with an electrolytic C3; omit if C3 is film) |
+| 11d | 1N4007 diode | D1 — series in opto LED leg, blocks reverse ring (Rev 2.1; 1N4148 also works) |
 | 12 | 10 kΩ resistor (¼ W) | R3 — pull-down on GPIO 34 |
 | 13 | 3× 10 kΩ resistors (¼ W) | R4, R5, R6 — pull-ups on GPIO 36/39/35 |
 | 14 | 2× 100 nF ceramic capacitors | C1, C2 — decoupling |
@@ -121,18 +127,22 @@ Strip ~5 mm from each wire of the 3-core cord:
 
 ## Step 4: Wire the Hook / Dial Detection Circuit
 
-> **Rev 2.1 — opto is IN SERIES with the loop (R2 deleted).** The LED
-> sits in the return leg with a current-limit resistor and a series
-> diode: **+12 V → R1 → Line A → phone → Line B → R_LIM → D1 → LED →
+> **Rev 2.1 — opto is IN SERIES with the loop.** The LED sits in the
+> return leg with a current-limit resistor and a series diode:
+> **+12 V → R1 → Line A → phone → Line B → R7 (R_LIM) → D1 → LED →
 > GND.** Do **not** wire the LED across Line A↔Line B (the old layout) —
-> that carries no loop current and never detects hook or dial.
+> that carries no loop current and never detects hook or dial. **R2
+> (470 Ω) goes across the LED** (PC817 pin 1 ↔ pin 2) to divert the
+> coupling cap's DC leakage.
 
 ```
     +12 V ─── [R1 470 Ω 1W] ─── Terminal 1 (Red / Line A)
 
-    Terminal 2 (White / Line B) ─── [R_LIM 2.2 kΩ] ─── D1 anode
-    D1 cathode (1N4148, stripe) ─── PC817 pin 1 (Anode)
+    Terminal 2 (White / Line B) ─── [R7 / R_LIM 2.2 kΩ] ─── D1 anode
+    D1 cathode (1N4007, stripe) ─── PC817 pin 1 (Anode)
     PC817 pin 2 (Cathode) ─── GND
+
+    R2 470 Ω ─── across PC817 pin 1 ↔ pin 2 (parallel with the LED)
 
     PC817 pin 4 (Collector) ─── +3.3 V (ESP32 3V3 pin)
     PC817 pin 3 (Emitter) ─── GPIO 34
@@ -150,7 +160,7 @@ Strip ~5 mm from each wire of the 3-core cord:
     └──────────┘
     Pin 1 is marked with a DOT on the IC.
     Current flows: pin 1 (anode) → pin 2 (cathode).
-    D1 stripe (cathode) faces the PC817 anode; D1 body points at Line B.
+    D1 stripe (cathode, 1N4007) faces the PC817 anode; body points at Line B.
 ```
 
 > **Polarity is critical.** If the optocoupler or D1 is backwards, hook
@@ -216,13 +226,25 @@ nearest GND pin, as close to the IC as possible.
     Audio transformer SECONDARY pin 2 ────────── Terminal 2 (White / Line B)
 ```
 
-> **⚠️ Cc (DC-block coupling cap) is MANDATORY.** The transformer
+> **⚠️ Cc (C3, DC-block coupling cap) is MANDATORY.** The transformer
 > secondary is only ~70–120 Ω at DC, so wiring it directly across
 > Terminal 1 ↔ Terminal 2 shorts the line at DC — this swamps the hook
 > loop (detection fails) and saturates the core (distortion). Fit **Cc
-> in series with one secondary leg**: 10 µF non-polar ≥63 V, **or** two
-> 10 µF 63 V electrolytics back-to-back (− to −) ≈ 5 µF non-polar. This
-> supersedes the old "10 Ω on the primary" note.
+> in series with one secondary leg** (Line A leg shown above).
+>
+> **As-built (bench-proven):** a single **10 µF / 63 V electrolytic**
+> with its **+ terminal toward Line A** (forward-biased by the +12 V line
+> so it doesn't sit reversed). An electrolytic does leak a little DC —
+> enough to light the hook-sense opto — so the **R2 470 Ω shunt across
+> the PC817 LED** (Step 4) is fitted alongside it to divert that leakage.
+> This combination was verified working on the bench.
+>
+> **Cleaner production option:** a **non-polarised FILM / bipolar cap,
+> ≥63 V** (metallised polyester/MKT or polypropylene/MKP). Film caps have
+> negligible DC leakage, so with a film Cc the **R2 shunt can be omitted**.
+> **Do NOT use two electrolytics back-to-back** — one half is always
+> reverse-biased and leaks enough to break hook detection. (This
+> supersedes the earlier back-to-back electrolytic note.)
 
 ---
 
