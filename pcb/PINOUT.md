@@ -58,7 +58,13 @@ complete mapping.
 
 ## U4 — LM2596-5.0 Buck Converter IC (12V → 5V)
 
-TO-220-5 package, on-board with supporting passives.
+> **Rev 2.1:** the on-board buck (`U4` + `L1` + the buck electrolytics `C2`/`C3`
+> and `D1` 1N5825) is **not placed** on the as-built master — 12 V→5 V regulation
+> is done off-board. This section and the supporting-components table below are
+> retained only for the legacy auto-generated layout. See the *Legacy auto-generated
+> layout only* note under Passive Components.
+
+TO-220-5 package (legacy on-board layout, with supporting passives).
 
 | Pin | Silk | Net | Description |
 |-----|------|-----|-------------|
@@ -267,20 +273,36 @@ to LINE_B, which carries no loop current and does not detect hook.)*
 
 ## Passive Components
 
+These are the parts actually fitted on the as-built Rev 2.1 manufacturing master
+(`k6_carrier_rev2-8.kicad_pcb`). Values/nets verified against that board.
+
 | Ref | Value | Silk | Net 1 | Net 2 | Function |
 |-----|-------|------|-------|-------|----------|
 | R1 | 470 Ω 1W | R1 470R | +12V | LINE_A | Line current limit |
 | R2 | 470 Ω ¼W | R2 470R | OPTO_A | GND | Shunt across PC817 LED (Rev 2.1; was 220 Ω in-series in legacy layout) |
 | R3 | 10 kΩ ¼W | R3 10K | OPTO_EMIT | GND | Opto output pull-down |
 | R7 | 2.2 kΩ ¼W | R7 2K2 | LINE_B | OPTO_LIM | Opto LED leg current limit — MANDATORY before 48 V (Rev 2.1) |
-| C3(Cc) | 10 µF 63V | Cc 10µF | XFMR_SEC | LINE_A | DC-block coupling cap in series with transformer secondary (Rev 2.1) |
+| C1 | 100 nF | C1 100nF | +5V | GND | L293D / logic decoupling |
+| C2 | 100 nF | C2 100nF | +5V | GND | L293D / logic decoupling |
+| C3 (Cc) | 10 µF 63V | Cc 10µF | LINE_A | XFMR_SEC | DC-block coupling cap in series with transformer secondary (Rev 2.1) |
 | D1 | 1N4007 | D1 | OPTO_LIM | OPTO_A | Series reverse-block in opto LED leg (Rev 2.1) |
 | D2–D5 | 1N4007 | D2–D5 | — | — | Transformer-primary overvoltage clamps (Rev 2.1) |
-| C1 | 100 nF | C1 100nF | +5V | GND | L293D decoupling |
-| C2 | 680 µF 25V | C2 680µF | +12V | GND | LM2596 input filter |
-| C3 | 220 µF 25V | C3 220µF | +5V | GND | LM2596 output filter |
-| L1 | 33 µH 3A | L1 33µH | SW_OUT | +5V | Buck inductor |
-| D1 | 1N5825 | D1 1N5825 | GND | SW_OUT | Buck freewheeling diode |
+
+### Legacy auto-generated layout only — NOT on the Rev 2.1 master
+
+The old `generate_*.py` output placed an **on-board LM2596 buck** (`U4` and its
+passives) and used the reference designators `C2`, `C3` and `D1` for those parts.
+The as-built Rev 2.1 master does **not** place `U4`/`L1` or the buck electrolytics —
+the 12 V→5 V regulation is done off-board — so on the master `C2`/`C3`/`D1` are
+**re-used** by the Rev 2.1 parts in the table above. These rows are documented only
+so old Gerbers/BOMs still make sense — do **not** populate them on the master board.
+
+| Ref (legacy) | Value | Net 1 | Net 2 | Function |
+|-----|-------|-------|-------|----------|
+| C2 (legacy) | 680 µF 25V | +12V | GND | LM2596 input filter (off-board on the master) |
+| C3 (legacy) | 220 µF 25V | +5V | GND | LM2596 output filter (off-board on the master) |
+| L1 (legacy) | 33 µH 3A | SW_OUT | +5V | Buck inductor (off-board on the master) |
+| D1 (legacy) | 1N5825 | GND | SW_OUT | Buck freewheeling diode (off-board on the master) |
 
 ## Module Clearance Zones
 
