@@ -4,6 +4,10 @@
 static const int LEDC_CHANNEL  = 0;
 static const int LEDC_FREQ     = 1000;  // 1 kHz PWM carrier (inaudible)
 static const int LEDC_RES_BITS = 8;     // 0-255 duty range
+// The bell always drives at full power. Reducing the PWM duty doesn't make the
+// bell quieter — below a threshold it simply stops striking — so there is no
+// user-facing bell-volume control.
+static const int BELL_DUTY     = 255;   // fixed full-power H-bridge duty
 
 // Cadence table: duration (ms) and whether the bell is active during that step.
 static const struct { unsigned long duration; bool active; } CADENCE[] = {
@@ -21,10 +25,6 @@ void BellDriver::begin() {
     pinMode(PIN_RING_A,  OUTPUT);
     pinMode(PIN_RING_B,  OUTPUT);
     setBridgeOff();
-}
-
-void BellDriver::setBellVolume(uint8_t vol) {
-    bell_volume_ = vol;
 }
 
 void BellDriver::setRingFreq(int hz) {
@@ -93,7 +93,7 @@ void BellDriver::strike(unsigned long durationMs) {
 }
 
 void BellDriver::setBridgeOutput(bool phaseA) {
-    ledcWrite(LEDC_CHANNEL, bell_volume_);
+    ledcWrite(LEDC_CHANNEL, BELL_DUTY);
     if (phaseA) {
         digitalWrite(PIN_RING_A, HIGH);
         digitalWrite(PIN_RING_B, LOW);

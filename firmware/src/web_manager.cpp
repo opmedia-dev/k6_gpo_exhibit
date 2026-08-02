@@ -18,6 +18,30 @@ static PhoneController* s_phone = nullptr;
 
 static void saveSettings();
 
+// --- Wi-Fi configuration ----------------------------------------------------
+// s_wifi_sta = requested mode from settings (false = host own AP, true = join
+// an existing network). s_ap_active reflects the mode actually running after
+// boot (a failed STA join falls back to AP, so these can differ).
+static bool   s_wifi_sta   = false;
+static String s_sta_ssid;
+static String s_sta_pass;
+static bool   s_ap_active  = true;
+
+// Current portal IP for captive-portal redirects (AP or STA address).
+static IPAddress currentIP() { return s_ap_active ? WiFi.softAPIP() : WiFi.localIP(); }
+
+// Minimal JSON string escaping (quotes / backslashes) for user-entered values
+// such as Wi-Fi SSIDs.
+static String jsonEscape(const String& in) {
+    String out;
+    for (size_t i = 0; i < in.length(); i++) {
+        char c = in[i];
+        if (c == '"' || c == '\\') { out += '\\'; out += c; }
+        else if (c >= 0x20)        { out += c; }
+    }
+    return out;
+}
+
 // Audio-probe instrumentation (defined in audio_player.cpp).
 extern volatile bool g_audio_probe;
 void audio_probe_reset();
@@ -406,11 +430,6 @@ input[type=text]{width:140px}
 <div class="field-row"><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)" style="flex:1"><span id="vollbl" style="min-width:30px;text-align:right">15</span></div>
 </div>
 <div class="field">
-<div class="field-label">Bell Volume</div>
-<div class="field-hint">How loudly the telephone bell rings.</div>
-<div class="field-row"><input type="range" id="bell" min="0" max="255" value="255" oninput="setBell(this.value)" style="flex:1"><span id="belllbl" style="min-width:30px;text-align:right">255</span></div>
-</div>
-<div class="field">
 <div class="field-label">Bell Frequency</div>
 <div class="field-hint">Ringing frequency in Hz. UK exchanges used ~17 Hz (16&#8532;) to 25 Hz. Lower can give an older bell a fuller ring &mdash; try a few and listen. Press "Test Ring" after changing to hear it.</div>
 <div class="field-row">
@@ -465,6 +484,42 @@ input[type=text]{width:140px}
 <span> minutes</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
 </div>
 </div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#9742;</span> Dialling</h2>
+<p class="hint">Tune how the rotary dial is decoded.</p>
+<div class="field">
+<div class="field-label">Time Allowed Between Digits</div>
+<div class="field-hint">How long the phone waits after a digit before it decides the number is finished. Increase this if visitors (through age or unfamiliarity with a rotary dial) can't dial the next digit quickly enough and the number is cut short.</div>
+<div class="field-row">
+<span>Wait </span><input type="number" id="digitgap" value="3" min="2" max="30" step="1" style="width:65px">
+<span> seconds</span><button onclick="setDigitGap()" style="margin:0">Save</button>
+</div>
+</div>
+</div>
+
+<div class="card">
+<h2><span class="section-icon">&#128246;</span> Wi-Fi Network</h2>
+<p class="hint">The telephone can host its own Wi-Fi hotspot, or join an existing network. Only one at a time. Changing this restarts the telephone.</p>
+<div class="field">
+<div class="field-label">Connection Mode</div>
+<div class="field-row">
+<select id="wifimode" onchange="wifiModeChanged()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg4);color:var(--fg1)">
+<option value="ap">Host its own hotspot (K6-Exhibit)</option>
+<option value="sta">Join an existing Wi-Fi network</option>
+</select>
+</div>
+</div>
+<div class="field" id="wifi-sta-fields" style="display:none">
+<div class="field-label">Network Name (SSID)</div>
+<div class="field-row"><input type="text" id="wifissid" placeholder="Your Wi-Fi name" style="flex:1"></div>
+<div class="field-label" style="margin-top:8px">Password</div>
+<div class="field-row"><input type="password" id="wifipass" placeholder="Leave blank for an open network" style="flex:1"></div>
+<div class="field-hint" style="margin-top:6px">If the telephone can't join this network it automatically falls back to hosting its own <b>K6-Exhibit</b> hotspot, so you can always reconnect and fix the details.</div>
+</div>
+<div class="field-row" style="margin-top:6px"><button onclick="saveWifi()" class="btn-danger" style="margin:0">Save &amp; Restart</button></div>
+<div class="status" id="wifistatus"></div>
 </div>
 
 <div class="card">
@@ -693,9 +748,28 @@ function setVol(v){
   document.getElementById('vollbl').textContent=v;
   debPost('vol','/api/volume?v='+v);
 }
-function setBell(v){
-  document.getElementById('belllbl').textContent=v;
-  debPost('bell','/api/bellvol?v='+v);
+function setDigitGap(){
+  touchUI();
+  let v=document.getElementById('digitgap').value;
+  fetch('/api/digitgap?v='+v,{method:'POST'});
+}
+function wifiModeChanged(){
+  let sta=document.getElementById('wifimode').value==='sta';
+  document.getElementById('wifi-sta-fields').style.display=sta?'block':'none';
+}
+function saveWifi(){
+  let mode=document.getElementById('wifimode').value;
+  let ssid=document.getElementById('wifissid').value;
+  if(mode==='sta'&&!ssid){alert('Enter the name of the Wi-Fi network to join.');return;}
+  let msg=mode==='sta'
+    ?'The telephone will restart and try to join "'+ssid+'". If it can\'t, it falls back to its own K6-Exhibit hotspot.'
+    :'The telephone will restart and host its own K6-Exhibit hotspot.';
+  if(!confirm(msg))return;
+  let pass=encodeURIComponent(document.getElementById('wifipass').value);
+  document.getElementById('wifistatus').innerHTML='<span class="warn">Saving and restarting\u2026</span>';
+  fetch('/api/wifi?mode='+mode+'&ssid='+encodeURIComponent(ssid)+'&pass='+pass,{method:'POST'})
+    .then(()=>{setTimeout(()=>{location.reload()},9000);})
+    .catch(()=>{document.getElementById('wifistatus').innerHTML='<span class="warn">Restarting\u2026 reconnect to the telephone\'s network.</span>';});
 }
 function setBellFreq(){
   touchUI();
@@ -757,16 +831,21 @@ function loadStatus(){
       'SD card: '+(d.sd?'<span class="ok">Working</span>':'<span class="err">Not detected</span>')+
       (d.sd_total?' ('+d.sd_used+'MB used of '+d.sd_total+'MB)':'')+
       '<br>Running for: '+uH+' hours '+uM+' minutes<br>'+
-      'Firmware version: '+d.firmware;
+      'Firmware version: '+d.firmware+
+      (d.wifi_mode?('<br>Wi-Fi: '+(d.wifi_mode==='ap'?'hosting <b>'+d.wifi_ssid+'</b>':'joined <b>'+d.wifi_ssid+'</b>')+' at '+d.wifi_ip):'');
     // Don't clobber controls the visitor is actively adjusting: skip syncing
     // input values for a few seconds after any edit (otherwise this poll snaps
     // a slider back to a stale server value mid-drag).
     if(Date.now()-uiEdit>4000){
     document.getElementById('vol').value=d.volume;
     document.getElementById('vollbl').textContent=d.volume;
-    document.getElementById('bell').value=d.bell_vol;
-    document.getElementById('belllbl').textContent=d.bell_vol;
     if(d.bell_freq!==undefined) document.getElementById('bellfreq').value=d.bell_freq;
+    if(d.digit_gap!==undefined) document.getElementById('digitgap').value=Math.round(d.digit_gap/1000);
+    if(d.wifi_cfg_mode!==undefined){
+      document.getElementById('wifimode').value=d.wifi_cfg_mode;
+      if(d.wifi_cfg_ssid) document.getElementById('wifissid').value=d.wifi_cfg_ssid;
+      wifiModeChanged();
+    }
     if(d.line_level!==undefined){document.getElementById('linelevel').value=d.line_level;document.getElementById('linelevellbl').textContent=d.line_level+'%';}
     if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
     if(d.rt_min!==undefined){document.getElementById('rtmin').value=d.rt_min;document.getElementById('rtmax').value=d.rt_max;}
@@ -1204,8 +1283,8 @@ static void handleStatus() {
     json += ",\"uptime\":";  json += String(millis() / 1000);
     json += ",\"firmware\":\"" FIRMWARE_VERSION "\"";
     json += ",\"volume\":";  json += String(s_phone->player().getVolume());
-    json += ",\"bell_vol\":"; json += String(s_phone->bell().bellVolume());
     json += ",\"bell_freq\":"; json += String(s_phone->bell().ringFreq());
+    json += ",\"digit_gap\":"; json += String(s_phone->numberCompleteMs());
     json += ",\"line_level\":"; json += String(s_phone->player().lineLevel());
     json += ",\"line_cal\":"; json += s_phone->line().calibrated() ? "true" : "false";
     json += ",\"errors\":"; json += String(s_stats ? s_stats->errorCount() : 0);
@@ -1218,6 +1297,11 @@ static void handleStatus() {
     json += ",\"alert_on\":"; json += s_phone->isAlertActive() ? "true" : "false";
     json += ",\"coin_override\":"; json += String(s_phone->coinBox().overrideMode());
     json += ",\"coin_active\":"; json += s_phone->coinBox().isInstalled() ? "true" : "false";
+    json += ",\"wifi_mode\":\""; json += s_ap_active ? "ap" : "sta"; json += "\"";
+    json += ",\"wifi_ssid\":\""; json += jsonEscape(s_ap_active ? WiFi.softAPSSID() : WiFi.SSID()); json += "\"";
+    json += ",\"wifi_ip\":\"";   json += currentIP().toString(); json += "\"";
+    json += ",\"wifi_cfg_mode\":\""; json += s_wifi_sta ? "sta" : "ap"; json += "\"";
+    json += ",\"wifi_cfg_ssid\":\""; json += jsonEscape(s_sta_ssid); json += "\"";
     json += ",\"mode\":\"";  json += s_phone->autoRingEnabled() ? "AUTO" : "MANUAL";
     json += "\",\"state\":\""; json += s_phone->stateName();
     json += "\",\"playing\":\"";
@@ -1351,15 +1435,34 @@ static void handleVolume() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
-static void handleBellVolume() {
+static void handleDigitGap() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
-    int v = server.arg("v").toInt();
-    if (v < 0) v = 0;
-    if (v > 255) v = 255;
-    s_phone->bell().setBellVolume(v);
+    int secs = server.arg("v").toInt();
+    if (secs < 2)  secs = 2;
+    if (secs > 30) secs = 30;
+    s_phone->setNumberCompleteMs((unsigned long)secs * 1000UL);
     saveSettings();
-    if (s_logger) s_logger->systemLog("Bell volume set to %d via web", v);
+    if (s_logger) s_logger->systemLog("Inter-digit gap set to %ds via web", secs);
     server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Configure Wi-Fi mode (host own AP vs join existing network). Persists the
+// choice and reboots so the new mode takes effect from a clean boot.
+static void handleWifi() {
+    String mode = server.arg("mode");
+    if (mode == "sta") {
+        s_wifi_sta  = true;
+        s_sta_ssid  = server.arg("ssid");
+        s_sta_pass  = server.arg("pass");
+    } else {
+        s_wifi_sta = false;
+    }
+    saveSettings();
+    if (s_logger) s_logger->systemLog("Wi-Fi mode set to %s via web (ssid=%s), rebooting",
+                                       s_wifi_sta ? "STA" : "AP", s_sta_ssid.c_str());
+    server.send(200, "application/json", "{\"ok\":true}");
+    delay(400);
+    ESP.restart();
 }
 
 static void handleLineLevel() {
@@ -1492,8 +1595,8 @@ static void handleTerminal() {
         out += "  cancel              cancel ringing\n";
         out += "  mode [auto|manual]  get/set ring mode\n";
         out += "  vol [0-21]          get/set handset volume\n";
-        out += "  bell <0-255>        set bell volume\n";
         out += "  bellfreq [10-50]    get/set ring frequency (Hz)\n";
+        out += "  digitgap [2-30]     get/set seconds allowed between dialled digits\n";
         out += "  linelevel [0-100]   get/set master line level (%)\n";
         out += "  coin [auto|on|off]  coin box override\n";
         out += "  play <path>         play an SD file\n";
@@ -1505,7 +1608,7 @@ static void handleTerminal() {
         out += "  sd                  SD card info\n";
         out += "  mem                 free heap\n";
         out += "  uptime              time since boot\n";
-        out += "  wifi                Wi-Fi AP info\n";
+        out += "  wifi                Wi-Fi connection info\n";
         out += "  selftest            run bring-up self-test checklist\n";
         out += "  probe               play 1kHz tone, report peak/RMS\n";
         out += "  calibrate on        capture ON-HOOK line level (handset down)\n";
@@ -1547,11 +1650,12 @@ static void handleTerminal() {
             p.player().setVolume(v); saveSettings();
         }
         out = "volume=" + String(p.player().getVolume()) + "/21";
-    } else if (verb == "bell") {
-        if (!arg.length()) { server.send(200, "text/plain", "usage: bell <0-255>"); return; }
-        int v = arg.toInt(); if (v < 0) v = 0; if (v > 255) v = 255;
-        p.bell().setBellVolume(v); saveSettings();
-        out = "bell volume=" + String(v);
+    } else if (verb == "digitgap") {
+        if (arg.length()) {
+            int secs = arg.toInt(); if (secs < 2) secs = 2; if (secs > 30) secs = 30;
+            p.setNumberCompleteMs((unsigned long)secs * 1000UL); saveSettings();
+        }
+        out = "inter-digit gap=" + String(p.numberCompleteMs() / 1000) + "s";
     } else if (verb == "bellfreq") {
         if (arg.length()) {
             int hz = arg.toInt(); if (hz < 10) hz = 10; if (hz > 50) hz = 50;
@@ -1640,9 +1744,17 @@ static void handleTerminal() {
         unsigned long s = millis() / 1000;
         out = "uptime: " + String(s / 3600) + "h " + String((s % 3600) / 60) + "m " + String(s % 60) + "s";
     } else if (verb == "wifi") {
-        out  = "AP SSID: " + WiFi.softAPSSID() + "\n";
-        out += "AP IP: " + WiFi.softAPIP().toString() + "\n";
-        out += "connected clients: " + String(WiFi.softAPgetStationNum());
+        if (s_ap_active) {
+            out  = "mode: hosting AP\n";
+            out += "AP SSID: " + WiFi.softAPSSID() + "\n";
+            out += "AP IP: " + WiFi.softAPIP().toString() + "\n";
+            out += "connected clients: " + String(WiFi.softAPgetStationNum());
+        } else {
+            out  = "mode: joined network\n";
+            out += "SSID: " + WiFi.SSID() + "\n";
+            out += "IP: " + WiFi.localIP().toString() + "\n";
+            out += "RSSI: " + String(WiFi.RSSI()) + " dBm";
+        }
     } else if (verb == "selftest" || verb == "test") {
         out = buildSelfTest(p);
     } else if (verb == "probe") {
@@ -1916,7 +2028,10 @@ static void loadSettings() {
     f.close();
 
     if (!doc["volume"].isNull())   s_phone->player().setVolume(doc["volume"].as<uint8_t>());
-    if (!doc["bell_vol"].isNull()) s_phone->bell().setBellVolume(doc["bell_vol"].as<uint8_t>());
+    if (!doc["digit_gap"].isNull()) s_phone->setNumberCompleteMs(doc["digit_gap"].as<unsigned long>());
+    s_wifi_sta = doc["wifi_sta"].as<bool>();
+    if (!doc["wifi_ssid"].isNull()) s_sta_ssid = doc["wifi_ssid"].as<const char*>();
+    if (!doc["wifi_pass"].isNull()) s_sta_pass = doc["wifi_pass"].as<const char*>();
     if (!doc["ar_min"].isNull() && !doc["ar_max"].isNull()) {
         s_phone->setAutoRingInterval(
             doc["ar_min"].as<unsigned long>(),
@@ -1946,7 +2061,10 @@ static void saveSettings() {
 
     JsonDocument doc;
     doc["volume"]   = s_phone->player().getVolume();
-    doc["bell_vol"] = s_phone->bell().bellVolume();
+    doc["digit_gap"] = s_phone->numberCompleteMs();
+    doc["wifi_sta"]  = s_wifi_sta;
+    doc["wifi_ssid"] = s_sta_ssid;
+    doc["wifi_pass"] = s_sta_pass;
     doc["ar_min"]   = s_phone->autoRingMinMs();
     doc["ar_max"]   = s_phone->autoRingMaxMs();
     doc["ring_max"] = s_phone->maxRingCadences();
@@ -2071,13 +2189,35 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     s_stats  = &stats;
     s_phone  = &phone;
 
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
-    delay(100);
+    // Load persisted settings first so Wi-Fi comes up in the configured mode.
+    loadSettings();
 
-    IPAddress ip = WiFi.softAPIP();
-    Serial.printf("[web] AP \"%s\" started — http://%s/\n",
-                  WIFI_AP_SSID, ip.toString().c_str());
+    // Station mode: try to join the configured network. If it doesn't connect
+    // within the timeout, fall back to hosting our own AP so the operator can
+    // always reach the portal and correct the credentials.
+    bool staOk = false;
+    if (s_wifi_sta && s_sta_ssid.length()) {
+        Serial.printf("[web] joining Wi-Fi \"%s\"...\n", s_sta_ssid.c_str());
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(s_sta_ssid.c_str(), s_sta_pass.c_str());
+        unsigned long t0 = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(250);
+        staOk = (WiFi.status() == WL_CONNECTED);
+    }
+
+    if (staOk) {
+        s_ap_active = false;
+        Serial.printf("[web] joined \"%s\" — http://%s/\n",
+                      s_sta_ssid.c_str(), WiFi.localIP().toString().c_str());
+    } else {
+        if (s_wifi_sta) Serial.println("[web] Wi-Fi join failed — hosting own AP instead");
+        s_ap_active = true;
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
+        delay(100);
+        Serial.printf("[web] AP \"%s\" started — http://%s/\n",
+                      WIFI_AP_SSID, WiFi.softAPIP().toString().c_str());
+    }
 
     if (MDNS.begin("k6-exhibit")) {
         MDNS.addService("http", "tcp", 80);
@@ -2096,7 +2236,8 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/logs/calls",  HTTP_GET,  handleLogCalls);
     server.on("/api/logs/clear",  HTTP_POST, handleLogClear);
     server.on("/api/volume",      HTTP_POST, handleVolume);
-    server.on("/api/bellvol",     HTTP_POST, handleBellVolume);
+    server.on("/api/digitgap",    HTTP_POST, handleDigitGap);
+    server.on("/api/wifi",        HTTP_POST, handleWifi);
     server.on("/api/bellfreq",    HTTP_POST, handleBellFreq);
     server.on("/api/linelevel",   HTTP_POST, handleLineLevel);
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
@@ -2128,7 +2269,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.onNotFound([]() {
         if (server.method() == HTTP_GET && !server.uri().startsWith("/api/")) {
             server.sendHeader("Location",
-                              String("http://") + WiFi.softAPIP().toString() + "/");
+                              String("http://") + currentIP().toString() + "/");
             server.send(302, "text/plain", "redirecting");
         } else {
             server.send(404, "text/plain", "not found");
@@ -2137,8 +2278,9 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
 
     server.begin();
     active_ = true;
-    loadSettings();
-    logger.systemLog("Wi-Fi AP started SSID=%s", WIFI_AP_SSID);
+    if (s_ap_active) logger.systemLog("Wi-Fi AP started SSID=%s", WIFI_AP_SSID);
+    else             logger.systemLog("Wi-Fi joined SSID=%s ip=%s",
+                                      s_sta_ssid.c_str(), WiFi.localIP().toString().c_str());
     Serial.println("[web] server ready");
 }
 
