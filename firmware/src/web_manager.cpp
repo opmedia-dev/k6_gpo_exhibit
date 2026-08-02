@@ -35,9 +35,9 @@ static IPAddress currentIP() { return s_ap_active ? WiFi.softAPIP() : WiFi.local
 static String jsonEscape(const String& in) {
     String out;
     for (size_t i = 0; i < in.length(); i++) {
-        char c = in[i];
-        if (c == '"' || c == '\\') { out += '\\'; out += c; }
-        else if (c >= 0x20)        { out += c; }
+        unsigned char c = (unsigned char)in[i];
+        if (c == '"' || c == '\\') { out += '\\'; out += (char)c; }
+        else if (c >= 0x20)        { out += (char)c; }
     }
     return out;
 }
@@ -513,9 +513,9 @@ input[type=text]{width:140px}
 </div>
 <div class="field" id="wifi-sta-fields" style="display:none">
 <div class="field-label">Network Name (SSID)</div>
-<div class="field-row"><input type="text" id="wifissid" placeholder="Your Wi-Fi name" style="flex:1"></div>
+<div class="field-row"><input type="text" id="wifissid" placeholder="Your Wi-Fi name" oninput="touchUI()" style="flex:1"></div>
 <div class="field-label" style="margin-top:8px">Password</div>
-<div class="field-row"><input type="password" id="wifipass" placeholder="Leave blank for an open network" style="flex:1"></div>
+<div class="field-row"><input type="password" id="wifipass" placeholder="Leave blank for an open network" oninput="touchUI()" style="flex:1"></div>
 <div class="field-hint" style="margin-top:6px">If the telephone can't join this network it automatically falls back to hosting its own <b>K6-Exhibit</b> hotspot, so you can always reconnect and fix the details.</div>
 </div>
 <div class="field-row" style="margin-top:6px"><button onclick="saveWifi()" class="btn-danger" style="margin:0">Save &amp; Restart</button></div>
@@ -754,6 +754,7 @@ function setDigitGap(){
   fetch('/api/digitgap?v='+v,{method:'POST'});
 }
 function wifiModeChanged(){
+  touchUI();
   let sta=document.getElementById('wifimode').value==='sta';
   document.getElementById('wifi-sta-fields').style.display=sta?'block':'none';
 }
