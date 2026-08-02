@@ -90,6 +90,12 @@ public:
     void setDialTicks(bool on) { dial_ticks_ = on; }
     bool dialTicks() const     { return dial_ticks_; }
 
+    // Inter-digit gap: how long the system waits after the last dialled digit
+    // before deciding the number is complete. Longer values give slower or
+    // less-experienced visitors more time between digits on the rotary dial.
+    void setNumberCompleteMs(unsigned long ms) { number_complete_ms_ = ms; }
+    unsigned long numberCompleteMs() const     { return number_complete_ms_; }
+
     // Usage alert: lamp flashes if no activity for this many minutes (0=disabled).
     void setAlertIdleMinutes(int mins) { alert_idle_ms_ = mins * 60000UL; }
     int  alertIdleMinutes() const { return alert_idle_ms_ / 60000; }
@@ -130,6 +136,7 @@ private:
     unsigned long  last_digit_time_  = 0;
     bool           replace_prompted_ = false;  // "replace handset" already played
     bool           dial_ticks_       = false;  // click earpiece on each dial pulse
+    unsigned long  number_complete_ms_ = NUMBER_COMPLETE_MS;  // inter-digit gap
 
     // Auto-ring
     bool           auto_ring_enabled_ = true;

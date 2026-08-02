@@ -186,7 +186,7 @@ void PhoneController::update() {
         }
         // Number complete after inter-digit timeout.
         if (dial_pos_ > 0 &&
-            millis() - last_digit_time_ > NUMBER_COMPLETE_MS) {
+            millis() - last_digit_time_ > number_complete_ms_) {
             Serial.printf("[phone] number complete: %s\n", dialled_);
             if (number_cb_) number_cb_(dialled_);
 

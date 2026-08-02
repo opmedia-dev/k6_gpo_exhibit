@@ -28,10 +28,6 @@ public:
     // Single brief bell strike (boot-ready signal).
     void strike(unsigned long durationMs = 150);
 
-    // Bell volume: 0 (silent) to 255 (full power). Controls H-bridge PWM duty.
-    void setBellVolume(uint8_t vol);
-    uint8_t bellVolume() const { return bell_volume_; }
-
     // Ring frequency in Hz (H-bridge toggle rate). UK exchanges used
     // 16-2/3 Hz (≈17) through 25 Hz depending on era. Clamped 10-50 Hz.
     void setRingFreq(int hz);
@@ -59,6 +55,5 @@ private:
     unsigned long toggle_time_   = 0;
     bool          phase_         = false;
     uint8_t       cadence_step_  = 0;
-    uint8_t       bell_volume_   = 255;  // 0-255 PWM duty cycle
     int           ring_freq_hz_  = RING_FREQ_HZ;  // toggle rate (Hz)
 };
