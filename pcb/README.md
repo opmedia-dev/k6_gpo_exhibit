@@ -33,14 +33,14 @@ pin, net, and signal described.
 | Copper weight | 1 oz |
 | Board thickness | 1.6 mm |
 | Mounting holes | 4× M3, 4 mm from edges |
-| Min trace width | 0.5 mm (power) / 0.25 mm (signal) |
+| Min trace width | 0.6 mm (+5V) / 0.5 mm (+12V, +48V, BELL, LINE_B) / 0.2–0.25 mm (signal) |
 | Min drill | 0.4 mm (vias), 0.8 mm (IC pads), 1.0 mm (headers) |
 
 ## Component Placement
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ (MH)  [12V IN]  [BUCK]   [BOOST]                [MAX98357A] [DAC] (MH)     │
+│ (MH)  [12V IN]  [BUCK]   [48V IN]               [MAX98357A] [DAC] (MH)     │
 │         J3       J1        J2                      J5        J6             │
 │                                                                             │
 │                                                    [XFMR T1]               │
@@ -54,7 +54,7 @@ pin, net, and signal described.
 │  J10 RESET                                    ┌────────┐                   │
 │                                               │ L293D  │                   │
 │                                               │  U2    │                   │
-│                 [R1 470R]  [R2 220R]          └────────┘  [R3 10K]         │
+│                 [R1 470R]  [R2 470R]          └────────┘  [R3 10K]         │
 │ [SD CARD]                                     ┌────┐                       │
 │  J7                                           │PC817│                      │
 │                                               │ U3  │                      │
@@ -68,7 +68,7 @@ pin, net, and signal described.
 | Ref | Description | Pins |
 |-----|-------------|------|
 | J1 | LM2596 buck converter (12V → 5V) | 4: IN+, IN-, OUT+, OUT- |
-| J2 | XL6009 boost converter (12V → 50V) | 4: IN+, IN-, OUT+, OUT- |
+| J2 | 48 V DC power input (bell supply) | 2: +48V, GND — *Rev 2 uses a dedicated 48 V adapter; the Rev 1 XL6009 boost is not fitted* |
 | J3 | 12V DC power input | 2: +12V, GND |
 | J4 | Phone cord (3-pin screw terminal) | 3: Line A, Line B, Bell |
 | J5 | MAX98357A DAC module | 7: VIN, GND, SD, GAIN, DIN, BCLK, LRC |
@@ -90,10 +90,15 @@ pin, net, and signal described.
 
 | Ref | Value | Purpose |
 |-----|-------|---------|
-| R1 | 470 Ω 1W | Line current limit |
-| R2 | 220 Ω ¼W | Optocoupler LED current limit |
-| R3 | 10 kΩ ¼W | Optocoupler output pull-down |
-| C1 | 100 nF | L293D decoupling capacitor |
+| R1 | 470 Ω 1W | Line current limit (12 V → Line A) |
+| R2 | 470 Ω ¼W | Shunt across PC817 LED (pin 1 ↔ pin 2) — diverts C3 leakage (Rev 2.1; omit if C3 is film) |
+| R3 | 10 kΩ ¼W | Optocoupler output pull-down (GPIO 34) |
+| R4–R6 | 10 kΩ ¼W | Coin-box GPIO pull-ups (36/39/35) |
+| R7 (R_LIM) | 2.2 kΩ ¼W | **Opto LED leg current limit — MANDATORY before 48 V (Rev 2.1)** |
+| C1, C2 | 100 nF | Decoupling (L293D VSS, ESP32 VIN) |
+| C3 (Cc) | 10 µF / 63 V electrolytic, + toward Line A | DC-block coupling cap in series with transformer secondary (Rev 2.1) |
+| D1 | 1N4007 | Series reverse-block in opto LED leg (Rev 2.1) |
+| D2–D5 | 1N4007 | Transformer-primary overvoltage clamps |
 | T1 | 600 Ω : 600 Ω transformer | Audio coupling to phone line |
 
 ## Fabrication
@@ -116,7 +121,7 @@ Typical 5-board order from JLCPCB: ~$2 + shipping.
 4. Solder screw terminals (J3 power, J4 phone)
 5. Solder transformer T1
 6. Insert ICs into sockets (mind pin 1 orientation)
-7. Plug in modules: ESP32, MAX98357A, SD card, buck converter, boost converter
+7. Plug in modules: ESP32, MAX98357A, SD card, buck converter (48 V comes from a dedicated adapter, not a boost module in Rev 2)
 
 ## Regenerating Files
 

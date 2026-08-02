@@ -54,9 +54,9 @@ See the hardware docs for notes on other models (706, 746, etc.).
                                  │  + MAX98357A I2S DAC        │
                                  │  + L293D H-bridge (ringer)  │
                                  │  + 12V adapter → buck (5V)  │
-                                 │    + XL6009 boost (50V)     │
+                                 │  + 48V adapter (bell supply)│
                                  │  + Optocoupler (line sense) │
-                                 │  + 3 control buttons        │
+                                 │  + 4 control buttons        │
                                  └─────────────────────────────┘
 ```
 
@@ -69,10 +69,13 @@ See [`docs/hardware/`](docs/hardware/) for:
 
 ### PCB
 
-A KiCad carrier board layout is in [`pcb/`](pcb/) — 100 × 80 mm, 2-layer,
-all through-hole.  All modules (ESP32 DevKit, MAX98357A, SD card, buck/boost
-converters) plug in via pin headers.  See [`pcb/README.md`](pcb/README.md)
-for fabrication instructions.
+A KiCad carrier board layout is in [`pcb/`](pcb/) — 100 × 100 mm, 2-layer,
+all through-hole.  All modules (ESP32 DevKit, MAX98357A, SD card, LM2596
+buck converter) plug in via pin headers; the bell runs from a dedicated
+48 V adapter.  The **as-built, bench-proven manufacturing master is
+[`pcb/k6_carrier_rev2-8.kicad_pcb`](pcb/k6_carrier_rev2-8.kicad_pcb)** —
+use it for reorders.  See [`pcb/README.md`](pcb/README.md) for fabrication
+instructions.
 
 ## SD Card Setup
 
