@@ -1,0 +1,5 @@
+node_modules/
+dist/
+esp32_portal.html
+*.gz
+package-lock.json
