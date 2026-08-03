@@ -4,6 +4,10 @@
 static const int LEDC_CHANNEL  = 0;
 static const int LEDC_FREQ     = 1000;  // 1 kHz PWM carrier (inaudible)
 static const int LEDC_RES_BITS = 8;     // 0-255 duty range
+// The bell always drives at full power. Reducing the PWM duty doesn't make the
+// bell quieter — below a threshold it simply stops striking — so there is no
+// user-facing bell-volume control.
+static const int BELL_DUTY     = 255;   // fixed full-power H-bridge duty
 
 // Cadence table: duration (ms) and whether the bell is active during that step.
 static const struct { unsigned long duration; bool active; } CADENCE[] = {
@@ -23,8 +27,10 @@ void BellDriver::begin() {
     setBridgeOff();
 }
 
-void BellDriver::setBellVolume(uint8_t vol) {
-    bell_volume_ = vol;
+void BellDriver::setRingFreq(int hz) {
+    if (hz < 10) hz = 10;
+    if (hz > 50) hz = 50;
+    ring_freq_hz_ = hz;
 }
 
 void BellDriver::startRinging() {
@@ -53,8 +59,8 @@ void BellDriver::update() {
     }
 
     if (CADENCE[cadence_step_].active) {
-        // Toggle H-bridge at RING_FREQ_HZ (25 Hz → 20 ms half-period).
-        unsigned long halfPeriod = 500 / RING_FREQ_HZ;  // 500 ms / 25 = 20 ms
+        // Toggle H-bridge at ring_freq_hz_ (e.g. 25 Hz → 20 ms half-period).
+        unsigned long halfPeriod = 500 / ring_freq_hz_;
         if (now - toggle_time_ >= halfPeriod) {
             toggle_time_ = now;
             phase_ = !phase_;
@@ -65,10 +71,16 @@ void BellDriver::update() {
     }
 }
 
+bool BellDriver::inSilentGap(unsigned long guardMs) const {
+    if (!ringing_) return true;                       // not ringing — line clean
+    if (CADENCE[cadence_step_].active) return false;  // bell striking — coupling
+    return (millis() - cadence_start_) >= guardMs;     // settled silent gap
+}
+
 void BellDriver::strike(unsigned long durationMs) {
     unsigned long start = millis();
     bool ph = false;
-    unsigned long halfPeriod = 500 / RING_FREQ_HZ;
+    unsigned long halfPeriod = 500 / ring_freq_hz_;
     unsigned long lastToggle = start;
     while (millis() - start < durationMs) {
         if (millis() - lastToggle >= halfPeriod) {
@@ -81,7 +93,7 @@ void BellDriver::strike(unsigned long durationMs) {
 }
 
 void BellDriver::setBridgeOutput(bool phaseA) {
-    ledcWrite(LEDC_CHANNEL, bell_volume_);
+    ledcWrite(LEDC_CHANNEL, BELL_DUTY);
     if (phaseA) {
         digitalWrite(PIN_RING_A, HIGH);
         digitalWrite(PIN_RING_B, LOW);

@@ -7,6 +7,7 @@ void RotaryDecoder::begin() {
 
 void RotaryDecoder::reset() {
     state_         = State::IDLE;
+    pulsed_        = false;
     pulse_count_   = 0;
     decoded_digit_ = 0;
     edge_time_     = 0;
@@ -16,6 +17,7 @@ void RotaryDecoder::reset() {
 bool RotaryDecoder::update(bool lineBreak) {
     unsigned long now = millis();
     bool digitReady   = false;
+    pulsed_           = false;
 
     switch (state_) {
     case State::IDLE:
@@ -32,6 +34,7 @@ bool RotaryDecoder::update(bool lineBreak) {
             unsigned long breakLen = now - edge_time_;
             if (breakLen >= PULSE_MIN_BREAK_MS && breakLen <= PULSE_MAX_BREAK_MS) {
                 pulse_count_++;
+                pulsed_ = true;
             }
             edge_time_ = now;
             state_     = State::IN_MAKE;

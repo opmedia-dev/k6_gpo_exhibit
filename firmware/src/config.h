@@ -48,7 +48,7 @@ constexpr const char* WIFI_AP_SSID = "K6-Exhibit";
 constexpr const char* WIFI_AP_PASS = "phonebox";    // min 8 chars for WPA2
 
 // --- Firmware version --------------------------------------------------------
-#define FIRMWARE_VERSION "1.2.0"
+#define FIRMWARE_VERSION "1.3.0"
 
 // --- Timing constants -------------------------------------------------------
 
@@ -58,7 +58,7 @@ constexpr int           LINE_THRESHOLD_ON     = 800;   // ADC value: phone off-h
 constexpr int           LINE_THRESHOLD_OFF    = 300;   // ADC value: phone on-hook
 
 // Rotary dial pulse decoding
-constexpr unsigned long PULSE_MIN_BREAK_MS    = 20;
+constexpr unsigned long PULSE_MIN_BREAK_MS    = 8;
 constexpr unsigned long PULSE_MAX_BREAK_MS    = 120;
 constexpr unsigned long INTER_DIGIT_TIMEOUT_MS = 300;
 
@@ -68,6 +68,13 @@ constexpr unsigned long RING_OFF_1_MS         = 200;
 constexpr unsigned long RING_ON_2_MS          = 400;
 constexpr unsigned long RING_OFF_2_MS         = 2000;
 constexpr int           RING_FREQ_HZ          = 25;
+
+// The 48 V bell drive couples onto the line and pins the hook sense high while
+// striking; the rectified charge also lingers briefly after the bell stops.
+// Only trust the hook state this far into a silent cadence gap, so a false
+// "answer" can't be triggered by coupling. Set larger than the short 200 ms
+// gap so only the long 2000 ms gap qualifies (line fully settled by then).
+constexpr unsigned long RING_ANSWER_GUARD_MS  = 350;
 
 // Random auto-ring interval (ms).  The phone will ring automatically at a
 // random interval between these two bounds.

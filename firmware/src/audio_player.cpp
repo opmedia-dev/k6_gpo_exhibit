@@ -1,25 +1,126 @@
 #include "audio_player.h"
 #include "config.h"
+#include <SPI.h>
 #include <ArduinoJson.h>
 
+// Master line-level attenuation, applied per-sample just before I2S write.
+// 256 = unity (no attenuation).  Set via AudioPlayer::setLineLevel().
+static volatile uint16_t g_audio_atten256 = 256;
+
+// Weak hook in the ESP32-audioI2S library: called with the gained 32-bit
+// sample (left in high 16 bits, right in low 16 bits) right before it is
+// written to the I2S bus.  We scale it down so audio can sit below the
+// library's minimum volume step without overdriving the phone earpiece.
+volatile bool     g_audio_hook_debug = false;   // set true to log hook activity
+static uint32_t   s_hook_calls = 0;
+static int32_t    s_hook_peak  = 0;
+static uint32_t   s_hook_last_ms = 0;
+
+// --- Audio probe: measure peak/RMS of the samples fed to I2S over a window ---
+volatile bool     g_audio_probe = false;
+static volatile int32_t  s_probe_peak  = 0;
+static volatile uint64_t s_probe_sumsq = 0;
+static volatile uint32_t s_probe_count = 0;
+
+void audio_probe_reset() {
+    s_probe_peak  = 0;
+    s_probe_sumsq = 0;
+    s_probe_count = 0;
+}
+
+void audio_probe_result(int32_t* peak, float* rms, uint32_t* count) {
+    uint32_t n = s_probe_count;
+    if (peak)  *peak  = s_probe_peak;
+    if (count) *count = n;
+    if (rms)   *rms   = (n > 0) ? sqrtf((float)((double)s_probe_sumsq / (double)n)) : 0.0f;
+}
+
+void audio_process_i2s(uint32_t* sample, bool* continueI2S) {
+    *continueI2S = true;
+
+    int16_t l = (int16_t)((*sample >> 16) & 0xFFFF);
+    int16_t r = (int16_t)(*sample & 0xFFFF);
+
+    if (g_audio_probe) {
+        int32_t al = l < 0 ? -l : l;
+        if (al > s_probe_peak) s_probe_peak = al;
+        s_probe_sumsq += (uint64_t)((int32_t)l * (int32_t)l);
+        s_probe_count++;
+    }
+
+    if (g_audio_hook_debug) {
+        s_hook_calls++;
+        int32_t al = l < 0 ? -l : l;
+        int32_t ar = r < 0 ? -r : r;
+        if (al > s_hook_peak) s_hook_peak = al;
+        if (ar > s_hook_peak) s_hook_peak = ar;
+        uint32_t now = millis();
+        if (now - s_hook_last_ms >= 1000) {
+            Serial.printf("[hookdbg] calls/s=%lu  peak=%ld/32767  atten256=%u\n",
+                          (unsigned long)s_hook_calls, (long)s_hook_peak,
+                          (unsigned)g_audio_atten256);
+            s_hook_calls = 0;
+            s_hook_peak  = 0;
+            s_hook_last_ms = now;
+        }
+    }
+
+    uint16_t a = g_audio_atten256;
+    if (a >= 256) return;  // unity — leave sample untouched
+    l = (int16_t)(((int32_t)l * a) >> 8);
+    r = (int16_t)(((int32_t)r * a) >> 8);
+    *sample = ((uint32_t)(uint16_t)l << 16) | (uint16_t)r;
+}
+
+// Weak hook in the ESP32-audioI2S library: receives human-readable status
+// messages, including the decoded stream format (SampleRate / Channels /
+// BitsPerSample / BitRate).  Forward them to Serial for diagnostics.
+void audio_info(const char* info) {
+    Serial.printf("[audio] %s\n", info);
+}
+
 static const char* ALIASES_FILE = "/system/aliases.json";
+static const char* TICK_FILE    = "/system/_tick.wav";
 
 bool AudioPlayer::begin() {
-    // Initialise SD card on the default VSPI bus.
-    if (!SD.begin(PIN_SD_CS)) {
-        Serial.println("[audio] SD card init failed");
-        sd_ok_ = false;
-    } else {
-        Serial.printf("[audio] SD card ready  type=%d  size=%lluMB\n",
-                      SD.cardType(), SD.cardSize() / (1024 * 1024));
-        sd_ok_ = true;
+    // GPIO 5 (CS) is an ESP32 strapping pin that outputs PWM during boot,
+    // which sends spurious chip-select pulses to the SD card.  Explicitly
+    // initialise SPI, deselect the card, and send dummy clocks to reset
+    // the card's SPI state machine before attempting SD.begin().
+    SPI.begin();
+    pinMode(PIN_SD_CS, OUTPUT);
+    digitalWrite(PIN_SD_CS, HIGH);  // deselect card
+    delay(10);
+    // Send 80 dummy clocks (10 bytes of 0xFF) with CS high to flush
+    // any partial command the card received during boot.
+    for (int i = 0; i < 10; i++) SPI.transfer(0xFF);
+    delay(10);
+
+    // Try SD init up to 3 times — some cards need a retry after boot glitches.
+    sd_ok_ = false;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        if (SD.begin(PIN_SD_CS, SPI, 4000000)) {
+            Serial.printf("[audio] SD card ready  type=%d  size=%lluMB  (attempt %d)\n",
+                          SD.cardType(), SD.cardSize() / (1024 * 1024), attempt);
+            sd_ok_ = true;
+            break;
+        }
+        Serial.printf("[audio] SD init attempt %d failed\n", attempt);
+        SD.end();
+        delay(100);
+    }
+    if (!sd_ok_) {
+        Serial.println("[audio] SD card init failed after 3 attempts");
     }
 
     // Initialise I2S output.
     audio_.setPinout(PIN_I2S_BCLK, PIN_I2S_LRCLK, PIN_I2S_DOUT);
     audio_.setVolume(15);  // 0-21
 
-    if (sd_ok_) loadAliases();
+    if (sd_ok_) {
+        loadAliases();
+        generateTickFile();  // pre-build the dial-pulse click so playClick() is fast
+    }
 
     return sd_ok_;
 }
@@ -37,6 +138,122 @@ bool AudioPlayer::playFile(const char* path, bool loop) {
     bool ok = audio_.connecttoFS(SD, path);
     if (ok) Serial.printf("[audio] playing: %s%s\n", path, loop ? " (loop)" : "");
     return ok;
+}
+
+bool AudioPlayer::playTestTone(int hz, int secs) {
+    if (!sd_ok_) return false;
+    if (hz < 50)   hz = 50;
+    if (hz > 4000) hz = 4000;
+    if (secs < 1)  secs = 1;
+    if (secs > 60) secs = 60;
+
+    const uint32_t sampleRate = 16000;
+    // Whole number of periods so the looped WAV joins seamlessly (no click).
+    uint32_t periodSamples = sampleRate / hz;      // samples per cycle
+    if (periodSamples < 1) periodSamples = 1;
+    uint32_t cycles        = (sampleRate / 2) / periodSamples;  // ~0.5s buffer
+    if (cycles < 1) cycles = 1;
+    uint32_t numSamples    = periodSamples * cycles;
+    uint32_t dataBytes     = numSamples * 2;       // 16-bit mono
+
+    const char* path = "/system/_testtone.wav";
+    if (!SD.exists("/system")) SD.mkdir("/system");
+    SD.remove(path);
+    File f = SD.open(path, FILE_WRITE);
+    if (!f) {
+        Serial.println("[audio] could not create test tone file");
+        return false;
+    }
+
+    // --- WAV header (44 bytes, PCM 16-bit mono) ---
+    auto w32 = [&](uint32_t v){ uint8_t b[4]={(uint8_t)v,(uint8_t)(v>>8),(uint8_t)(v>>16),(uint8_t)(v>>24)}; f.write(b,4); };
+    auto w16 = [&](uint16_t v){ uint8_t b[2]={(uint8_t)v,(uint8_t)(v>>8)}; f.write(b,2); };
+    f.write((const uint8_t*)"RIFF", 4);  w32(36 + dataBytes);
+    f.write((const uint8_t*)"WAVE", 4);
+    f.write((const uint8_t*)"fmt ", 4);  w32(16);
+    w16(1);                    // PCM
+    w16(1);                    // channels
+    w32(sampleRate);
+    w32(sampleRate * 2);       // byte rate
+    w16(2);                    // block align
+    w16(16);                   // bits per sample
+    f.write((const uint8_t*)"data", 4);  w32(dataBytes);
+
+    // --- Sine samples ---
+    const float amp = 0.6f * 32767.0f;
+    uint8_t buf[512];
+    int bi = 0;
+    for (uint32_t i = 0; i < numSamples; i++) {
+        float phase = 2.0f * PI * (float)(i % periodSamples) / (float)periodSamples;
+        int16_t s = (int16_t)(amp * sinf(phase));
+        buf[bi++] = (uint8_t)s;
+        buf[bi++] = (uint8_t)(s >> 8);
+        if (bi >= (int)sizeof(buf)) { f.write(buf, bi); bi = 0; }
+    }
+    if (bi) f.write(buf, bi);
+    f.close();
+
+    bool ok = playFile(path, true);  // loop the buffer
+    if (ok) {
+        tone_end_ = millis() + (unsigned long)secs * 1000;
+        Serial.printf("[audio] test tone %d Hz for %ds\n", hz, secs);
+    }
+    return ok;
+}
+
+bool AudioPlayer::generateTickFile() {
+    if (!sd_ok_) return false;
+    if (SD.exists(TICK_FILE)) return true;  // already built
+
+    const uint32_t sampleRate = 16000;
+    const uint32_t numSamples = 176;        // ~11 ms click
+    const uint32_t dataBytes  = numSamples * 2;
+
+    if (!SD.exists("/system")) SD.mkdir("/system");
+    File f = SD.open(TICK_FILE, FILE_WRITE);
+    if (!f) {
+        Serial.println("[audio] could not create tick file");
+        return false;
+    }
+
+    auto w32 = [&](uint32_t v){ uint8_t b[4]={(uint8_t)v,(uint8_t)(v>>8),(uint8_t)(v>>16),(uint8_t)(v>>24)}; f.write(b,4); };
+    auto w16 = [&](uint16_t v){ uint8_t b[2]={(uint8_t)v,(uint8_t)(v>>8)}; f.write(b,2); };
+    f.write((const uint8_t*)"RIFF", 4);  w32(36 + dataBytes);
+    f.write((const uint8_t*)"WAVE", 4);
+    f.write((const uint8_t*)"fmt ", 4);  w32(16);
+    w16(1);                    // PCM
+    w16(1);                    // channels
+    w32(sampleRate);
+    w32(sampleRate * 2);       // byte rate
+    w16(2);                    // block align
+    w16(16);                   // bits per sample
+    f.write((const uint8_t*)"data", 4);  w32(dataBytes);
+
+    // A sharp exponentially-decaying ~1.8 kHz burst — sounds like the click a
+    // GPO earpiece makes on each dial pulse rather than a musical tone.
+    const float freq = 1800.0f;
+    const float tau  = 0.0025f;            // ~2.5 ms decay
+    const float amp  = 0.7f * 32767.0f;
+    uint8_t buf[512];
+    int bi = 0;
+    for (uint32_t i = 0; i < numSamples; i++) {
+        float t = (float)i / (float)sampleRate;
+        int16_t s = (int16_t)(amp * expf(-t / tau) * sinf(2.0f * PI * freq * t));
+        buf[bi++] = (uint8_t)s;
+        buf[bi++] = (uint8_t)(s >> 8);
+        if (bi >= (int)sizeof(buf)) { f.write(buf, bi); bi = 0; }
+    }
+    if (bi) f.write(buf, bi);
+    f.close();
+    return true;
+}
+
+bool AudioPlayer::playClick() {
+    if (!sd_ok_) return false;
+    if (!SD.exists(TICK_FILE) && !generateTickFile()) return false;
+    looping_   = false;
+    loop_path_ = "";                       // one-shot: don't auto-restart
+    return audio_.connecttoFS(SD, TICK_FILE);
 }
 
 bool AudioPlayer::playDialTone() {
@@ -142,6 +359,7 @@ void AudioPlayer::stop() {
     audio_.stopSong();
     looping_ = false;
     loop_path_ = "";
+    tone_end_ = 0;
 }
 
 bool AudioPlayer::isPlaying() {
@@ -150,6 +368,14 @@ bool AudioPlayer::isPlaying() {
 
 void AudioPlayer::update() {
     audio_.loop();
+
+    // Auto-stop the test tone after its duration.
+    if (tone_end_ && millis() >= tone_end_) {
+        tone_end_ = 0;
+        stop();
+        Serial.println("[audio] test tone finished");
+        return;
+    }
 
     // Handle looping: restart file when playback finishes.
     if (looping_ && !audio_.isRunning() && loop_path_.length() > 0) {
@@ -160,6 +386,17 @@ void AudioPlayer::update() {
 void AudioPlayer::setVolume(uint8_t vol) {
     volume_ = vol;
     audio_.setVolume(vol);
+}
+
+void AudioPlayer::setEq(int8_t lowdB, int8_t middB, int8_t highdB) {
+    audio_.setTone(lowdB, middB, highdB);
+    Serial.printf("[audio] EQ low=%d mid=%d high=%d dB\n", lowdB, middB, highdB);
+}
+
+void AudioPlayer::setLineLevel(uint8_t pct) {
+    if (pct > 100) pct = 100;
+    line_level_ = pct;
+    g_audio_atten256 = (uint16_t)(((uint32_t)pct * 256) / 100);
 }
 
 int AudioPlayer::countFilesIn(const char* dirPath) {
@@ -204,9 +441,12 @@ bool AudioPlayer::checkSdCard() {
     // Attempt remount.
     SD.end();
     if (SD.begin(PIN_SD_CS)) {
-        Serial.println("[audio] SD card remounted OK");
+        Serial.println("[audio] SD card remounted OK — reinitialising audio");
         sd_ok_ = true;
+        // Restore everything the audio path needs so playback self-heals
+        // without a power cycle: aliases and the pre-built dial-pulse click.
         loadAliases();
+        generateTickFile();
     }
     return sd_ok_;
 }

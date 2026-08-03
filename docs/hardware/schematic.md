@@ -86,37 +86,52 @@ This circuit detects whether the handset is on the cradle (on-hook) or
 lifted (off-hook), and senses the rotary dial pulses — all on a single
 GPIO pin.
 
+> **Rev 2.1 correction — the optocoupler must be *in series* with the
+> loop, not bridged across it.** The original Rev 2 layout wired the
+> PC817 LED across the line (Line A via R2 → LED → Line B), with Line B
+> having no return to ground. That topology can carry **no loop current
+> in any hook state**, so hook and dial detection never worked. The LED
+> is now in series in the return leg: **+12 V → R1 → Line A → phone →
+> Line B → R_LIM → D1 → LED → GND.** R2 is deleted. This was verified on
+> the bench (hook + dial both decode correctly). See the warning below
+> before ever applying the 48 V bell supply.
+
 ```
     +12 V ────────┐
                   │
                  [R1]  470 Ω  1W
                   │
-                  ├──────────── Terminal 1 (RED wire = Line A)
+                  └──────────── Terminal 1 (RED wire = Line A)
+
+                  ═══ phone loop ═══  (open on-hook, ~360 Ω off-hook)
+
+    Terminal 2 ───┐
+    (WHITE wire   │
+     = Line B)   [R_LIM]  2.2 kΩ        ← current limit (MANDATORY, see warning)
                   │
-                 [R2]  220 Ω
+                  ▼  D1  (1N4148, anode → Line B side)
                   │
              ┌────┴────┐
              │  PC817   │
              │ OPTO-    │
              │ COUPLER  │
-             │         ┌┤
-             │    LED  ││── Collector ─── +3.3 V
-             │         └┤
-             │  Anode    │
-             └────┬────┘│
-                  │     Emitter ──┬── GPIO 34 (ESP32)
-                  │               │
-    Terminal 2 ───┘              [R3]  10 kΩ
-    (WHITE wire                   │
-     = Line B)                   GND
+             │  Anode  ┌┤
+             │    (p1) ││── Collector (p4) ─── +3.3 V
+             │  LED    └┤
+             │ Cathode   │
+             │  (p2)     Emitter (p3) ──┬── GPIO 34 (ESP32)
+             └────┬────┘                │
+                  │                    [R3]  10 kΩ
+                 GND                     │
+                                        GND
 ```
 
 **PC817 pinout (DIP-4) — polarity markers:**
 
 ```
     ┌──────────┐
-    │  Pin 1   │  Anode  ── dot/band on package (from R2)
-    │  Pin 2   │  Cathode ── (to Terminal 2 / Line B)
+    │  Pin 1   │  Anode  ── dot/band on package (from D1 cathode / Line B leg)
+    │  Pin 2   │  Cathode ── to GND
     │  Pin 3   │  Emitter ── (to GPIO 34 + R3)
     │  Pin 4   │  Collector ── (to +3.3 V)
     └──────────┘
@@ -128,12 +143,32 @@ GPIO pin.
 
 | Phone state | What happens | GPIO 34 reads |
 |------------|-------------|---------------|
-| **On-hook** (handset down) | No current flows — optocoupler LED off | LOW (~0 V) |
-| **Off-hook** (handset lifted) | ~20 mA flows through phone circuit → LED on | HIGH (~3.3 V) |
-| **Dial pulse** (rotary dial break) | Current briefly interrupted → LED off | LOW pulse (20-120 ms) |
+| **On-hook** (handset down) | Loop open — no current, LED off | LOW (~0 V) |
+| **Off-hook** (handset lifted) | Loop closed — ~4-13 mA flows through R1 → phone → R_LIM → D1 → LED → GND | HIGH (~3.3 V) |
+| **Dial pulse** (rotary dial break) | Loop briefly interrupted → LED off | LOW pulse (20-120 ms) |
 
 The firmware counts these LOW pulses to decode the dialled digit
 (1 pulse = digit 1, 10 pulses = digit 0).
+
+> ### ⚠️ SAFETY: R_LIM is mandatory before applying 48 V
+>
+> Line B carries the **48 V ring voltage** during ringing. The opto LED
+> leg (Line B → D1 → LED → GND) has **no other current limit** — R1 is
+> on the Line A side and is *not* in this path. Without **R_LIM
+> (1.5–2.2 kΩ)** in the Line B leg, the 48 V ring drives destructive
+> current through the LED.
+>
+> **This is not theoretical:** on the bench, applying 48 V with R_LIM
+> omitted breached the PC817's isolation and back-fed the ESP32, cooking
+> both the optocoupler *and* the ESP32 module (it powered up but ran
+> hot). **Never apply 48 V unless R_LIM is fitted.**
+>
+> - Ring peak current with R_LIM = 2.2 kΩ: 48 V / 2.2 kΩ ≈ **22 mA**
+>   (safe for the PC817).
+> - Off-hook detect current: (15 V − ~1.9 V) / (470 + 360 + 2200) ≈
+>   **4–5 mA** (enough to trigger; drop R_LIM to 1.5 kΩ if marginal).
+> - **D1 (series diode)** blocks the reverse half of the ring, so a
+>   separate anti-parallel clamp diode is *not* required.
 
 ---
 
@@ -203,8 +238,8 @@ phone line via a coupling transformer.
     5 V ─────── VIN ─────────► VIN                                    │(transformer)
     GND ─────── GND ─────────► GND        L- ──────► Primary pin 2 ──┘
                                                            │
-                                               Secondary pin 1 ── Terminal 1 (Line A)
-                                               Secondary pin 2 ── Terminal 2 (Line B)
+                                        Secondary pin 1 ──[ Cc ]── Terminal 1 (Line A)
+                                        Secondary pin 2 ────────── Terminal 2 (Line B)
 ```
 
 **How it works:**
@@ -214,8 +249,28 @@ The coupling transformer isolates this from the phone line's DC bias
 and matches impedance.  Audio passes through the phone's internal
 induction coil to the earpiece.
 
-> A **10 Ω resistor** in series with the transformer primary may be
-> needed to limit current and reduce distortion.
+> ### ⚠️ Cc — DC-blocking coupling capacitor is MANDATORY
+>
+> The transformer secondary winding is only **~70–120 Ω at DC**, so if
+> it connects directly across Terminal 1 ↔ Terminal 2 it forms a **DC
+> short across the line**. That short:
+> 1. **Swamps the hook loop** — the phone's 360 Ω (off-hook) vs. open
+>    (on-hook) swing is invisible next to a fixed ~120 Ω, so the
+>    optocoupler stays saturated and hook/dial detection fails; and
+> 2. **Saturates the transformer core** with the DC bias current now
+>    flowing (+12 V → R1 → Line A → secondary → Line B → LED → GND),
+>    adding gross distortion.
+>
+> Fit **Cc in series with one secondary leg** (Line A leg shown):
+> - **10 µF non-polar / bipolar, ≥63 V** (film or bipolar electrolytic), **or**
+> - **two 10 µF 63 V electrolytics in series, back-to-back** (join the
+>   two like terminals, − to −) ≈ **5 µF non-polar, 63 V** — perfectly
+>   adequate for telephone-band voice (~106 Ω at 300 Hz).
+>
+> Cc passes voice but blocks DC, so the line is no longer shorted:
+> hook + dial work, the core no longer saturates, and 25 Hz ring bleed
+> into the earpiece is attenuated. The old "10 Ω in series with the
+> primary" note is superseded by this.
 
 ---
 
@@ -352,26 +407,31 @@ a lower impedance (~1 kΩ), overriding the pull-ups cleanly.
 ## 9. Protection Diodes
 
 The LINE_B net is shared between the L293D output (48 V during ringing),
-the PC817 cathode, and the transformer secondary. Without protection,
-the ring voltage damages the optocoupler and can back-feed into the DAC.
+the opto LED leg (R_LIM → D1 → PC817 anode), and the transformer
+secondary (via Cc). Without protection, the ring voltage damages the
+optocoupler and can back-feed into the DAC.
 
-### D1 — PC817 reverse voltage clamp
+### R_LIM + D1 — opto LED current limit and reverse block (Rev 2.1)
 
 ```
-    PC817 pin 1 (Anode)  ──── OPTO_A net
-                               │
-    PC817 pin 2 (Cathode) ── LINE_B net
-                               │
-                          ┌────┴────┐
-                          │  D1     │  1N4007
-                          │ Anode   │──── LINE_B
-                          │ Cathode │──── OPTO_A
-                          └─────────┘
+    Terminal 2 (LINE_B) ──[R_LIM 2.2 kΩ]──►|── PC817 pin 1 (Anode)
+                                          D1
+                                       (1N4148,
+                                    anode→Line B side)
+
+    PC817 pin 2 (Cathode) ──── GND
 ```
 
-D1 is wired anti-parallel to the PC817 LED. When LINE_B rises above
-OPTO_A (during ringing), D1 conducts and clamps the reverse voltage
-across the LED to ~0.7 V instead of the destructive 36 V.
+**R_LIM (1.5–2.2 kΩ)** sits in series in the opto LED leg and limits
+both the off-hook loop current (~4–5 mA) and, crucially, the **48 V ring
+current (~22 mA at 2.2 kΩ)**. It is **mandatory** — R1 is on the Line A
+side and does not protect this leg (see the Section 2 safety warning:
+omitting R_LIM cooked the opto *and* the ESP32 on the bench).
+
+**D1 in series** (anode toward Line B, cathode toward the LED anode)
+passes the off-hook / dial loop current but **blocks the reverse half of
+the 48 V ring**, so the LED is never reverse-biased. Because D1 is in
+series, the old anti-parallel clamp diode is no longer used.
 
 ### D2–D5 — DAC overvoltage clamps
 
@@ -418,16 +478,18 @@ Every wire in the system, listed by destination:
 | ESP32 3.3 V | R4, R5, R6 (top) | Coin box GPIO pull-ups |
 | ESP32 3.3 V | Header pin 4 | Daughter board power |
 | ESP32 3.3 V | SD card VCC (if 3.3 V module) | Some modules need 3.3 V |
-| R1 (470 Ω) bottom | Terminal 1 / R2 top | Line A feed |
-| R2 (220 Ω) bottom | PC817 Anode (pin 1) | Optocoupler drive |
-| PC817 Cathode (pin 2) | Terminal 2 (Line B) | Return path |
+| R1 (470 Ω) bottom | Terminal 1 (Line A) | Line A feed (R2 deleted in Rev 2.1) |
+| Terminal 2 (Line B) | R_LIM (2.2 kΩ) top | Opto LED leg current limit |
+| R_LIM (2.2 kΩ) bottom | D1 anode | Series limit → reverse block |
+| D1 cathode (1N4148) | PC817 Anode (pin 1) | Loop drive, reverse-blocked |
+| PC817 Cathode (pin 2) | GND | Loop return to ground |
 | PC817 Emitter (pin 3) | GPIO 34 + R3 to GND | Hook/dial sense |
 | L293D OUT1 (pin 3) | Terminal 3 (Blue/Bell) | Ring signal |
 | L293D OUT2 (pin 6) | Terminal 2 (White/Line B) | Ring return |
 | L293D pins 4,5,9,12,13 | GND | All GND pins connected |
 | MAX98357A L+ | Transformer primary 1 | Audio out |
 | MAX98357A L- | Transformer primary 2 | Audio out |
-| Transformer secondary 1 | Terminal 1 (Red/Line A) | Audio to phone |
+| Transformer secondary 1 | Cc → Terminal 1 (Red/Line A) | Audio to phone via DC-block cap Cc |
 | Transformer secondary 2 | Terminal 2 (White/Line B) | Audio to phone |
 | GPIO 32 | RING button → GND | Control panel |
 | GPIO 33 | CANCEL button → GND | Control panel |
@@ -437,8 +499,8 @@ Every wire in the system, listed by destination:
 | GPIO 36 | Header pin 1 (+ R4 to 3.3 V) | Coin sense |
 | GPIO 39 | Header pin 2 (+ R5 to 3.3 V) | Button A |
 | GPIO 35 | Header pin 3 (+ R6 to 3.3 V) | Button B |
-| D1 anode | LINE_B (PC817 pin 2) | Reverse voltage clamp |
-| D1 cathode | OPTO_A (PC817 pin 1 / R2) | Reverse voltage clamp |
+| D1 anode | R_LIM bottom (Line B leg) | Series diode (blocks reverse ring) |
+| D1 cathode | PC817 Anode (pin 1) | Series diode (blocks reverse ring) |
 | D2 anode | DAC_LP (J_SPK pin 1 / T1 pri 1) | Positive clamp on L+ |
 | D2 cathode | +5V rail | Positive clamp on L+ |
 | D3 anode | GND | Negative clamp on L+ |

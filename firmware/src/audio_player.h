@@ -26,6 +26,16 @@ public:
     // Play a file from SD card.  If loop is true the file restarts on EOF.
     bool playFile(const char* path, bool loop = false);
 
+    // Generate and play a steady sine test tone for a fixed duration.
+    // Writes a short looping WAV to the SD card and plays it looped, then
+    // auto-stops after `secs`.  Useful for measuring the line output.
+    bool playTestTone(int hz, int secs);
+
+    // Play a single short "tick" in the earpiece — one per rotary dial pulse,
+    // to reproduce the clicks a real GPO dial makes as it runs back.  The
+    // click WAV is generated once at begin() so this is just a fast reconnect.
+    bool playClick();
+
     // Play the built-in dial tone (file-based).
     bool playDialTone();
 
@@ -57,6 +67,17 @@ public:
     void setVolume(uint8_t vol);
     uint8_t getVolume() const { return volume_; }
 
+    // Master line-level trim (0-100%). Attenuates ALL audio below the
+    // library's minimum volume step, so the earpiece level can be set
+    // without overdriving it. 100% = no extra attenuation.
+    void setLineLevel(uint8_t pct);
+    uint8_t lineLevel() const { return line_level_; }
+
+    // 3-band tone control (low / mid / high shelf gains, each -40..+6 dB).
+    // Used to band-limit audio to the telephone band, which also avoids
+    // low-frequency energy saturating the small coupling transformer.
+    void setEq(int8_t lowdB, int8_t middB, int8_t highdB);
+
     // Currently playing file path (empty if not playing).
     const String& currentFile() const { return loop_path_; }
 
@@ -73,10 +94,13 @@ private:
     bool   sd_ok_     = false;
     bool   looping_   = false;
     uint8_t volume_   = 15;
+    uint8_t line_level_ = 100;  // master trim 0-100% (100 = no attenuation)
     String loop_path_;
+    unsigned long tone_end_ = 0;  // auto-stop time for test tone (0 = off)
 
     int  countFilesIn(const char* dir);
     bool fileExists(const char* path);
+    bool generateTickFile();  // write the dial-pulse click WAV to SD once
     unsigned long last_sd_check_ = 0;
     static const int MAX_ALIASES = 32;
     struct Alias { char number[12]; char name[32]; };

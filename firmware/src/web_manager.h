@@ -21,6 +21,14 @@ public:
 
     bool isActive() const { return active_; }
 
+    // Persist current runtime settings to SD (settings.json). Used by the
+    // serial calibration command so tuned thresholds survive a reboot.
+    void persistSettings();
+
+    // Diagnostics shared with the web terminal, for use from the serial console.
+    String selfTest();
+    String audioProbe();
+
 private:
     bool active_ = false;
 };

@@ -33,7 +33,8 @@ public:
 private:
     struct BtnState {
         int           pin;
-        bool          last;
+        bool          last;       // last raw reading (tracks changes)
+        bool          stable;     // debounced confirmed state
         unsigned long last_change;
     };
 

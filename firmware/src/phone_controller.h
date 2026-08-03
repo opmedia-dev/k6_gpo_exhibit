@@ -58,6 +58,7 @@ public:
     const char* stateName() const;
 
     void ring();
+    void testRing(int seconds = 3);  // fixed-duration ring for bell testing
     void cancelRing();
     void hangUp();
 
@@ -84,6 +85,16 @@ public:
     void setRingToneRange(int minSecs, int maxSecs);
     int  ringToneMinSecs() const { return ring_tone_min_ms_ / 1000; }
     int  ringToneMaxSecs() const { return ring_tone_max_ms_ / 1000; }
+
+    // Dial-pulse click: play a tick in the earpiece on each rotary pulse.
+    void setDialTicks(bool on) { dial_ticks_ = on; }
+    bool dialTicks() const     { return dial_ticks_; }
+
+    // Inter-digit gap: how long the system waits after the last dialled digit
+    // before deciding the number is complete. Longer values give slower or
+    // less-experienced visitors more time between digits on the rotary dial.
+    void setNumberCompleteMs(unsigned long ms) { number_complete_ms_ = ms; }
+    unsigned long numberCompleteMs() const     { return number_complete_ms_; }
 
     // Usage alert: lamp flashes if no activity for this many minutes (0=disabled).
     void setAlertIdleMinutes(int mins) { alert_idle_ms_ = mins * 60000UL; }
@@ -121,8 +132,11 @@ private:
     uint8_t        dial_pos_ = 0;
 
     unsigned long  state_enter_time_ = 0;
+    unsigned long  test_ring_end_    = 0;  // fixed-duration test ring end (0=off)
     unsigned long  last_digit_time_  = 0;
     bool           replace_prompted_ = false;  // "replace handset" already played
+    bool           dial_ticks_       = false;  // click earpiece on each dial pulse
+    unsigned long  number_complete_ms_ = NUMBER_COMPLETE_MS;  // inter-digit gap
 
     // Auto-ring
     bool           auto_ring_enabled_ = true;

@@ -32,7 +32,11 @@ void PhoneController::update() {
     player_.update();
     coin_box_.update();
 
-    if (line_.hookChanged() && hook_cb_) {
+    // Suppress hook-change callbacks while the bell is striking: the 48 V drive
+    // couples onto the line and produces spurious off-hook edges that would
+    // otherwise spam the log. Only report changes seen in a settled silent gap.
+    if (line_.hookChanged() && hook_cb_ &&
+        (!bell_.isRinging() || bell_.inSilentGap(RING_ANSWER_GUARD_MS))) {
         hook_cb_(line_.hookState());
     }
 
@@ -74,13 +78,29 @@ void PhoneController::update() {
     // ----- RINGING -----------------------------------------------------------
     case PhoneState::RINGING:
         // Answering an incoming ring — no A+B interaction required.
-        if (line_.hookState() == HookState::OFF_HOOK && line_.hookChanged()) {
+        // The 48 V bell drive couples onto the line and holds the hook sense
+        // high while striking (and briefly after, from rectified charge), so
+        // only trust the hook state deep inside a settled silent gap — in
+        // practice the long 2 s gap. A genuine handset lift is caught within
+        // one cadence cycle (<3 s).
+        if (bell_.inSilentGap(RING_ANSWER_GUARD_MS) &&
+            line_.hookState() == HookState::OFF_HOOK) {
+            Serial.printf("[phone] ring answered in silent gap (raw=%d)\n",
+                          line_.lastRawReading());
             bell_.stopRinging();
             enterState(PhoneState::PLAYING_HISTORY);
             break;
         }
-        // Ring count limit: one cadence cycle ≈ 3s.
-        if (max_ring_cadences_ > 0) {
+        // Fixed-duration test ring — stop after the requested time.
+        if (test_ring_end_ && millis() >= test_ring_end_) {
+            test_ring_end_ = 0;
+            bell_.stopRinging();
+            enterState(PhoneState::IDLE);
+            Serial.println("[phone] test ring finished");
+            break;
+        }
+        // Ring count limit: one cadence cycle ≈ 3s.  Skipped during test ring.
+        if (!test_ring_end_ && max_ring_cadences_ > 0) {
             unsigned long elapsed = millis() - state_enter_time_;
             int cadences = elapsed / 3000;
             if (cadences >= max_ring_cadences_) {
@@ -115,21 +135,27 @@ void PhoneController::update() {
             enterState(PhoneState::IDLE);
             break;
         }
-        if (dial_.update(line_.isLineBreak())) {
-            player_.stop();
-            uint8_t d = dial_.digit();
-            if (dial_pos_ < MAX_DIALLED_DIGITS) {
-                dialled_[dial_pos_++] = '0' + d;
-                dialled_[dial_pos_]   = '\0';
+        {
+            bool digitDone = dial_.update(line_.isLineBreak());
+            if (dial_.pulsed()) {
+                // Dialling has started — click the earpiece per pulse, or at
+                // least silence the dial tone if ticks are disabled.
+                if (dial_ticks_) player_.playClick();
+            } else if (line_.isLineBreak()) {
+                player_.stop();  // kill the dial tone the moment dialling starts
             }
-            last_digit_time_ = millis();
-            if (digit_cb_) digit_cb_(d);
-            Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
-            enterState(PhoneState::DIALING);
-            break;
-        }
-        if (line_.isLineBreak()) {
-            player_.stop();
+            if (digitDone) {
+                uint8_t d = dial_.digit();
+                if (dial_pos_ < MAX_DIALLED_DIGITS) {
+                    dialled_[dial_pos_++] = '0' + d;
+                    dialled_[dial_pos_]   = '\0';
+                }
+                last_digit_time_ = millis();
+                if (digit_cb_) digit_cb_(d);
+                Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
+                enterState(PhoneState::DIALING);
+                break;
+            }
         }
         if (millis() - state_enter_time_ > DIAL_TONE_TIMEOUT_MS) {
             player_.stop();
@@ -144,19 +170,23 @@ void PhoneController::update() {
             enterState(PhoneState::IDLE);
             break;
         }
-        if (dial_.update(line_.isLineBreak())) {
-            uint8_t d = dial_.digit();
-            if (dial_pos_ < MAX_DIALLED_DIGITS) {
-                dialled_[dial_pos_++] = '0' + d;
-                dialled_[dial_pos_]   = '\0';
+        {
+            bool digitDone = dial_.update(line_.isLineBreak());
+            if (dial_.pulsed() && dial_ticks_) player_.playClick();
+            if (digitDone) {
+                uint8_t d = dial_.digit();
+                if (dial_pos_ < MAX_DIALLED_DIGITS) {
+                    dialled_[dial_pos_++] = '0' + d;
+                    dialled_[dial_pos_]   = '\0';
+                }
+                last_digit_time_ = millis();
+                if (digit_cb_) digit_cb_(d);
+                Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
             }
-            last_digit_time_ = millis();
-            if (digit_cb_) digit_cb_(d);
-            Serial.printf("[phone] digit: %d  number: %s\n", d, dialled_);
         }
         // Number complete after inter-digit timeout.
         if (dial_pos_ > 0 &&
-            millis() - last_digit_time_ > NUMBER_COMPLETE_MS) {
+            millis() - last_digit_time_ > number_complete_ms_) {
             Serial.printf("[phone] number complete: %s\n", dialled_);
             if (number_cb_) number_cb_(dialled_);
 
@@ -379,9 +409,20 @@ void PhoneController::update() {
 
 void PhoneController::ring() {
     if (state_ != PhoneState::IDLE) return;
+    test_ring_end_ = 0;
     bell_.startRinging();
     enterState(PhoneState::RINGING);
     Serial.println("[phone] ringing");
+}
+
+void PhoneController::testRing(int seconds) {
+    if (state_ != PhoneState::IDLE) return;
+    if (seconds < 1) seconds = 1;
+    if (seconds > 30) seconds = 30;
+    test_ring_end_ = millis() + (unsigned long)seconds * 1000;
+    bell_.startRinging();
+    enterState(PhoneState::RINGING);
+    Serial.printf("[phone] test ring for %ds\n", seconds);
 }
 
 void PhoneController::cancelRing() {
