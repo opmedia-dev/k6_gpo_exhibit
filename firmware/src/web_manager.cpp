@@ -1188,6 +1188,11 @@ static void handleUpload() {
     HTTPUpload& upload = server.upload();
     static File uploadFile;
 
+    // A large file blocks server.handleClient() for the whole transfer, so
+    // loop()'s watchdog reset never runs. Feed it here (this callback fires
+    // per chunk) or a slow upload trips the 15s watchdog and reboots.
+    esp_task_wdt_reset();
+
     if (upload.status == UPLOAD_FILE_START) {
         String path = server.arg("path");
         if (!path.endsWith("/")) path += "/";
@@ -1355,6 +1360,8 @@ static void handleOTA() {
 
 static void handleOTAUpload() {
     HTTPUpload& upload = server.upload();
+
+    esp_task_wdt_reset();
 
     if (upload.status == UPLOAD_FILE_START) {
         Serial.printf("[web] OTA start: %s\n", upload.filename.c_str());
