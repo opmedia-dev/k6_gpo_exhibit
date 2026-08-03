@@ -741,7 +741,7 @@ function otaUpload(){
   let fd=new FormData(); fd.append('firmware',f);
   xhr.send(fd);
 }
-var uiEdit=0;var _dbt={};
+var uiEdit=0;var _dbt={};var wifiInit=false;
 function touchUI(){uiEdit=Date.now();}
 function debPost(key,url){touchUI();clearTimeout(_dbt[key]);_dbt[key]=setTimeout(function(){fetch(url,{method:'POST'})},150);}
 function setVol(v){
@@ -842,10 +842,14 @@ function loadStatus(){
     document.getElementById('vollbl').textContent=d.volume;
     if(d.bell_freq!==undefined) document.getElementById('bellfreq').value=d.bell_freq;
     if(d.digit_gap!==undefined) document.getElementById('digitgap').value=Math.round(d.digit_gap/1000);
-    if(d.wifi_cfg_mode!==undefined){
+    // Wi-Fi mode/SSID is an operator config choice, not live telemetry:
+    // populate it once on first load, then never let the poll overwrite the
+    // form while it's being filled in (otherwise the selector reverts mid-entry).
+    if(!wifiInit&&d.wifi_cfg_mode!==undefined){
       document.getElementById('wifimode').value=d.wifi_cfg_mode;
       if(d.wifi_cfg_ssid) document.getElementById('wifissid').value=d.wifi_cfg_ssid;
       wifiModeChanged();
+      wifiInit=true;
     }
     if(d.line_level!==undefined){document.getElementById('linelevel').value=d.line_level;document.getElementById('linelevellbl').textContent=d.line_level+'%';}
     if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
