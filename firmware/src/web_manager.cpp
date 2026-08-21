@@ -148,13 +148,25 @@ static String buildProbe(PhoneController& p) {
 // drops the client). Stream it in small chunks and feed the watchdog between
 // each one, and give up early if the browser goes away.
 static void handleIndex() {
+    // The blob only changes with the firmware, so let a browser that already has
+    // it skip the transfer entirely rather than re-fetching it on every load.
+    const String etag = String("\"") + FIRMWARE_VERSION + "-" +
+                        String((unsigned long)PORTAL_HTML_GZ_LEN) + "\"";
+    if (server.header("If-None-Match") == etag) {
+        server.sendHeader("ETag", etag);
+        server.send(304, "text/html", "");
+        return;
+    }
+
     server.sendHeader("Content-Encoding", "gzip");
+    server.sendHeader("ETag", etag);
     server.sendHeader("Cache-Control", "no-cache");
     server.setContentLength(PORTAL_HTML_GZ_LEN);
     server.send(200, "text/html", "");
 
     WiFiClient client = server.client();
-    constexpr size_t CHUNK = 1024;
+    client.setNoDelay(true);
+    constexpr size_t CHUNK = 2048;
     for (size_t sent = 0; sent < PORTAL_HTML_GZ_LEN; ) {
         if (!client.connected()) break;
         size_t n = PORTAL_HTML_GZ_LEN - sent;
@@ -193,6 +205,21 @@ fieldset{margin-bottom:1.5em}</style></head><body>
 
 static void handleRecovery() {
     server.send_P(200, "text/html", RECOVERY_HTML);
+}
+
+// Phones and laptops probe well-known URLs to decide whether a joined network
+// has internet, repeatedly and in the background. Answer them as they expect so
+// the OS stops asking: otherwise they fall through to onNotFound, and a redirect
+// there makes each probe fetch the whole ~120 kB portal over the single
+// connection the real page load needs.
+static void handleCaptiveProbe() {
+    if (server.uri().endsWith("204")) {
+        server.send(204, "text/plain", "");
+    } else {
+        server.send(200, "text/html",
+                    "<HTML><HEAD><TITLE>Success</TITLE></HEAD>"
+                    "<BODY>Success</BODY></HTML>");
+    }
 }
 
 static void handleFileList() {
@@ -1266,6 +1293,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     if (s_wifi_sta && s_sta_ssid.length()) {
         Serial.printf("[web] joining Wi-Fi \"%s\"...\n", s_sta_ssid.c_str());
         WiFi.mode(WIFI_STA);
+        WiFi.setSleep(false);
         WiFi.begin(s_sta_ssid.c_str(), s_sta_pass.c_str());
         unsigned long t0 = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(250);
@@ -1282,6 +1310,9 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
         WiFi.mode(WIFI_AP);
         WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
         delay(100);
+        // Modem sleep adds latency to every packet; over a 120 kB page that is
+        // the difference between a second and a browser timeout.
+        WiFi.setSleep(false);
         Serial.printf("[web] AP \"%s\" started — http://%s/\n",
                       WIFI_AP_SSID, WiFi.softAPIP().toString().c_str());
     }
@@ -1331,11 +1362,19 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/reboot",      HTTP_POST, handleReboot);
     server.on("/manifest.json",   HTTP_GET,  handleManifest);
     server.on("/sw.js",           HTTP_GET,  handleServiceWorker);
+    server.on("/favicon.ico",     HTTP_GET,  []() { server.send(204, "image/x-icon", ""); });
+    server.on("/generate_204",       HTTP_GET, handleCaptiveProbe);
+    server.on("/gen_204",            HTTP_GET, handleCaptiveProbe);
+    server.on("/hotspot-detect.html",HTTP_GET, handleCaptiveProbe);
+    server.on("/ncsi.txt",           HTTP_GET, handleCaptiveProbe);
+    server.on("/connecttest.txt",    HTTP_GET, handleCaptiveProbe);
 
-    // Silence the "request handler not found" spam from favicon/OS captive-
-    // portal probes: redirect stray GETs to the portal, 404 everything else.
+    // Stray GETs go to the portal, but only ones that look like a page: sending
+    // a browser fetching some asset to the 120 kB index wastes the link.
     server.onNotFound([]() {
-        if (server.method() == HTTP_GET && !server.uri().startsWith("/api/")) {
+        bool looksLikeAsset = server.uri().lastIndexOf('.') >= 0;
+        if (server.method() == HTTP_GET && !server.uri().startsWith("/api/") &&
+            !looksLikeAsset) {
             server.sendHeader("Location",
                               String("http://") + currentIP().toString() + "/");
             server.send(302, "text/plain", "redirecting");
@@ -1343,6 +1382,10 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
             server.send(404, "text/plain", "not found");
         }
     });
+
+    // WebServer discards request headers unless they are asked for by name.
+    const char* wanted[] = { "If-None-Match" };
+    server.collectHeaders(wanted, 1);
 
     server.begin();
     active_ = true;
