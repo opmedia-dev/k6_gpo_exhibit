@@ -12,7 +12,55 @@
 #include <esp_task_wdt.h>
 #include <ArduinoJson.h>
 
-static WebServer server(80);
+// WebServer serves one connection at a time and, when a client connects without
+// sending a request, holds the server for HTTP_MAX_DATA_WAIT (5 s) before giving
+// up on it. Browsers routinely open speculative connections they never use, and
+// each one stalls every other request for those 5 s, so a handful of them delays
+// a page load by tens of seconds. HTTP_MAX_DATA_WAIT is a hard-coded macro, so
+// the accept loop is reimplemented here with a wait short enough that an unused
+// connection costs little; a real request always arrives immediately after the
+// handshake.
+class PromptWebServer : public WebServer {
+public:
+    explicit PromptWebServer(int port) : WebServer(port) {}
+
+    void handleClient() {
+        // Generous next to a link RTT of a few ms, but a small fraction of the
+        // 5 s it replaces. A genuine request follows its handshake immediately.
+        constexpr unsigned long IDLE_CLIENT_WAIT_MS = 500;
+
+        if (_currentStatus == HC_NONE) {
+            _currentClient = _server.available();
+            if (!_currentClient) return;
+            _currentStatus  = HC_WAIT_READ;
+            _statusChange   = millis();
+        }
+
+        bool keepCurrentClient = false;
+
+        if (_currentClient.connected()) {
+            if (_currentClient.available()) {
+                if (_parseRequest(_currentClient)) {
+                    _currentClient.setTimeout(HTTP_MAX_SEND_WAIT / 1000);
+                    _contentLength = CONTENT_LENGTH_NOT_SET;
+                    _handleRequest();
+                }
+            } else if (millis() - _statusChange <= IDLE_CLIENT_WAIT_MS) {
+                keepCurrentClient = true;
+            }
+        }
+
+        if (!keepCurrentClient) {
+            _currentClient.stop();
+            _currentClient = WiFiClient();
+            _currentStatus = HC_NONE;
+            _currentUpload.reset();
+            _currentRaw.reset();
+        }
+    }
+};
+
+static PromptWebServer server(80);
 static Logger* s_logger = nullptr;
 static StatsTracker* s_stats = nullptr;
 static PhoneController* s_phone = nullptr;
