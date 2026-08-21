@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Terminal as TerminalIcon, Send, Cpu, Volume2, PhoneCall, PlayCircle, StopCircle } from "lucide-react"
+import { Terminal as TerminalIcon, Send, Cpu, Volume2, PhoneCall, PlayCircle } from "lucide-react"
 
 export function TerminalTab() {
   const [output, setOutput] = useState([
@@ -124,9 +124,6 @@ export function TerminalTab() {
             </Button>
             <Button variant="outline" className="justify-start" onClick={() => quickCmd('dialecho')} disabled={busy}>
               <PlayCircle className="w-4 h-4 mr-2" /> Dial Echo Toggle
-            </Button>
-            <Button variant="outline" className="justify-start" onClick={() => quickCmd('ticks')} disabled={busy}>
-              <StopCircle className="w-4 h-4 mr-2" /> Dial Ticks Toggle
             </Button>
           </div>
         </div>

@@ -161,7 +161,7 @@ export function StatsTab() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 sm:px-4">
           {numbersTried.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground text-sm">No unknown numbers recorded.</div>
           ) : (
@@ -199,7 +199,7 @@ export function StatsTab() {
           </CardTitle>
           <CardDescription>Map dialled numbers to audio files in /numbers/</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 sm:px-4">
           <Table>
             <TableHeader>
               <TableRow>

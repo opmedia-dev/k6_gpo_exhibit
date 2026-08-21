@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -19,6 +19,7 @@ export function DiagnosticsTab() {
   const [diag, setDiag] = useState<DiagData>({})
   const [logText, setLogText] = useState('Select a log to view.')
   const [curLog, setCurLog] = useState('system')
+  const logRef = useRef<HTMLPreElement>(null)
   const [sysInfo, setSysInfo] = useState<StatusData>({})
 
   useEffect(() => {
@@ -36,6 +37,12 @@ export function DiagnosticsTab() {
       .then(t => setLogText(t || '(empty)'))
       .catch(() => setLogText('Failed to load log.'))
   }
+
+  // Newest entries are appended, so keep the view pinned to the bottom.
+  useEffect(() => {
+    const el = logRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [logText])
 
   const clearLog = () => {
     if (!confirm('Clear ' + curLog + ' log?')) return
@@ -67,7 +74,7 @@ export function DiagnosticsTab() {
           </CardTitle>
           <CardDescription>Hardware and system errors since last power-on</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 sm:px-4">
           {errors.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground text-sm">No errors recorded since last power-on.</div>
           ) : (
@@ -115,7 +122,7 @@ export function DiagnosticsTab() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <pre className="p-4 text-xs font-mono text-muted-foreground bg-[#0a0a0a] overflow-x-auto m-0 max-h-[300px] overflow-y-auto whitespace-pre-wrap">
+          <pre ref={logRef} className="p-4 text-xs font-mono text-muted-foreground bg-[#0a0a0a] overflow-x-auto m-0 max-h-[300px] overflow-y-auto whitespace-pre-wrap">
             {logText}
           </pre>
         </CardContent>
@@ -154,7 +161,7 @@ export function DiagnosticsTab() {
             </CardTitle>
             <CardDescription>On-hook ADC readings at each boot</CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="p-0 sm:px-4">
             {!diag.boot_lines?.length ? (
               <div className="p-6 text-center text-muted-foreground text-sm">No boot readings recorded yet.</div>
             ) : (

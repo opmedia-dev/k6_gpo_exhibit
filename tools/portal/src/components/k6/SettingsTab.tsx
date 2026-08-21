@@ -98,12 +98,21 @@ export function SettingsTab() {
   }
 
   // Files
+  // Guard against double or missing slashes when descending into folders, and
+  // against a listing that reports full paths rather than bare entry names.
+  const joinPath = (dir: string, name: string) =>
+    (dir.endsWith('/') ? dir : dir + '/') + name.replace(/^\/+/, '')
+  const baseName = (name: string) =>
+    name.replace(/\/+$/, '').split('/').pop() ?? name
+
   const loadFiles = (path: string) => {
-    setCwd(path)
-    fetch('/api/files?path=' + encodeURIComponent(path))
+    const dir = path.endsWith('/') ? path : path + '/'
+    setCwd(dir)
+    setFiles([])
+    fetch('/api/files?path=' + encodeURIComponent(dir))
       .then(r => r.json())
       .then((d: FileEntry[]) => {
-        setFiles((d || []).sort((a, b) => (b.dir ? 1 : 0) - (a.dir ? 1 : 0) || a.name.localeCompare(b.name)))
+        setFiles((d || []).map(f => ({ ...f, name: baseName(f.name) })).sort((a, b) => (b.dir ? 1 : 0) - (a.dir ? 1 : 0) || a.name.localeCompare(b.name)))
       }).catch(() => {})
   }
 
@@ -115,7 +124,7 @@ export function SettingsTab() {
 
   const delFile = (name: string) => {
     if (!confirm('Delete ' + name + '?')) return
-    fetch('/api/delete?path=' + encodeURIComponent(cwd + name), { method: 'POST' })
+    fetch('/api/delete?path=' + encodeURIComponent(joinPath(cwd, name)), { method: 'POST' })
       .then(r => r.json())
       .then(d => { setUpStatus(d.ok ? 'Deleted' : (d.error ?? 'Error')); loadFiles(cwd) })
       .catch(() => {})
@@ -123,13 +132,13 @@ export function SettingsTab() {
 
   const playFile = (name: string) => {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
-    const a = new Audio('/api/preview?path=' + encodeURIComponent(cwd + name))
+    const a = new Audio('/api/preview?path=' + encodeURIComponent(joinPath(cwd, name)))
     audioRef.current = a; a.play().catch(() => {})
   }
 
   const mkdirPrompt = () => {
     const n = prompt('Folder name:'); if (!n) return
-    fetch('/api/mkdir?path=' + encodeURIComponent(cwd + n), { method: 'POST' })
+    fetch('/api/mkdir?path=' + encodeURIComponent(joinPath(cwd, n)), { method: 'POST' })
       .then(r => r.json()).then(d => { setUpStatus(d.ok ? 'Created' : (d.error ?? 'Error')); loadFiles(cwd) }).catch(() => {})
   }
 
@@ -418,7 +427,7 @@ export function SettingsTab() {
                     <TableCell className="w-[30px]">
                       {f.dir ? <Folder className="w-4 h-4 text-amber-500" /> : <FileAudio className="w-4 h-4 text-muted-foreground" />}
                     </TableCell>
-                    <TableCell className="font-mono text-sm cursor-pointer" onClick={() => f.dir && loadFiles(cwd + f.name + '/')}>{f.name}{f.dir ? '/' : ''}</TableCell>
+                    <TableCell className="font-mono text-sm cursor-pointer" onClick={() => f.dir && loadFiles(joinPath(cwd, f.name))}>{f.name}{f.dir ? '/' : ''}</TableCell>
                     <TableCell className="text-xs text-muted-foreground text-right">{!f.dir && sz}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -429,8 +438,10 @@ export function SettingsTab() {
                   </TableRow>
                 )
               })}
-              {files.length === 0 && cwd === '/' && (
-                <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-6">SD card empty or not mounted</TableCell></TableRow>
+              {files.length === 0 && (
+                <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-6">
+                  {cwd === '/' ? 'SD card empty or not mounted' : 'This folder is empty.'}
+                </TableCell></TableRow>
               )}
             </TableBody>
           </Table>

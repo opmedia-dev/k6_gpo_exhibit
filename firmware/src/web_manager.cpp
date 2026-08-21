@@ -142,11 +142,57 @@ static String buildProbe(PhoneController& p) {
 
 // --- API handlers -----------------------------------------------------------
 
+// The compressed portal is ~120 kB, which over a weak AP link can take longer
+// than the task watchdog window to push out. A single blocking send therefore
+// risks a watchdog reboot mid-page-load (the page never arrives, and the reboot
+// drops the client). Stream it in small chunks and feed the watchdog between
+// each one, and give up early if the browser goes away.
 static void handleIndex() {
     server.sendHeader("Content-Encoding", "gzip");
-    server.send_P(200, "text/html",
-                  reinterpret_cast<const char*>(PORTAL_HTML_GZ),
-                  PORTAL_HTML_GZ_LEN);
+    server.sendHeader("Cache-Control", "no-cache");
+    server.setContentLength(PORTAL_HTML_GZ_LEN);
+    server.send(200, "text/html", "");
+
+    WiFiClient client = server.client();
+    constexpr size_t CHUNK = 1024;
+    for (size_t sent = 0; sent < PORTAL_HTML_GZ_LEN; ) {
+        if (!client.connected()) break;
+        size_t n = PORTAL_HTML_GZ_LEN - sent;
+        if (n > CHUNK) n = CHUNK;
+        size_t wrote = client.write(PORTAL_HTML_GZ + sent, n);
+        esp_task_wdt_reset();
+        if (wrote == 0) break;
+        sent += wrote;
+    }
+}
+
+// Minimal, dependency-free recovery page. The main portal is a large compiled
+// app; if it ever fails to load, this stays reachable at /recovery so firmware
+// can still be re-flashed and the board rebooted without a USB cable.
+static const char RECOVERY_HTML[] PROGMEM = R"rawhtml(<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K6 Recovery</title>
+<style>body{font-family:sans-serif;margin:2em;max-width:34em}
+h1{font-size:1.3em}button{padding:.6em 1.2em;margin-top:.5em}
+fieldset{margin-bottom:1.5em}</style></head><body>
+<h1>K6 Exhibit &mdash; Recovery</h1>
+<p>Minimal page for when the main portal will not load.</p>
+<fieldset><legend>Firmware update</legend>
+<form method="POST" action="/api/ota" enctype="multipart/form-data">
+<input type="file" name="file" accept=".bin" required>
+<button type="submit">Upload &amp; install</button></form>
+<p><small>Takes a minute; the board reboots when finished.</small></p>
+</fieldset>
+<fieldset><legend>Other</legend>
+<button onclick="fetch('/api/reboot',{method:'POST'})">Reboot</button>
+<button onclick="location.href='/api/status'">View status JSON</button>
+<button onclick="location.href='/'">Try main portal</button>
+</fieldset></body></html>
+)rawhtml";
+
+static void handleRecovery() {
+    server.send_P(200, "text/html", RECOVERY_HTML);
 }
 
 static void handleFileList() {
@@ -154,7 +200,14 @@ static void handleFileList() {
     if (path.isEmpty()) path = "/";
     if (!path.endsWith("/")) path += "/";
 
-    File dir = SD.open(path);
+    // Some FS layers refuse a directory path with a trailing slash, so open the
+    // bare form ("/numbers" rather than "/numbers/"); root stays as "/".
+    String openPath = path;
+    while (openPath.length() > 1 && openPath.endsWith("/")) {
+        openPath.remove(openPath.length() - 1);
+    }
+
+    File dir = SD.open(openPath);
     if (!dir || !dir.isDirectory()) {
         server.send(200, "application/json", "[]");
         return;
@@ -166,8 +219,14 @@ static void handleFileList() {
     while ((entry = dir.openNextFile())) {
         if (!first) json += ",";
         first = false;
+        // name() is the bare entry name on this core, but has returned a full
+        // path on others -- keep only the final segment either way.
+        String name = entry.name();
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+
         json += "{\"name\":\"";
-        json += entry.name();
+        json += jsonEscape(name);
         json += "\",\"size\":";
         json += String(entry.size());
         json += ",\"dir\":";
@@ -1233,6 +1292,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     }
 
     server.on("/",                HTTP_GET,  handleIndex);
+    server.on("/recovery",        HTTP_GET,  handleRecovery);
     server.on("/api/files",       HTTP_GET,  handleFileList);
     server.on("/api/upload",      HTTP_POST, handleUploadComplete, handleUpload);
     server.on("/api/delete",      HTTP_POST, handleDelete);
