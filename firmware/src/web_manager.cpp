@@ -1383,6 +1383,10 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
         }
     });
 
+    // Allow local diagnostic pages opened from a file:// URL to call the API;
+    // without this a browser refuses the cross-origin request.
+    server.enableCORS(true);
+
     // WebServer discards request headers unless they are asked for by name.
     const char* wanted[] = { "If-None-Match" };
     server.collectHeaders(wanted, 1);
