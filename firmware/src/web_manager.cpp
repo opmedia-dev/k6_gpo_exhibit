@@ -12,6 +12,7 @@
 #include <esp_task_wdt.h>
 #include <ArduinoJson.h>
 #include <lwip/sockets.h>
+#include <esp_wifi.h>
 
 // Counters behind the diagnostic fields in /api/status. Latency on the AP link
 // cannot be reproduced away from the hardware, so the board reports where the
@@ -104,6 +105,22 @@ static bool   s_wifi_sta   = false;
 static String s_sta_ssid;
 static String s_sta_pass;
 static bool   s_ap_active  = true;
+
+// 2.4 GHz channel for our own AP. Congestion from neighbouring networks is a
+// common cause of poor throughput, and moving channel is the cheapest remedy.
+static uint8_t s_ap_channel = 1;
+
+// Signal strength of the connected station, so a weak radio link can be told
+// apart from a congested channel. Returns 0 when nothing is connected.
+static int apStationRssi() {
+    wifi_sta_list_t stations;
+    if (esp_wifi_ap_get_sta_list(&stations) != ESP_OK || stations.num == 0) return 0;
+    int best = stations.sta[0].rssi;
+    for (int i = 1; i < stations.num; i++) {
+        if (stations.sta[i].rssi > best) best = stations.sta[i].rssi;
+    }
+    return best;
+}
 
 // Current portal IP for captive-portal redirects (AP or STA address).
 static IPAddress currentIP() { return s_ap_active ? WiFi.softAPIP() : WiFi.localIP(); }
@@ -465,6 +482,9 @@ static void handleStatus() {
     json += ",\"web_max\":";  json += String(s_web_max_ms);
     json += ",\"conn\":";     json += String(s_conn_total);
     json += ",\"conn_idle\":"; json += String(s_conn_idle);
+    json += ",\"channel\":"; json += String(WiFi.channel());
+    json += ",\"rssi\":";    json += String(s_ap_active ? apStationRssi() : WiFi.RSSI());
+    json += ",\"clients\":"; json += String(s_ap_active ? WiFi.softAPgetStationNum() : 0);
     if (server.hasArg("reset")) {
         s_loop_max_ms = 0;
         s_web_max_ms  = 0;
@@ -640,6 +660,10 @@ static void handleDigitGap() {
 // Configure Wi-Fi mode (host own AP vs join existing network). Persists the
 // choice and reboots so the new mode takes effect from a clean boot.
 static void handleWifi() {
+    if (server.hasArg("channel")) {
+        int ch = server.arg("channel").toInt();
+        if (ch >= 1 && ch <= 13) s_ap_channel = (uint8_t)ch;
+    }
     String mode = server.arg("mode");
     if (mode == "sta") {
         s_wifi_sta  = true;
@@ -1223,6 +1247,10 @@ static void loadSettings() {
     s_wifi_sta = doc["wifi_sta"].as<bool>();
     if (!doc["wifi_ssid"].isNull()) s_sta_ssid = doc["wifi_ssid"].as<const char*>();
     if (!doc["wifi_pass"].isNull()) s_sta_pass = doc["wifi_pass"].as<const char*>();
+    if (!doc["ap_channel"].isNull()) {
+        uint8_t ch = doc["ap_channel"].as<uint8_t>();
+        if (ch >= 1 && ch <= 13) s_ap_channel = ch;
+    }
     if (!doc["ar_min"].isNull() && !doc["ar_max"].isNull()) {
         s_phone->setAutoRingInterval(
             doc["ar_min"].as<unsigned long>(),
@@ -1256,6 +1284,7 @@ static void saveSettings() {
     doc["wifi_sta"]  = s_wifi_sta;
     doc["wifi_ssid"] = s_sta_ssid;
     doc["wifi_pass"] = s_sta_pass;
+    doc["ap_channel"] = s_ap_channel;
     doc["ar_min"]   = s_phone->autoRingMinMs();
     doc["ar_max"]   = s_phone->autoRingMaxMs();
     doc["ring_max"] = s_phone->maxRingCadences();
@@ -1395,7 +1424,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
         if (s_wifi_sta) Serial.println("[web] Wi-Fi join failed — hosting own AP instead");
         s_ap_active = true;
         WiFi.mode(WIFI_AP);
-        WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
+        WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS, s_ap_channel);
         delay(100);
         // Modem sleep adds latency to every packet; over a 120 kB page that is
         // the difference between a second and a browser timeout.

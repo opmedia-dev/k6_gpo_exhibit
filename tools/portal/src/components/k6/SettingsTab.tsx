@@ -32,6 +32,8 @@ export function SettingsTab() {
   const [ssid, setSsid] = useState("")
   const [wifiPass, setWifiPass] = useState("")
   const [wifiStatus, setWifiStatus] = useState("")
+  const [apChannel, setApChannel] = useState("1")
+  const [rssi, setRssi] = useState<number | null>(null)
   // Coin
   const [coinMode, setCoinModeVal] = useState("-1")
   const [coinActive, setCoinActive] = useState(false)
@@ -72,9 +74,11 @@ export function SettingsTab() {
       if (d.alert_idle !== undefined) setAlertIdle(String(d.alert_idle))
       if (d.ar_min !== undefined) { setArMin(String(Math.round(d.ar_min / 60000))); setArMax(String(Math.round(d.ar_max / 60000))) }
       if (d.coin_override !== undefined) { setCoinModeVal(String(d.coin_override)); setCoinActive(!!d.coin_active) }
+      if (d.rssi !== undefined) setRssi(d.rssi)
       if (!wifiInitRef.current && d.wifi_cfg_mode !== undefined) {
         setWifiMode(d.wifi_cfg_mode)
         if (d.wifi_cfg_ssid) setSsid(d.wifi_cfg_ssid)
+        if (d.channel !== undefined) setApChannel(String(d.channel))
         wifiInitRef.current = true
       }
     }).catch(() => {})
@@ -224,7 +228,7 @@ export function SettingsTab() {
       : 'The telephone will restart and host its own K6-Exhibit hotspot.'
     if (!confirm(msg)) return
     setWifiStatus('Saving and restarting…')
-    fetch('/api/wifi?mode=' + wifiMode + '&ssid=' + encodeURIComponent(ssid) + '&pass=' + encodeURIComponent(wifiPass), { method: 'POST' })
+    fetch('/api/wifi?mode=' + wifiMode + '&channel=' + apChannel + '&ssid=' + encodeURIComponent(ssid) + '&pass=' + encodeURIComponent(wifiPass), { method: 'POST' })
       .then(() => { setTimeout(() => location.reload(), 9000) })
       .catch(() => setWifiStatus('Restarting… reconnect to the telephone network.'))
   }
@@ -346,6 +350,23 @@ export function SettingsTab() {
               </SelectContent>
             </Select>
           </div>
+          {wifiMode === 'ap' && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hotspot Channel</label>
+              <Select value={apChannel} onValueChange={setApChannel}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['1','6','11','2','3','4','5','7','8','9','10','12','13'].map(c => (
+                    <SelectItem key={c} value={c}>Channel {c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Try 1, 6 or 11 first — they don't overlap. A busy channel makes the portal slow to load.
+                {rssi !== null && rssi !== 0 && <> Signal to this device: <span className="font-mono">{rssi} dBm</span>{rssi > -60 ? ' (strong)' : rssi > -70 ? ' (usable)' : ' (weak)'}.</>}
+              </p>
+            </div>
+          )}
           {wifiMode === 'sta' && (
             <>
               <div className="space-y-2">
