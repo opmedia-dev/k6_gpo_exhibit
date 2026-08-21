@@ -45,7 +45,13 @@ public:
                     _contentLength = CONTENT_LENGTH_NOT_SET;
                     _handleRequest();
                 }
-            } else if (millis() - _statusChange <= IDLE_CLIENT_WAIT_MS) {
+            } else if (millis() - _statusChange <= IDLE_CLIENT_WAIT_MS &&
+                       !_server.hasClient()) {
+                // Waiting on a silent connection only costs anything when
+                // somebody else wants serving, so give up on it the moment
+                // another connection is queued behind it. hasClient() accepts
+                // that connection into the server's own slot, so the next
+                // available() call returns it rather than losing it.
                 keepCurrentClient = true;
             }
         }
