@@ -25,6 +25,10 @@ public:
     // serial calibration command so tuned thresholds survive a reboot.
     void persistSettings();
 
+    // Clear the loop/connection timing counters reported by /api/status so a
+    // measurement can be taken over a known window.
+    void resetTimingStats();
+
     // Diagnostics shared with the web terminal, for use from the serial console.
     String selfTest();
     String audioProbe();

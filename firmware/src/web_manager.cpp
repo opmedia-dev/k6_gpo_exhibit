@@ -11,6 +11,17 @@
 #include <esp_ota_ops.h>
 #include <esp_task_wdt.h>
 #include <ArduinoJson.h>
+#include <lwip/sockets.h>
+
+// Counters behind the diagnostic fields in /api/status. Latency on the AP link
+// cannot be reproduced away from the hardware, so the board reports where the
+// time goes instead: how long the main loop is blocked, how long a single
+// handleClient() call takes, and how many connections arrive versus how many
+// never send a request.
+static unsigned long s_loop_max_ms = 0;
+static unsigned long s_web_max_ms  = 0;
+static uint32_t      s_conn_total  = 0;
+static uint32_t      s_conn_idle   = 0;
 
 // WebServer serves one connection at a time and, when a client connects without
 // sending a request, holds the server for HTTP_MAX_DATA_WAIT (5 s) before giving
@@ -34,6 +45,7 @@ public:
             if (!_currentClient) return;
             _currentStatus  = HC_WAIT_READ;
             _statusChange   = millis();
+            s_conn_total++;
         }
 
         bool keepCurrentClient = false;
@@ -53,10 +65,21 @@ public:
                 // that connection into the server's own slot, so the next
                 // available() call returns it rather than losing it.
                 keepCurrentClient = true;
+            } else {
+                s_conn_idle++;
             }
         }
 
         if (!keepCurrentClient) {
+            // Close with a reset rather than a graceful shutdown. A graceful
+            // close leaves the socket in TIME_WAIT for tens of seconds, and lwIP
+            // has only a handful of sockets: once they are all held, no new
+            // connection can be accepted until some expire, which stalls every
+            // request behind it for seconds.
+            struct linger sl;
+            sl.l_onoff  = 1;
+            sl.l_linger = 0;
+            _currentClient.setSocketOption(SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
             _currentClient.stop();
             _currentClient = WiFiClient();
             _currentStatus = HC_NONE;
@@ -438,6 +461,16 @@ static void handleStatus() {
     json += ",\"sd_used\":";  json += String((uint32_t)(SD.usedBytes() / (1024 * 1024)));
     json += ",\"uptime\":";  json += String(millis() / 1000);
     json += ",\"firmware\":\"" FIRMWARE_VERSION "\"";
+    json += ",\"loop_max\":"; json += String(s_loop_max_ms);
+    json += ",\"web_max\":";  json += String(s_web_max_ms);
+    json += ",\"conn\":";     json += String(s_conn_total);
+    json += ",\"conn_idle\":"; json += String(s_conn_idle);
+    if (server.hasArg("reset")) {
+        s_loop_max_ms = 0;
+        s_web_max_ms  = 0;
+        s_conn_total  = 0;
+        s_conn_idle   = 0;
+    }
     json += ",\"volume\":";  json += String(s_phone->player().getVolume());
     json += ",\"bell_freq\":"; json += String(s_phone->bell().ringFreq());
     json += ",\"digit_gap\":"; json += String(s_phone->numberCompleteMs());
@@ -1454,7 +1487,28 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
 }
 
 void WebManager::update() {
-    if (active_) server.handleClient();
+    // Gap since the previous call is how long everything else in loop() took, so
+    // a large value means the board is blocked elsewhere rather than in the
+    // network stack.
+    static unsigned long last_update_ms = 0;
+    unsigned long now = millis();
+    if (last_update_ms != 0 && now - last_update_ms > s_loop_max_ms) {
+        s_loop_max_ms = now - last_update_ms;
+    }
+    last_update_ms = now;
+
+    if (active_) {
+        server.handleClient();
+        unsigned long spent = millis() - now;
+        if (spent > s_web_max_ms) s_web_max_ms = spent;
+    }
+}
+
+void WebManager::resetTimingStats() {
+    s_loop_max_ms = 0;
+    s_web_max_ms  = 0;
+    s_conn_total  = 0;
+    s_conn_idle   = 0;
 }
 
 void WebManager::persistSettings() {
