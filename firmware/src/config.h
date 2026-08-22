@@ -48,7 +48,7 @@ constexpr const char* WIFI_AP_SSID = "K6-Exhibit";
 constexpr const char* WIFI_AP_PASS = "phonebox";    // min 8 chars for WPA2
 
 // --- Firmware version --------------------------------------------------------
-#define FIRMWARE_VERSION "1.3.2"
+#define FIRMWARE_VERSION "1.5.0"
 
 // --- Timing constants -------------------------------------------------------
 

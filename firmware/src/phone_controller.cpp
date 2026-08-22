@@ -447,6 +447,40 @@ void PhoneController::hangUp() {
     }
 }
 
+// Dialling from the portal joins the same path as the rotary dial rather than
+// playing a file directly, so plugins, aliases, the coin box and the ringing
+// tone all behave exactly as they do for a visitor. The number is entered in
+// one go and then backdated past the inter-digit gap, which makes the DIALING
+// state complete it on its next pass.
+bool PhoneController::dialRemote(const char* number) {
+    if (!number) return false;
+    if (line_.hookState() != HookState::OFF_HOOK) return false;
+    if (state_ != PhoneState::DIAL_TONE && state_ != PhoneState::DIALING) return false;
+
+    char digits[MAX_DIALLED_DIGITS + 1];
+    uint8_t n = 0;
+    for (const char* p = number; *p && n < MAX_DIALLED_DIGITS; p++) {
+        if (*p < '0' || *p > '9') continue;
+        digits[n++] = *p;
+    }
+    digits[n] = '\0';
+    if (n == 0) return false;
+
+    if (state_ != PhoneState::DIALING) enterState(PhoneState::DIALING);
+
+    dial_.reset();
+    memcpy(dialled_, digits, n + 1);
+    dial_pos_ = n;
+    for (uint8_t i = 0; i < n; i++) {
+        if (digit_cb_) digit_cb_(digits[i] - '0');
+    }
+
+    player_.stop();  // as the dial tone stops when a real dial is turned
+    last_digit_time_ = millis() - number_complete_ms_ - 1;
+    Serial.printf("[phone] dialled remotely: %s\n", dialled_);
+    return true;
+}
+
 void PhoneController::enterState(PhoneState s) {
     state_            = s;
     state_enter_time_ = millis();

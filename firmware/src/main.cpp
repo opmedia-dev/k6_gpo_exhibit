@@ -345,6 +345,34 @@ static void handleSerial() {
         }
         break;
     }
+    case 'W': {
+        // Wi-Fi report, and "W <1-13>" to move the hotspot to a channel.
+        String arg = readSerialLine();
+        arg.trim();
+        if (arg.length()) {
+            int ch = arg.toInt();
+            if (web.setApChannel((uint8_t)ch)) {
+                Serial.printf("[cmd] AP channel -> %d, restarting to apply\n", ch);
+                delay(200);
+                ESP.restart();
+            } else {
+                Serial.println("[cmd] usage: W          report");
+                Serial.println("[cmd]        W <1-13>  set hotspot channel (restarts)");
+            }
+        } else {
+            Serial.println(web.wifiReport());
+        }
+        break;
+    }
+    case 'G': {
+        Serial.printf("[cmd] request trace %s\n", web.toggleWebTrace() ? "ON" : "OFF");
+        break;
+    }
+    case 'Z': {
+        web.resetTimingStats();
+        Serial.println("[cmd] timing counters cleared");
+        break;
+    }
     case 'P': {
         // Play a file directly, regardless of hook state. Reads the rest of
         // the line as the path, e.g.  "P /history/test.wav".
@@ -425,6 +453,7 @@ void setup() {
 
     Serial.println("[app] commands: R=ring  H=hangup  C=cancel  S=status  A=auto-ring  V0-9=vol  P <path>=play file");
     Serial.println("[app] diagnostics: T=self-test  K=calibrate line  E=dial echo  I=dial ticks  Q=audio probe  N=line debug");
+    Serial.println("[app] network: W=wi-fi report+channel survey  W <1-13>=set channel  G=trace requests  Z=clear timers");
     Serial.printf("[app] mode: %s (lamp %s)\n",
                   phone.autoRingEnabled() ? "AUTO" : "MANUAL",
                   phone.autoRingEnabled() ? "ON" : "OFF");

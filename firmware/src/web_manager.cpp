@@ -1,6 +1,7 @@
 #include "web_manager.h"
 #include "phone_controller.h"
 #include "config.h"
+#include "portal_html.h"
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -10,8 +11,98 @@
 #include <esp_ota_ops.h>
 #include <esp_task_wdt.h>
 #include <ArduinoJson.h>
+#include <lwip/sockets.h>
+#include <esp_wifi.h>
 
-static WebServer server(80);
+// Counters behind the diagnostic fields in /api/status. Latency on the AP link
+// cannot be reproduced away from the hardware, so the board reports where the
+// time goes instead: how long the main loop is blocked, how long a single
+// handleClient() call takes, and how many connections arrive versus how many
+// never send a request.
+static unsigned long s_loop_max_ms = 0;
+static unsigned long s_web_max_ms  = 0;
+static uint32_t      s_conn_total  = 0;
+static uint32_t      s_conn_idle   = 0;
+
+// Per-request serial trace, off by default. A summary counter says how bad the
+// worst case was but not which request it was, so with a cable attached this
+// prints every request as it completes: the slow ones stand out immediately.
+static bool s_web_trace = false;
+
+// WebServer serves one connection at a time and, when a client connects without
+// sending a request, holds the server for HTTP_MAX_DATA_WAIT (5 s) before giving
+// up on it. Browsers routinely open speculative connections they never use, and
+// each one stalls every other request for those 5 s, so a handful of them delays
+// a page load by tens of seconds. HTTP_MAX_DATA_WAIT is a hard-coded macro, so
+// the accept loop is reimplemented here with a wait short enough that an unused
+// connection costs little; a real request always arrives immediately after the
+// handshake.
+class PromptWebServer : public WebServer {
+public:
+    explicit PromptWebServer(int port) : WebServer(port) {}
+
+    void handleClient() {
+        // Generous next to a link RTT of a few ms, but a small fraction of the
+        // 5 s it replaces. A genuine request follows its handshake immediately.
+        constexpr unsigned long IDLE_CLIENT_WAIT_MS = 500;
+
+        if (_currentStatus == HC_NONE) {
+            _currentClient = _server.available();
+            if (!_currentClient) return;
+            _currentStatus  = HC_WAIT_READ;
+            _statusChange   = millis();
+            s_conn_total++;
+        }
+
+        bool keepCurrentClient = false;
+
+        if (_currentClient.connected()) {
+            if (_currentClient.available()) {
+                if (_parseRequest(_currentClient)) {
+                    _currentClient.setTimeout(HTTP_MAX_SEND_WAIT / 1000);
+                    _contentLength = CONTENT_LENGTH_NOT_SET;
+                    unsigned long t0 = millis();
+                    unsigned long queued = t0 - _statusChange;
+                    _handleRequest();
+                    if (s_web_trace) {
+                        Serial.printf("[web] %s %s  handled=%lums waited=%lums\n",
+                                      _currentMethod == HTTP_POST ? "POST" : "GET",
+                                      _currentUri.c_str(), millis() - t0, queued);
+                    }
+                }
+            } else if (millis() - _statusChange <= IDLE_CLIENT_WAIT_MS &&
+                       !_server.hasClient()) {
+                // Waiting on a silent connection only costs anything when
+                // somebody else wants serving, so give up on it the moment
+                // another connection is queued behind it. hasClient() accepts
+                // that connection into the server's own slot, so the next
+                // available() call returns it rather than losing it.
+                keepCurrentClient = true;
+            } else {
+                s_conn_idle++;
+            }
+        }
+
+        if (!keepCurrentClient) {
+            // Close with a reset rather than a graceful shutdown. A graceful
+            // close leaves the socket in TIME_WAIT for tens of seconds, and lwIP
+            // has only a handful of sockets: once they are all held, no new
+            // connection can be accepted until some expire, which stalls every
+            // request behind it for seconds.
+            struct linger sl;
+            sl.l_onoff  = 1;
+            sl.l_linger = 0;
+            _currentClient.setSocketOption(SOL_SOCKET, SO_LINGER, &sl, sizeof(sl));
+            _currentClient.stop();
+            _currentClient = WiFiClient();
+            _currentStatus = HC_NONE;
+            _currentUpload.reset();
+            _currentRaw.reset();
+        }
+    }
+};
+
+static PromptWebServer server(80);
 static Logger* s_logger = nullptr;
 static StatsTracker* s_stats = nullptr;
 static PhoneController* s_phone = nullptr;
@@ -26,6 +117,22 @@ static bool   s_wifi_sta   = false;
 static String s_sta_ssid;
 static String s_sta_pass;
 static bool   s_ap_active  = true;
+
+// 2.4 GHz channel for our own AP. Congestion from neighbouring networks is a
+// common cause of poor throughput, and moving channel is the cheapest remedy.
+static uint8_t s_ap_channel = 1;
+
+// Signal strength of the connected station, so a weak radio link can be told
+// apart from a congested channel. Returns 0 when nothing is connected.
+static int apStationRssi() {
+    wifi_sta_list_t stations;
+    if (esp_wifi_ap_get_sta_list(&stations) != ESP_OK || stations.num == 0) return 0;
+    int best = stations.sta[0].rssi;
+    for (int i = 1; i < stations.num; i++) {
+        if (stations.sta[i].rssi > best) best = stations.sta[i].rssi;
+    }
+    return best;
+}
 
 // Current portal IP for captive-portal redirects (AP or STA address).
 static IPAddress currentIP() { return s_ap_active ? WiFi.softAPIP() : WiFi.localIP(); }
@@ -135,1012 +242,90 @@ static String buildProbe(PhoneController& p) {
 
 // --- HTML UI (served from flash, not SD) ------------------------------------
 
-static const char INDEX_HTML[] PROGMEM = R"rawhtml(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#1a1a1a" id="themecolor">
-<link rel="manifest" href="/manifest.json">
-<title>K6 GPO Exhibit</title>
-<style>
-:root{
---bg:#1a1a1a;--bg2:#252525;--bg3:#333;--bg4:#111;--bg5:#1e1e1e;
---fg:#e0e0e0;--fg2:#ccc;--fg3:#aaa;--fg4:#999;--fg5:#888;
---border:#333;--border2:#444;--border3:#555;
---card-border:#333;
---input-bg:#333;--input-fg:#e0e0e0;--input-border:#555;
---btn2:#444;--btn2h:#555;--btn-dis:#555;--btn-dis-fg:#999;
---dir:#fc6;--file:#e0e0e0;--link:#6af;--linkh:#8cf;
---play:#6f6;--playh:#8f8;--del:#f55;--delh:#f88;
---ok:#6f6;--warn:#fc6;--err:#f55;--stat-b:#fc6;
---badge-green-bg:#1a3a1a;--badge-green-fg:#6f6;--badge-green-bd:#3a5a3a;
---badge-amber-bg:#3a2a0a;--badge-amber-fg:#fc6;--badge-amber-bd:#5a4a1a;
---badge-red-bg:#3a1a1a;--badge-red-fg:#f55;--badge-red-bd:#5a2a2a;
---log-bg:#111;--log-fg:#bfb;
---nav-bg:#111;--nav-active:#c41e1e;
-}
-.light{
---bg:#f5f5f5;--bg2:#fff;--bg3:#e8e8e8;--bg4:#f0f0f0;--bg5:#f8f8f8;
---fg:#222;--fg2:#333;--fg3:#555;--fg4:#666;--fg5:#777;
---border:#ddd;--border2:#ccc;--border3:#bbb;
---card-border:#ddd;
---input-bg:#fff;--input-fg:#222;--input-border:#ccc;
---btn2:#e0e0e0;--btn2h:#d0d0d0;--btn-dis:#ccc;--btn-dis-fg:#999;
---dir:#b8860b;--file:#222;--link:#0066cc;--linkh:#0044aa;
---play:#228b22;--playh:#196619;--del:#cc0000;--delh:#990000;
---ok:#228b22;--warn:#cc8800;--err:#cc0000;--stat-b:#b8860b;
---badge-green-bg:#e6f4e6;--badge-green-fg:#228b22;--badge-green-bd:#b3d9b3;
---badge-amber-bg:#fff3cd;--badge-amber-fg:#856404;--badge-amber-bd:#ffc107;
---badge-red-bg:#f8d7da;--badge-red-fg:#721c24;--badge-red-bd:#f5c6cb;
---log-bg:#f8f8f0;--log-fg:#333;
---nav-bg:#f0f0f0;--nav-active:#c41e1e;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);padding:0;max-width:640px;margin:0 auto;transition:background .3s,color .3s}
-h1{color:#c41e1e;margin-bottom:2px;font-size:1.5em}
-h2{font-size:1.1em;margin:0 0 4px;color:var(--fg2)}
-.sub{color:var(--fg4);font-size:.85em;margin-bottom:0}
-.card{background:var(--bg2);border-radius:10px;padding:16px;margin-bottom:14px;border:1px solid var(--card-border);transition:background .3s}
-.hint{color:var(--fg4);font-size:.8em;margin:2px 0 8px;line-height:1.3}
-.path{font-family:monospace;color:var(--fg3);font-size:.9em;margin-bottom:8px}
-.crumb{color:var(--link);cursor:pointer;text-decoration:underline}
-.crumb:hover{color:var(--linkh)}
-table{width:100%;border-collapse:collapse}
-td{padding:8px;border-bottom:1px solid var(--border);font-size:.9em}
-td:first-child{font-family:monospace}
-.dir{color:var(--dir);cursor:pointer}
-.dir:hover{text-decoration:underline}
-.file{color:var(--file)}
-.del{color:var(--del);cursor:pointer;font-size:.85em;text-decoration:underline}
-.del:hover{color:var(--delh)}
-.play{color:var(--play);cursor:pointer;font-size:.85em;text-decoration:underline;margin-right:10px}
-.play:hover{color:var(--playh)}
-.sz{color:var(--fg5);text-align:right;font-size:.8em}
-button,input[type=submit]{background:#c41e1e;color:#fff;border:none;padding:10px 18px;border-radius:6px;cursor:pointer;font-size:.9em;margin-top:8px;font-weight:500}
-button:hover,input[type=submit]:hover{background:#d63030}
-button:disabled{background:var(--btn-dis);cursor:wait;color:var(--btn-dis-fg)}
-.btn-secondary{background:var(--btn2);color:var(--fg)}
-.btn-secondary:hover{background:var(--btn2h)}
-.btn-danger{background:#8b0000}
-.btn-danger:hover{background:#a00}
-.btn-theme{background:var(--bg3);color:var(--fg);border:1px solid var(--border2);padding:6px 14px;border-radius:20px;font-size:.8em;margin:0;cursor:pointer}
-.btn-theme:hover{background:var(--btn2h)}
-input[type=file]{margin:8px 0;font-size:.9em;color:var(--fg)}
-input[type=range]{width:100%;margin:8px 0;accent-color:#c41e1e}
-input[type=number],input[type=text],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:6px;padding:6px 10px;font-size:.9em}
-input[type=number]{width:70px}
-input[type=text]{width:140px}
-.status{color:var(--fg5);font-size:.85em;margin-top:8px}
-.warn{color:var(--warn)}
-.ok{color:var(--ok)}
-.err{color:var(--err)}
-.field{margin:10px 0}
-.field-label{color:var(--fg2);font-size:.9em;font-weight:500;margin-bottom:4px}
-.field-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.field-hint{color:var(--fg5);font-size:.75em;margin-top:2px}
-.stat{display:inline-block;background:var(--bg3);border-radius:6px;padding:6px 12px;margin:3px;font-size:.85em}
-.stat b{color:var(--stat-b)}
-.stat-label{color:var(--fg3);font-size:.75em;display:block;margin-bottom:1px}
-#prog{width:100%;height:8px;background:var(--bg3);border-radius:4px;margin-top:8px;display:none}
-#progbar{height:100%;background:#c41e1e;border-radius:4px;width:0%;transition:width .2s}
-.topnum{font-family:monospace;color:var(--link)}
-.live-status{display:flex;gap:16px;flex-wrap:wrap;margin:8px 0}
-.live-item{font-size:.9em}
-.live-item .label{color:var(--fg5);font-size:.8em}
-.live-item .value{font-weight:500}
-.section-icon{font-size:1.2em;margin-right:6px;vertical-align:middle}
-.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.8em;font-weight:600}
-.badge-green{background:var(--badge-green-bg);color:var(--badge-green-fg);border:1px solid var(--badge-green-bd)}
-.badge-amber{background:var(--badge-amber-bg);color:var(--badge-amber-fg);border:1px solid var(--badge-amber-bd)}
-.badge-red{background:var(--badge-red-bg);color:var(--badge-red-fg);border:1px solid var(--badge-red-bd)}
-.divider{border:none;border-top:1px solid var(--border);margin:12px 0}
-.header-row{display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px}
-/* --- Tab navigation --- */
-.tab-nav{display:flex;background:var(--nav-bg);border-bottom:2px solid var(--border);position:sticky;top:0;z-index:100}
-.tab-nav button{flex:1;background:none;color:var(--fg4);border:none;padding:12px 8px;margin:0;border-radius:0;font-size:.85em;font-weight:500;cursor:pointer;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
-.tab-nav button:hover{color:var(--fg);background:none}
-.tab-nav button.active{color:var(--nav-active);border-bottom-color:var(--nav-active);font-weight:700}
-.tab-content{display:none;padding:16px}
-.tab-content.active{display:block}
-/* --- Burger menu (mobile) --- */
-.burger{display:none;background:none;border:none;color:var(--fg);font-size:1.6em;padding:4px 8px;margin:0;cursor:pointer;line-height:1}
-.burger:hover{color:#c41e1e;background:none}
-.nav-backdrop{display:none}
-@media(max-width:520px){
-  .tab-nav{display:none}
-  .tab-nav.open{display:flex;flex-direction:column;position:absolute;top:60px;right:10px;min-width:180px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:1000;padding:6px;gap:2px}
-  .tab-nav.open button{font-size:1em;padding:11px 16px;width:100%;border-radius:6px;border-bottom:none;text-align:left}
-  .tab-nav.open button.active{background:var(--nav-active);color:#fff}
-  .burger{display:block}
-  .nav-backdrop.open{display:block;position:fixed;inset:0;z-index:999;background:transparent}
-}
-</style>
-</head>
-<body>
-<div class="header-row">
-<div><h1>K6 GPO Exhibit</h1><p class="sub">Telephone Management System</p></div>
-<div style="display:flex;gap:8px;align-items:center">
-<button class="btn-theme" id="themebtn" onclick="toggleTheme()">Light Mode</button>
-<button class="burger" id="burgerbtn" onclick="toggleMenu()">&#9776;</button>
-</div>
-</div>
-
-<nav class="tab-nav" id="tabnav">
-<button class="active" onclick="switchTab('overview',this)">Overview</button>
-<button onclick="switchTab('stats',this)">Stats</button>
-<button onclick="switchTab('diagnostics',this)">Diagnostics</button>
-<button onclick="switchTab('terminal',this)">Terminal</button>
-<button onclick="switchTab('settings',this)">Settings</button>
-</nav>
-<div class="nav-backdrop" id="navbackdrop" onclick="closeMenu()"></div>
-
-<!-- ===== OVERVIEW TAB ===== -->
-<div class="tab-content active" id="tab-overview">
-
-<div class="card" style="border-color:var(--border2)">
-<h2><span class="section-icon">&#128222;</span> Phone Status</h2>
-<p class="hint">Live information about the telephone — updates every 5 seconds.</p>
-<div class="live-status">
-<div class="live-item"><div class="label">Current Mode</div><div class="value"><span id="modelbl" class="badge badge-green">AUTOMATIC</span></div></div>
-<div class="live-item"><div class="label">Phone State</div><div class="value" id="statelbl">Waiting for visitors</div></div>
-<div class="live-item"><div class="label">Now Playing</div><div class="value" id="playlbl" style="font-family:monospace;color:var(--link)">Nothing</div></div>
-<div class="live-item"><div class="label">Call Duration</div><div class="value" id="calltimer" style="font-family:monospace;color:var(--warn)">&mdash;</div></div>
-</div>
-<div id="alertbanner" style="display:none;background:#c41e1e;color:#fff;padding:10px 14px;border-radius:6px;margin-top:10px;font-weight:600;font-size:.9em">&#9888; No visitor activity detected for a while &mdash; please check the exhibit is working.</div>
-<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-<button onclick="ringNow()">Make Phone Ring</button>
-<button onclick="toggleMode()" id="modebtn" class="btn-secondary">Switch to Manual Mode</button>
-</div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128200;</span> Session Summary</h2>
-<p class="hint">Activity since the exhibit was powered on.</p>
-<div id="sessionbox" style="display:flex;flex-wrap:wrap;gap:4px"></div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128994;</span> Quick Health</h2>
-<p class="hint">At-a-glance system status.</p>
-<div id="healthbadge" style="margin-bottom:8px"><span class="badge badge-amber">Checking…</span></div>
-<div id="healthbox" style="font-size:.85em;line-height:1.8">Loading...</div>
-</div>
-
-</div>
-
-<!-- ===== STATS TAB ===== -->
-<div class="tab-content" id="tab-stats">
-
-<div class="card">
-<h2><span class="section-icon">&#128202;</span> Visitor Activity</h2>
-<p class="hint">How visitors have been interacting with the telephone.</p>
-<div id="statsbox">Loading...</div>
-<div style="margin-top:8px"><button onclick="resetStats()" class="btn-danger">Clear All Statistics</button></div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128270;</span> Numbers Tried</h2>
-<p class="hint">Numbers visitors tried to dial that aren't in the directory. Use this to decide what content to add next.</p>
-<div id="discbox">Loading...</div>
-<div style="margin-top:8px"><button onclick="clearDiscovery()" class="btn-danger">Clear All</button></div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128214;</span> Number Directory</h2>
-<p class="hint">Link dialled numbers to audio files. Dialling a number listed here plays the matching file from <b>/numbers/</b>.</p>
-<table id="aliastbl"><thead><tr><td style="color:var(--fg3)">Dial Number</td><td style="color:var(--fg3)">Plays File</td><td></td></tr></thead><tbody></tbody></table>
-<div style="margin-top:10px">
-<div style="color:var(--fg2);font-size:.85em;margin-bottom:6px">Add a new number:</div>
-<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-<input type="text" id="anew_num" placeholder="e.g. 999" style="width:80px">
-<input type="text" id="anew_name" placeholder="e.g. emergency">
-<button onclick="addAlias()" style="margin:0">Add</button>
-</div>
-</div>
-<div class="status" id="aliasstatus"></div>
-</div>
-
-</div>
-
-<!-- ===== DIAGNOSTICS TAB ===== -->
-<div class="tab-content" id="tab-diagnostics">
-
-<div class="card">
-<h2><span class="section-icon">&#9888;</span> Error Log</h2>
-<p class="hint">Hardware and system errors since last power-on. Bell faults, line anomalies, and SD card failures appear here.</p>
-<div id="errorbox" style="font-size:.85em;color:var(--fg3)">Loading...</div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128196;</span> Activity Log</h2>
-<p class="hint">View a record of what the telephone has been doing.</p>
-<div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
-<button onclick="loadLog('system')">System Events</button>
-<button onclick="loadLog('calls')" class="btn-secondary">Call History</button>
-<button onclick="clearLog()" class="btn-danger">Clear Log</button>
-</div>
-<pre id="logview" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all">Select a log to view.</pre>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128200;</span> Line-Sense Drift</h2>
-<p class="hint">On-hook line reading captured at each power-on, tagged by boot number. Steady numbers mean the analogue front-end is stable; a creeping value hints at a developing fault.</p>
-<div id="driftbox" style="font-size:.85em;color:var(--fg3)">Loading...</div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#9989;</span> Last Self-Test</h2>
-<p class="hint">Most recent bring-up self-test result (persists across reboots). Run a fresh one from the Terminal tab.</p>
-<pre id="selftestbox" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word">Loading...</pre>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128295;</span> System Information</h2>
-<p class="hint">Technical details about the device.</p>
-<div id="sysinfo" style="font-size:.85em;color:var(--fg3);line-height:1.6">Loading...</div>
-<div style="margin-top:10px"><button onclick="rebootDevice()" class="btn-danger">Restart Telephone</button></div>
-</div>
-
-</div>
-
-<!-- ===== TERMINAL TAB ===== -->
-<div class="tab-content" id="tab-terminal">
-<div class="card">
-<h2><span class="section-icon">&#128421;</span> Command Terminal</h2>
-<p class="hint">Send commands directly to the telephone for manual control and troubleshooting. Type <b>help</b> for a list of commands.</p>
-<pre id="termout" style="background:var(--log-bg);color:var(--log-fg);padding:12px;border-radius:6px;font-size:.8em;height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin-bottom:10px">K6 GPO Exhibit terminal ready. Type 'help' for commands.</pre>
-<div class="field-row" style="gap:6px">
-<input type="text" id="termin" placeholder="Enter command…" autocomplete="off" autocapitalize="off" spellcheck="false" onkeydown="termKey(event)" style="flex:1;min-width:120px;font-family:monospace">
-<button onclick="runCmd()" style="margin:0">Send</button>
-</div>
-<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('status')">status</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('ring')">ring</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('hangup')">hangup</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('ls /')">ls /</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('sd')">sd</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('help')">help</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="termClear()">clear</button>
-</div>
-<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
-<span style="font-size:.8em;opacity:.7;align-self:center">Commissioning:</span>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('selftest')">self-test</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('probe')">audio probe</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('calibrate on')">calibrate on (handset down)</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('calibrate off')">calibrate off (handset up)</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('dialecho')">dial echo toggle</button>
-<button class="btn-secondary" style="margin:0;padding:5px 12px;font-size:.8em" onclick="quickCmd('ticks')">dial ticks toggle</button>
-</div>
-</div>
-</div>
-
-<!-- ===== SETTINGS TAB ===== -->
-<div class="tab-content" id="tab-settings">
-
-<div class="card">
-<h2><span class="section-icon">&#128266;</span> Sound Settings</h2>
-<p class="hint">Adjust how loud the telephone sounds through the handset and bell.</p>
-<div class="field">
-<div class="field-label">Handset Volume</div>
-<div class="field-hint">How loud audio plays through the telephone earpiece.</div>
-<div class="field-row"><input type="range" id="vol" min="0" max="21" value="15" oninput="setVol(this.value)" style="flex:1"><span id="vollbl" style="min-width:30px;text-align:right">15</span></div>
-</div>
-<div class="field">
-<div class="field-label">Bell Frequency</div>
-<div class="field-hint">Ringing frequency in Hz. UK exchanges used ~17 Hz (16&#8532;) to 25 Hz. Lower can give an older bell a fuller ring &mdash; try a few and listen. Press "Test Ring" after changing to hear it.</div>
-<div class="field-row">
-<input type="number" id="bellfreq" value="25" min="10" max="50" style="width:70px">
-<span> Hz</span><button onclick="setBellFreq()" style="margin:0">Save</button>
-<button onclick="testRing()" class="btn-secondary" style="margin:0">Test Ring (3s)</button>
-</div>
-</div>
-<div class="field">
-<div class="field-label">Line Level (earpiece trim)</div>
-<div class="field-hint">Master attenuation of all audio sent to the phone line. Lower this if audio distorts in the earpiece &mdash; it goes far quieter than the Handset Volume alone can. Use "Test Tone" to set the level, then fine-tune with Handset Volume. 100% = no attenuation.</div>
-<div class="field-row"><input type="range" id="linelevel" min="0" max="100" value="100" oninput="setLineLevel(this.value)" style="flex:1"><span id="linelevellbl" style="min-width:38px;text-align:right">100%</span></div>
-<div class="field-row"><button onclick="testTone()" class="btn-secondary" style="margin:0">Test Tone (5s)</button></div>
-</div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128276;</span> Automatic Ringing</h2>
-<p class="hint">When in Automatic mode, the phone rings by itself at random intervals to attract visitors.</p>
-<div class="field">
-<div class="field-label">Time Between Rings</div>
-<div class="field-hint">The phone will ring randomly between these two times.</div>
-<div class="field-row">
-<span>Every </span><input type="number" id="armin" value="5" min="1" max="120" style="width:60px">
-<span> to </span><input type="number" id="armax" value="30" min="1" max="120" style="width:60px">
-<span> minutes</span><button onclick="setAutoRing()" style="margin:0">Save</button>
-</div>
-</div>
-<div class="field">
-<div class="field-label">How Long to Ring</div>
-<div class="field-hint">How many seconds the phone rings each time before giving up.</div>
-<div class="field-row">
-<span>Ring for </span><input type="number" id="rtmin" value="4" min="2" max="15" style="width:55px">
-<span> to </span><input type="number" id="rtmax" value="8" min="2" max="15" style="width:55px">
-<span> seconds</span><button onclick="setRingTone()" style="margin:0">Save</button>
-</div>
-</div>
-<div class="field">
-<div class="field-label">Maximum Ring Cycles</div>
-<div class="field-hint">How many times the bell rings before it stops trying. Set to 0 for unlimited.</div>
-<div class="field-row">
-<input type="number" id="ringmax" value="10" min="0" max="60" style="width:70px">
-<span> cycles</span><button onclick="setRingCount()" style="margin:0">Save</button>
-</div>
-</div>
-<hr class="divider">
-<div class="field">
-<div class="field-label">Inactivity Warning</div>
-<div class="field-hint">Flash the panel lamp if no visitors for this many minutes. Set to 0 to disable.</div>
-<div class="field-row">
-<span>Warn after </span><input type="number" id="alertidle" value="120" min="0" max="1440" style="width:70px">
-<span> minutes</span><button onclick="setAlertIdle()" style="margin:0">Save</button>
-</div>
-</div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#9742;</span> Dialling</h2>
-<p class="hint">Tune how the rotary dial is decoded.</p>
-<div class="field">
-<div class="field-label">Time Allowed Between Digits</div>
-<div class="field-hint">How long the phone waits after a digit before it decides the number is finished. Increase this if visitors (through age or unfamiliarity with a rotary dial) can't dial the next digit quickly enough and the number is cut short.</div>
-<div class="field-row">
-<span>Wait </span><input type="number" id="digitgap" value="3" min="2" max="30" step="1" style="width:65px">
-<span> seconds</span><button onclick="setDigitGap()" style="margin:0">Save</button>
-</div>
-</div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128246;</span> Wi-Fi Network</h2>
-<p class="hint">The telephone can host its own Wi-Fi hotspot, or join an existing network. Only one at a time. Changing this restarts the telephone.</p>
-<div class="field">
-<div class="field-label">Connection Mode</div>
-<div class="field-row">
-<select id="wifimode" onchange="wifiModeChanged()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg4);color:var(--fg1)">
-<option value="ap">Host its own hotspot (K6-Exhibit)</option>
-<option value="sta">Join an existing Wi-Fi network</option>
-</select>
-</div>
-</div>
-<div class="field" id="wifi-sta-fields" style="display:none">
-<div class="field-label">Network Name (SSID)</div>
-<div class="field-row"><input type="text" id="wifissid" placeholder="Your Wi-Fi name" oninput="touchUI()" style="flex:1"></div>
-<div class="field-label" style="margin-top:8px">Password</div>
-<div class="field-row"><input type="password" id="wifipass" placeholder="Leave blank for an open network" oninput="touchUI()" style="flex:1"></div>
-<div class="field-hint" style="margin-top:6px">If the telephone can't join this network it automatically falls back to hosting its own <b>K6-Exhibit</b> hotspot, so you can always reconnect and fix the details.</div>
-</div>
-<div class="field-row" style="margin-top:6px"><button onclick="saveWifi()" class="btn-danger" style="margin:0">Save &amp; Restart</button></div>
-<div class="status" id="wifistatus"></div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128176;</span> A+B Coin Box</h2>
-<p class="hint">Control whether the A+B coin box daughter board is active. In Auto mode, the system detects the hardware at boot. Use the override to force it on or off.</p>
-<div class="field">
-<div class="field-label">Coin Box Mode</div>
-<div class="field-hint">Auto = detect hardware at boot. Force Off = disable coin logic. Force On = always require coins.</div>
-<div class="field-row">
-<select id="coinmode" onchange="setCoinMode(this.value)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--bg4);color:var(--fg1)">
-<option value="-1">Auto (detect at boot)</option>
-<option value="0">Force Off</option>
-<option value="1">Force On</option>
-</select>
-<span id="coinstatus" style="margin-left:10px;font-size:.85em;color:var(--fg3)"></span>
-</div>
-</div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#128193;</span> Audio Files</h2>
-<p class="hint">Browse, upload, and manage the audio files stored on the SD card.</p>
-<div class="path" id="pathbar">/</div>
-<table id="filetbl"><tbody></tbody></table>
-<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-<input type="file" id="upfile" multiple accept=".mp3,.MP3,.wav,.WAV">
-<button onclick="upload()" id="upbtn">Upload Files</button>
-<button onclick="mkdirPrompt()" class="btn-secondary">Create Folder</button>
-</div>
-<div class="status" id="upstatus"></div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#127908;</span> Record New Audio</h2>
-<p class="hint">Record audio using your device's microphone. Listen back before saving.</p>
-<div style="margin-top:8px;display:flex;gap:8px;align-items:center">
-<button onclick="startRec()" id="recbtn">Start Recording</button>
-<button onclick="stopRec()" id="stopbtn" disabled class="btn-secondary">Stop Recording</button>
-<span id="rectimer" style="margin-left:4px;font-family:monospace;color:var(--warn);font-size:.9em"></span>
-</div>
-<div id="recpreview" style="display:none;margin-top:10px;padding:12px;background:var(--bg5);border-radius:8px;border:1px solid var(--border2)">
-<div style="color:var(--fg2);font-size:.85em;font-weight:500;margin-bottom:6px">Preview your recording:</div>
-<audio id="recaudio" controls style="width:100%;margin-bottom:10px"></audio>
-<div style="color:var(--fg2);font-size:.85em;font-weight:500;margin-bottom:4px">Save as:</div>
-<div class="field-row">
-<input type="text" id="recname" placeholder="filename">.mp3
-<span style="margin-left:8px">in <select id="recdir"><option value="/history/">/history/</option><option value="/numbers/">/numbers/</option><option value="/system/">/system/</option></select></span>
-</div>
-<div style="margin-top:10px;display:flex;gap:8px">
-<button onclick="saveRec()">Save Recording</button>
-<button onclick="discardRec()" class="btn-secondary">Discard</button>
-</div>
-</div>
-<div class="status" id="recstatus"></div>
-</div>
-
-<div class="card">
-<h2><span class="section-icon">&#9881;</span> Update Firmware</h2>
-<p class="hint">Upload a new firmware file (.bin) to update the telephone software.</p>
-<input type="file" id="otafile" accept=".bin">
-<button onclick="otaUpload()" id="otabtn">Install Update</button>
-<div id="prog"><div id="progbar"></div></div>
-<div class="status" id="otastatus"></div>
-<hr class="divider">
-<div class="field-hint" style="margin-bottom:4px">If a firmware update causes problems:</div>
-<button onclick="rollbackFW()" class="btn-danger">Restore Previous Version</button>
-</div>
-
-</div>
-
-<script>
-// --- Tab navigation ---
-function switchTab(id,btn){
-  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab-nav button').forEach(b=>b.classList.remove('active'));
-  document.getElementById('tab-'+id).classList.add('active');
-  if(btn)btn.classList.add('active');
-  closeMenu();
-  try{localStorage.setItem('k6tab',id)}catch(e){}
-  if(id==='stats'){loadStats();loadDiscovery();loadAliases();}
-  if(id==='diagnostics'){loadErrors();loadDiag();loadLog('system');}
-  if(id==='terminal'){setTimeout(function(){document.getElementById('termin').focus()},50);}
-  if(id==='settings'){loadFiles();}
-}
-function toggleMenu(){
-  var open=document.getElementById('tabnav').classList.toggle('open');
-  document.getElementById('navbackdrop').classList.toggle('open',open);
-}
-function closeMenu(){
-  document.getElementById('tabnav').classList.remove('open');
-  document.getElementById('navbackdrop').classList.remove('open');
-}
-// --- Theme ---
-function toggleTheme(){
-  var b=document.body;b.classList.toggle('light');
-  var isLight=b.classList.contains('light');
-  document.getElementById('themebtn').textContent=isLight?'Dark Mode':'Light Mode';
-  document.getElementById('themecolor').content=isLight?'#f5f5f5':'#1a1a1a';
-  try{localStorage.setItem('k6theme',isLight?'light':'dark')}catch(e){}
-}
-(function(){try{if(localStorage.getItem('k6theme')==='light'){document.body.classList.add('light');document.getElementById('themebtn').textContent='Dark Mode';document.getElementById('themecolor').content='#f5f5f5';}}catch(e){}})();
-(function(){try{var t=localStorage.getItem('k6tab');if(t){var idx={overview:1,stats:2,diagnostics:3,terminal:4,settings:5}[t]||1;var btn=document.querySelector('.tab-nav button:nth-child('+idx+')');switchTab(t,btn);}}catch(e){}})();
-// --- Terminal ---
-let termHist=[],termHi=0;
-function termPrint(t){var o=document.getElementById('termout');o.textContent+='\n'+t;o.scrollTop=o.scrollHeight;}
-function termClear(){document.getElementById('termout').textContent='K6 GPO Exhibit terminal ready. Type \'help\' for commands.';}
-function termKey(e){
-  if(e.key==='Enter'){runCmd();return;}
-  if(e.key==='ArrowUp'){if(termHi>0){termHi--;e.target.value=termHist[termHi];}e.preventDefault();}
-  if(e.key==='ArrowDown'){if(termHi<termHist.length-1){termHi++;e.target.value=termHist[termHi];}else{termHi=termHist.length;e.target.value='';}e.preventDefault();}
-}
-function runCmd(){
-  var i=document.getElementById('termin');var c=i.value.trim();if(!c)return;
-  termPrint('> '+c);termHist.push(c);termHi=termHist.length;i.value='';
-  fetch('/api/terminal?cmd='+encodeURIComponent(c),{method:'POST'})
-    .then(r=>r.text()).then(t=>{if(t)termPrint(t);loadStatus();})
-    .catch(e=>termPrint('error: '+e));
-}
-function quickCmd(c){document.getElementById('termin').value=c;runCmd();}
-let cwd='/';
-function nav(p){cwd=p;loadFiles()}
-function loadFiles(){
-  fetch('/api/files?path='+encodeURIComponent(cwd))
-  .then(r=>r.json()).then(d=>{
-    let pb=document.getElementById('pathbar');
-    let parts=cwd.split('/').filter(Boolean);
-    let html='<span class="crumb" onclick="nav(\'/\')">/</span>';
-    let acc='/';
-    parts.forEach(p=>{acc+= p+'/';html+=' <span class="crumb" onclick="nav(\''+acc+'\')">'+p+'/</span>'});
-    pb.innerHTML=html;
-    let tb=document.querySelector('#filetbl tbody');
-    tb.innerHTML='';
-    d.sort((a,b)=>(b.dir-a.dir)||a.name.localeCompare(b.name));
-    d.forEach(f=>{
-      let tr=document.createElement('tr');
-      if(f.dir){
-        tr.innerHTML='<td class="dir" onclick="nav(\''+cwd+f.name+'/\')">'+f.name+'/</td><td class="sz">DIR</td><td></td>';
-      }else{
-        let sz=f.size<1024?f.size+'B':f.size<1048576?(f.size/1024).toFixed(1)+'KB':(f.size/1048576).toFixed(1)+'MB';
-        let nm=f.name.toLowerCase();
-        let playable=nm.endsWith('.mp3')||nm.endsWith('.wav');
-        let acts=playable?'<span class="play" onclick="preview(\''+cwd+f.name+'\')">play</span> ':'';
-        acts+='<span class="del" onclick="del(\''+f.name+'\')">delete</span>';
-        tr.innerHTML='<td class="file">'+f.name+'</td><td class="sz">'+sz+'</td><td>'+acts+'</td>';
-      }
-      tb.appendChild(tr);
-    });
-  }).catch(e=>{console.error(e)});
-}
-let previewAudio=null;
-function preview(path){
-  if(previewAudio){previewAudio.pause();previewAudio=null;}
-  previewAudio=new Audio('/api/preview?path='+encodeURIComponent(path));
-  previewAudio.play();
-}
-function del(name){
-  if(!confirm('Delete '+name+'?'))return;
-  fetch('/api/delete?path='+encodeURIComponent(cwd+name),{method:'POST'})
-  .then(r=>r.json()).then(d=>{
-    document.getElementById('upstatus').innerHTML=d.ok?'<span class="ok">Deleted</span>':'<span class="err">'+d.error+'</span>';
-    loadFiles();
-  });
-}
-function mkdirPrompt(){
-  let n=prompt('Folder name:');
-  if(!n)return;
-  fetch('/api/mkdir?path='+encodeURIComponent(cwd+n),{method:'POST'})
-  .then(r=>r.json()).then(d=>{
-    document.getElementById('upstatus').innerHTML=d.ok?'<span class="ok">Created</span>':'<span class="err">'+d.error+'</span>';
-    loadFiles();
-  });
-}
-function upload(){
-  let files=document.getElementById('upfile').files;
-  if(!files.length)return;
-  let btn=document.getElementById('upbtn');
-  let st=document.getElementById('upstatus');
-  btn.disabled=true; st.textContent='Uploading...';
-  let done=0,errs=[];
-  Array.from(files).forEach(f=>{
-    let fd=new FormData(); fd.append('file',f);
-    fetch('/api/upload?path='+encodeURIComponent(cwd),{method:'POST',body:fd})
-    .then(r=>r.json()).then(d=>{
-      done++;
-      if(!d.ok) errs.push(f.name+': '+(d.error||'failed'));
-      if(done===files.length){
-        btn.disabled=false;
-        if(errs.length) st.innerHTML='<span class="err">'+errs.join('<br>')+'</span>';
-        else st.innerHTML='<span class="ok">Upload complete</span>';
-        document.getElementById('upfile').value='';
-        loadFiles();
-      }
-    }).catch(e=>{done++;btn.disabled=false;st.innerHTML='<span class="err">'+e+'</span>'});
-  });
-}
-function otaUpload(){
-  let f=document.getElementById('otafile').files[0];
-  if(!f)return;
-  let btn=document.getElementById('otabtn');
-  let st=document.getElementById('otastatus');
-  let prog=document.getElementById('prog');
-  let bar=document.getElementById('progbar');
-  btn.disabled=true; prog.style.display='block'; bar.style.width='0%';
-  st.innerHTML='<span class="warn">Uploading firmware... do not disconnect.</span>';
-  let xhr=new XMLHttpRequest();
-  xhr.open('POST','/api/ota');
-  xhr.upload.onprogress=function(e){if(e.lengthComputable)bar.style.width=(e.loaded/e.total*100)+'%'};
-  xhr.onload=function(){
-    let d=JSON.parse(xhr.responseText);
-    if(d.ok){
-      st.innerHTML='<span class="ok">Firmware updated! Rebooting...</span>';
-      setTimeout(()=>{location.reload()},8000);
-    }else{
-      st.innerHTML='<span class="err">'+d.error+'</span>';
-      btn.disabled=false;
-    }
-  };
-  xhr.onerror=function(){st.innerHTML='<span class="err">Upload failed</span>';btn.disabled=false};
-  let fd=new FormData(); fd.append('firmware',f);
-  xhr.send(fd);
-}
-var uiEdit=0;var _dbt={};var wifiInit=false;
-function touchUI(){uiEdit=Date.now();}
-function debPost(key,url){touchUI();clearTimeout(_dbt[key]);_dbt[key]=setTimeout(function(){fetch(url,{method:'POST'})},150);}
-function setVol(v){
-  document.getElementById('vollbl').textContent=v;
-  debPost('vol','/api/volume?v='+v);
-}
-function setDigitGap(){
-  touchUI();
-  let v=document.getElementById('digitgap').value;
-  fetch('/api/digitgap?v='+v,{method:'POST'});
-}
-function wifiModeChanged(){
-  touchUI();
-  let sta=document.getElementById('wifimode').value==='sta';
-  document.getElementById('wifi-sta-fields').style.display=sta?'block':'none';
-}
-function saveWifi(){
-  let mode=document.getElementById('wifimode').value;
-  let ssid=document.getElementById('wifissid').value;
-  if(mode==='sta'&&!ssid){alert('Enter the name of the Wi-Fi network to join.');return;}
-  let msg=mode==='sta'
-    ?'The telephone will restart and try to join "'+ssid+'". If it can\'t, it falls back to its own K6-Exhibit hotspot.'
-    :'The telephone will restart and host its own K6-Exhibit hotspot.';
-  if(!confirm(msg))return;
-  let pass=encodeURIComponent(document.getElementById('wifipass').value);
-  document.getElementById('wifistatus').innerHTML='<span class="warn">Saving and restarting\u2026</span>';
-  fetch('/api/wifi?mode='+mode+'&ssid='+encodeURIComponent(ssid)+'&pass='+pass,{method:'POST'})
-    .then(()=>{setTimeout(()=>{location.reload()},9000);})
-    .catch(()=>{document.getElementById('wifistatus').innerHTML='<span class="warn">Restarting\u2026 reconnect to the telephone\'s network.</span>';});
-}
-function setBellFreq(){
-  touchUI();
-  let hz=document.getElementById('bellfreq').value;
-  fetch('/api/bellfreq?hz='+hz,{method:'POST'});
-}
-function setLineLevel(v){
-  document.getElementById('linelevellbl').textContent=v+'%';
-  debPost('linelevel','/api/linelevel?v='+v);
-}
-function testTone(){fetch('/api/tone?hz=1000&secs=5',{method:'POST'})}
-function setRingCount(){
-  touchUI();
-  let n=document.getElementById('ringmax').value;
-  fetch('/api/ringcount?n='+n,{method:'POST'});
-}
-function setRingTone(){
-  touchUI();
-  let mn=document.getElementById('rtmin').value;
-  let mx=document.getElementById('rtmax').value;
-  fetch('/api/ringtone?min='+mn+'&max='+mx,{method:'POST'});
-}
-function setAlertIdle(){
-  touchUI();
-  let v=document.getElementById('alertidle').value;
-  fetch('/api/alertidle?v='+v,{method:'POST'});
-}
-function setCoinMode(v){
-  touchUI();
-  fetch('/api/coinmode?v='+v,{method:'POST'}).then(r=>r.json()).then(d=>{
-    document.getElementById('coinstatus').textContent=d.active?'Coin logic active':'Coin logic disabled';
-  });
-}
-function setAutoRing(){
-  touchUI();
-  let mn=document.getElementById('armin').value;
-  let mx=document.getElementById('armax').value;
-  fetch('/api/autoring?min='+mn+'&max='+mx,{method:'POST'});
-}
-function ringNow(){fetch('/api/ring',{method:'POST'})}
-function testRing(){fetch('/api/testring?secs=3',{method:'POST'})}
-function toggleMode(){fetch('/api/mode',{method:'POST'}).then(()=>loadStatus())}
-function rebootDevice(){
-  if(!confirm('This will restart the telephone. Any active calls will be disconnected.'))return;
-  fetch('/api/reboot',{method:'POST'}).then(()=>{
-    document.getElementById('sysinfo').innerHTML='<span class="warn">Restarting...</span>';
-    setTimeout(()=>{location.reload()},8000);
-  });
-}
-function resetStats(){
-  if(!confirm('This will erase all visitor statistics. Are you sure?'))return;
-  fetch('/api/stats/reset',{method:'POST'}).then(()=>loadStats());
-}
-function loadStatus(){
-  fetch('/api/status').then(r=>r.json()).then(d=>{
-    let uH=Math.floor(d.uptime/3600),uM=Math.floor(d.uptime%3600/60);
-    document.getElementById('sysinfo').innerHTML=
-      'Available memory: '+(d.heap/1024).toFixed(0)+'KB<br>'+
-      'SD card: '+(d.sd?'<span class="ok">Working</span>':'<span class="err">Not detected</span>')+
-      (d.sd_total?' ('+d.sd_used+'MB used of '+d.sd_total+'MB)':'')+
-      '<br>Running for: '+uH+' hours '+uM+' minutes<br>'+
-      'Firmware version: '+d.firmware+
-      (d.wifi_mode?('<br>Wi-Fi: '+(d.wifi_mode==='ap'?'hosting <b>'+d.wifi_ssid+'</b>':'joined <b>'+d.wifi_ssid+'</b>')+' at '+d.wifi_ip):'');
-    // Don't clobber controls the visitor is actively adjusting: skip syncing
-    // input values for a few seconds after any edit (otherwise this poll snaps
-    // a slider back to a stale server value mid-drag).
-    if(Date.now()-uiEdit>4000){
-    document.getElementById('vol').value=d.volume;
-    document.getElementById('vollbl').textContent=d.volume;
-    if(d.bell_freq!==undefined) document.getElementById('bellfreq').value=d.bell_freq;
-    if(d.digit_gap!==undefined) document.getElementById('digitgap').value=Math.round(d.digit_gap/1000);
-    // Wi-Fi mode/SSID is an operator config choice, not live telemetry:
-    // populate it once on first load, then never let the poll overwrite the
-    // form while it's being filled in (otherwise the selector reverts mid-entry).
-    if(!wifiInit&&d.wifi_cfg_mode!==undefined){
-      document.getElementById('wifimode').value=d.wifi_cfg_mode;
-      if(d.wifi_cfg_ssid) document.getElementById('wifissid').value=d.wifi_cfg_ssid;
-      wifiModeChanged();
-      wifiInit=true;
-    }
-    if(d.line_level!==undefined){document.getElementById('linelevel').value=d.line_level;document.getElementById('linelevellbl').textContent=d.line_level+'%';}
-    if(d.ring_max!==undefined) document.getElementById('ringmax').value=d.ring_max;
-    if(d.rt_min!==undefined){document.getElementById('rtmin').value=d.rt_min;document.getElementById('rtmax').value=d.rt_max;}
-    if(d.alert_idle!==undefined) document.getElementById('alertidle').value=d.alert_idle;
-    if(d.coin_override!==undefined){
-      document.getElementById('coinmode').value=d.coin_override;
-      let cs=document.getElementById('coinstatus');
-      cs.textContent=d.coin_active?'Coin logic active':'Coin logic disabled';
-    }
-    document.getElementById('armin').value=Math.round(d.ar_min/60000);
-    document.getElementById('armax').value=Math.round(d.ar_max/60000);
-    }
-    document.getElementById('alertbanner').style.display=d.alert_on?'block':'none';
-    let ml=document.getElementById('modelbl');
-    let mb=document.getElementById('modebtn');
-    if(d.mode=='AUTO'){ml.textContent='AUTOMATIC';ml.className='badge badge-green';mb.textContent='Switch to Manual Mode';}
-    else{ml.textContent='MANUAL';ml.className='badge badge-amber';mb.textContent='Switch to Automatic Mode';}
-    let states={'IDLE':'Waiting for visitors','RINGING':'Phone is ringing','PLAYING':'Playing audio','DIALLING':'Visitor is dialling'};
-    document.getElementById('statelbl').textContent=states[d.state]||d.state;
-    document.getElementById('playlbl').textContent=d.playing||'Nothing';
-    let ct=document.getElementById('calltimer');
-    if(d.state!=='IDLE'&&d.call_secs>=0){
-      let m=Math.floor(d.call_secs/60),s=d.call_secs%60;
-      ct.textContent=m+':'+(s<10?'0':'')+s;
-    } else { ct.textContent='\u2014'; }
-    // Quick Health — one-line badge + detail lines.
-    let heapKB=Math.round(d.heap/1024);
-    let sdOk=!!d.sd, calOk=!!d.line_cal, lowHeap=heapKB<40;
-    let cls='badge-green',word='Healthy';
-    if(!sdOk){cls='badge-red';word='SD fault';}
-    else if(!calOk||lowHeap||(d.errors&&d.errors>0)){cls='badge-amber';word='Check';}
-    let badge='<span class="badge '+cls+'">'+word+'</span> ';
-    badge+='<span style="font-size:.85em;color:var(--fg3)">SD '+(sdOk?'OK':'FAULT')
-      +' \u00b7 Line '+(calOk?'calibrated':'not calibrated')
-      +' \u00b7 '+heapKB+' KB free</span>';
-    document.getElementById('healthbadge').innerHTML=badge;
-    let hb=document.getElementById('healthbox');
-    let hh='SD Card: '+(sdOk?'<span class="ok">OK</span>':'<span class="err">Not detected</span>');
-    hh+='<br>Line sensing: '+(calOk?'<span class="ok">Calibrated</span>':'<span class="warn">Not calibrated (using defaults)</span>');
-    hh+='<br>Memory: '+(lowHeap?'<span class="warn">':'<span class="ok">')+heapKB+' KB free</span>';
-    hh+='<br>Uptime: '+uH+'h '+uM+'m';
-    if(d.errors&&d.errors>0) hh+='<br><span class="err">&#9888; '+d.errors+' error'+(d.errors>1?'s':'')+' recorded</span> <span style="font-size:.8em;color:var(--link);cursor:pointer" onclick="switchTab(\'diagnostics\',document.querySelector(\'.tab-nav button:nth-child(3)\'))">(view)</span>';
-    else hh+='<br>Errors: <span class="ok">None</span>';
-    hb.innerHTML=hh;
-  });
-}
-function loadSession(){
-  fetch('/api/stats').then(r=>r.json()).then(d=>{
-    let s=d.session||{};
-    let sb=document.getElementById('sessionbox');
-    let h='';
-    h+='<span class="stat"><span class="stat-label">Pickups Today</span><b>'+(s.pickups||0)+'</b></span>';
-    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+(s.outgoing||0)+'</b></span>';
-    h+='<span class="stat"><span class="stat-label">Times Rung</span><b>'+(s.incoming||0)+'</b></span>';
-    let pk=s.pickups||0;
-    if(pk>0){
-      let rate=Math.round((s.completions||0)/pk*100);
-      h+='<span class="stat"><span class="stat-label">Completion Rate</span><b>'+rate+'%</b></span>';
-    }
-    if(s.top_numbers&&s.top_numbers.length){
-      h+='<span class="stat"><span class="stat-label">Most Dialled</span><b>'+s.top_numbers[0].number+'</b> &times;'+s.top_numbers[0].count+'</span>';
-    }
-    let up=s.uptime||0,uH=Math.floor(up/3600),uM=Math.floor(up%3600/60);
-    h+='<span class="stat"><span class="stat-label">Powered On</span><b>'+uH+'h '+uM+'m</b></span>';
-    sb.innerHTML=h;
-  });
-}
-function loadStats(){
-  fetch('/api/stats').then(r=>r.json()).then(d=>{
-    let h='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
-    h+='<span class="stat"><span class="stat-label">Sessions (Pickups)</span><b>'+d.pickups+'</b></span>';
-    h+='<span class="stat"><span class="stat-label">Times Rung</span><b>'+d.incoming+'</b></span>';
-    h+='<span class="stat"><span class="stat-label">Calls Answered</span><b>'+d.answered+'</b></span>';
-    h+='<span class="stat"><span class="stat-label">Numbers Dialled</span><b>'+d.outgoing+'</b></span>';
-    h+='<span class="stat"><span class="stat-label">Unknown Numbers</span><b>'+d.not_recognised+'</b></span>';
-    if(d.coin_collected>0) h+='<span class="stat"><span class="stat-label">Coins Collected</span><b>'+d.coin_collected+'</b></span>';
-    if(d.coin_refunded>0) h+='<span class="stat"><span class="stat-label">Coins Refunded</span><b>'+d.coin_refunded+'</b></span>';
-    h+='</div>';
-    if(d.call_count>0){
-      let avgM=Math.floor(d.avg_call/60), avgS=d.avg_call%60;
-      let lonM=Math.floor(d.longest_call/60), lonS=d.longest_call%60;
-      h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
-      h+='<span class="stat"><span class="stat-label">Average Call</span><b>'+avgM+'m '+avgS+'s</b></span>';
-      h+='<span class="stat"><span class="stat-label">Longest Call</span><b>'+lonM+'m '+lonS+'s</b></span>';
-      let totM=Math.floor(d.call_seconds/60);
-      h+='<span class="stat"><span class="stat-label">Total Talk Time</span><b>'+totM+' min</b></span>';
-      h+='</div>';
-    }
-    // Engagement metrics
-    h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">';
-    if(d.pickups>0){
-      let compRate=d.completions>0?Math.min(100,Math.round(d.completions/d.pickups*100)):0;
-      h+='<span class="stat"><span class="stat-label">Completion Rate</span><b>'+compRate+'%</b></span>';
-    }
-    if(d.first_digit_n>0){
-      let avgFd=Math.round(d.first_digit_ms/d.first_digit_n/1000*10)/10;
-      h+='<span class="stat"><span class="stat-label">Avg. Time to First Digit</span><b>'+avgFd+'s</b></span>';
-    }
-    let uH=Math.floor(d.total_uptime/3600), uM=Math.floor(d.total_uptime%3600/60);
-    h+='<span class="stat"><span class="stat-label">Total Running Time</span><b>'+uH+'h '+uM+'m</b></span>';
-    h+='</div>';
-    if(d.top_numbers&&d.top_numbers.length){
-      h+='<div style="margin-top:12px"><div style="color:var(--fg2);font-weight:500;font-size:.9em;margin-bottom:4px">Most Popular Numbers:</div>';
-      d.top_numbers.forEach(n=>{
-        h+='<span class="stat"><span class="topnum">'+n.number+'</span> &times;'+n.count+'</span> ';
-      });
-      h+='</div>';
-    }
-    document.getElementById('statsbox').innerHTML=h;
-  });
-}
-function loadDiscovery(){
-  fetch('/api/discovery').then(r=>r.json()).then(d=>{
-    if(!d||!d.length){document.getElementById('discbox').innerHTML='<span style="color:var(--fg4)">No unrecognised numbers yet. When visitors dial numbers that aren\'t in the directory, they\'ll appear here.</span>';return;}
-    let h='<table style="width:100%;border-collapse:collapse"><thead><tr><td style="color:var(--fg3);padding:4px 8px">Number Dialled</td><td style="color:var(--fg3);padding:4px 8px">Times Tried</td><td></td></tr></thead><tbody>';
-    d.forEach(e=>{
-      h+='<tr><td style="padding:4px 8px"><span class="topnum">'+e.number+'</span></td><td style="padding:4px 8px">'+e.count+'</td><td style="padding:4px 8px"><span class="del" onclick="removeDiscovery(\''+e.number+'\')">remove</span></td></tr>';
-    });
-    h+='</tbody></table>';
-    document.getElementById('discbox').innerHTML=h;
-  });
-}
-function clearDiscovery(){
-  if(!confirm('Clear the numbers tried log?'))return;
-  fetch('/api/discovery/clear',{method:'POST'}).then(()=>loadDiscovery());
-}
-function removeDiscovery(num){
-  fetch('/api/discovery/remove?number='+encodeURIComponent(num),{method:'POST'}).then(()=>loadDiscovery());
-}
-let curLog='system';
-function loadLog(which){
-  curLog=which;
-  document.getElementById('logview').textContent='Loading...';
-  fetch('/api/logs/'+which).then(r=>r.text()).then(t=>{
-    let el=document.getElementById('logview');
-    el.textContent=t||'(empty)';
-    el.scrollTop=el.scrollHeight;
-  });
-}
-function clearLog(){
-  if(!confirm('Clear '+curLog+' log?'))return;
-  fetch('/api/logs/clear?log='+curLog,{method:'POST'}).then(()=>loadLog(curLog));
-}
-let aliases=[];
-function loadAliases(){
-  fetch('/api/aliases').then(r=>r.json()).then(d=>{
-    aliases=d||[];
-    let tb=document.querySelector('#aliastbl tbody');
-    tb.innerHTML='';
-    aliases.forEach((a,i)=>{
-      let tr=document.createElement('tr');
-      tr.innerHTML='<td class="topnum">'+a.number+'</td><td>'+a.name+'</td><td><span class="del" onclick="delAlias('+i+')">remove</span></td>';
-      tb.appendChild(tr);
-    });
-  });
-}
-function addAlias(){
-  let num=document.getElementById('anew_num').value.trim();
-  let name=document.getElementById('anew_name').value.trim();
-  if(!num||!name)return;
-  let existing=aliases.findIndex(a=>a.number===num);
-  if(existing>=0) aliases[existing].name=name;
-  else aliases.push({number:num,name:name});
-  saveAliases();
-  document.getElementById('anew_num').value='';
-  document.getElementById('anew_name').value='';
-}
-function delAlias(i){
-  aliases.splice(i,1);
-  saveAliases();
-}
-function saveAliases(){
-  fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(aliases)})
-  .then(r=>r.json()).then(d=>{
-    document.getElementById('aliasstatus').innerHTML=d.ok?'<span class="ok">Saved</span>':'<span class="err">'+d.error+'</span>';
-    loadAliases();
-  });
-}
-let mediaRec=null,recChunks=[],recInt=null,recStart=0,recBlob=null;
-function startRec(){
-  document.getElementById('recpreview').style.display='none';
-  recBlob=null;
-  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-    recChunks=[];
-    mediaRec=new MediaRecorder(stream,{mimeType:'audio/webm;codecs=opus'});
-    mediaRec.ondataavailable=e=>{if(e.data.size>0)recChunks.push(e.data)};
-    mediaRec.onstop=()=>{
-      stream.getTracks().forEach(t=>t.stop());
-      recBlob=new Blob(recChunks,{type:'audio/webm'});
-      let url=URL.createObjectURL(recBlob);
-      document.getElementById('recaudio').src=url;
-      document.getElementById('recpreview').style.display='block';
-      document.getElementById('recstatus').innerHTML='<span class="ok">Recording complete. Listen back above, then save or discard.</span>';
-    };
-    mediaRec.start(100);
-    recStart=Date.now();
-    document.getElementById('recbtn').disabled=true;
-    document.getElementById('stopbtn').disabled=false;
-    document.getElementById('recstatus').innerHTML='<span style="color:var(--err);font-weight:500">&#9679; Recording in progress...</span>';
-    recInt=setInterval(()=>{let s=Math.floor((Date.now()-recStart)/1000);document.getElementById('rectimer').textContent=Math.floor(s/60)+':'+(s%60<10?'0':'')+(s%60)},500);
-  }).catch(e=>{document.getElementById('recstatus').innerHTML='<span class="err">Microphone access denied. Please allow microphone access and try again.</span>'});
-}
-function stopRec(){
-  if(mediaRec&&mediaRec.state!=='inactive')mediaRec.stop();
-  clearInterval(recInt);
-  document.getElementById('recbtn').disabled=false;
-  document.getElementById('stopbtn').disabled=true;
-}
-function saveRec(){
-  if(!recBlob){return;}
-  let name=document.getElementById('recname').value.trim();
-  if(!name){document.getElementById('recstatus').innerHTML='<span class="err">Please enter a filename</span>';return;}
-  let dir=document.getElementById('recdir').value;
-  let fd=new FormData();
-  fd.append('file',recBlob,name+'.mp3');
-  document.getElementById('recstatus').innerHTML='<span class="ok">Saving...</span>';
-  fetch('/api/upload?path='+encodeURIComponent(dir),{method:'POST',body:fd})
-  .then(r=>r.json()).then(d=>{
-    document.getElementById('recstatus').innerHTML=d.ok?'<span class="ok">Saved to '+dir+name+'.mp3</span>':'<span class="err">'+d.error+'</span>';
-    document.getElementById('rectimer').textContent='';
-    document.getElementById('recpreview').style.display='none';
-    recBlob=null;
-    loadFiles();
-  });
-}
-function discardRec(){
-  recBlob=null;
-  document.getElementById('recpreview').style.display='none';
-  document.getElementById('recstatus').innerHTML='Recording discarded.';
-  document.getElementById('rectimer').textContent='';
-}
-function rollbackFW(){
-  if(!confirm('Restore the previous firmware version? The telephone will restart.'))return;
-  fetch('/api/rollback',{method:'POST'}).then(r=>r.json()).then(d=>{
-    if(d.ok){document.getElementById('otastatus').innerHTML='<span class="ok">Restoring previous version... restarting</span>';setTimeout(()=>{location.reload()},8000);}
-    else document.getElementById('otastatus').innerHTML='<span class="err">'+(d.error||'No previous firmware available')+'</span>';
-  });
-}
-function loadErrors(){
-  fetch('/api/diagnostics').then(r=>r.json()).then(d=>{
-    let box=document.getElementById('errorbox');
-    if(!d||!d.length){box.innerHTML='<span style="color:var(--ok)">No errors recorded since last power-on.</span>';return;}
-    let h='<table style="width:100%;border-collapse:collapse"><thead><tr><td style="color:var(--fg3);padding:4px 8px">Time</td><td style="color:var(--fg3);padding:4px 8px">Type</td><td style="color:var(--fg3);padding:4px 8px">Detail</td></tr></thead><tbody>';
-    d.forEach(e=>{
-      let mins=Math.floor(e.time/60), secs=e.time%60;
-      let ts=mins+'m '+secs+'s';
-      let cls=e.type==='SD_FAILURE'?'err':e.type==='BELL_FAULT'?'warn':'warn';
-      h+='<tr><td style="padding:4px 8px;font-family:monospace;font-size:.8em">'+ts+'</td>';
-      h+='<td style="padding:4px 8px"><span class="'+cls+'">'+e.type+'</span></td>';
-      h+='<td style="padding:4px 8px;font-size:.85em">'+(e.detail||'—')+'</td></tr>';
-    });
-    h+='</tbody></table>';
-    box.innerHTML=h;
-  }).catch(()=>{document.getElementById('errorbox').innerHTML='<span class="err">Failed to load error log</span>';});
-}
-function loadDiag(){
-  fetch('/api/diag').then(r=>r.json()).then(d=>{
-    let db=document.getElementById('driftbox');
-    if(!d.boot_lines||!d.boot_lines.length){db.innerHTML='<span style="color:var(--fg4)">No boot readings recorded yet.</span>';}
-    else{
-      let bl=d.boot_lines;
-      let h='<table style="width:100%;border-collapse:collapse"><thead><tr><td style="color:var(--fg3);padding:4px 8px">Boot #</td><td style="color:var(--fg3);padding:4px 8px">On-Hook Reading</td></tr></thead><tbody>';
-      for(let i=bl.length-1;i>=0;i--){
-        h+='<tr><td style="padding:4px 8px;font-family:monospace">'+bl[i].boot+'</td><td style="padding:4px 8px;font-family:monospace">'+bl[i].raw+'</td></tr>';
-      }
-      h+='</tbody></table>';
-      db.innerHTML=h;
-    }
-    let stb=document.getElementById('selftestbox');
-    if(d.selftest&&d.selftest.length){
-      let up=d.selftest_uptime||0,uH=Math.floor(up/3600),uM=Math.floor(up%3600/60);
-      stb.textContent='(ran at uptime '+uH+'h '+uM+'m)\n\n'+d.selftest;
-    } else { stb.textContent='No self-test has been run yet. Run one from the Terminal tab.'; }
-  }).catch(()=>{document.getElementById('driftbox').innerHTML='<span class="err">Failed to load diagnostics</span>';});
-}
-if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
-loadStatus();loadSession();loadStats();loadAliases();loadDiscovery();
-setInterval(loadStatus,5000);
-setInterval(loadSession,30000);
-setInterval(loadStats,30000);
-setInterval(loadDiscovery,30000);
-</script>
-</body>
-</html>
-)rawhtml";
+// The portal UI is a compiled single-file React app, gzip-compressed and
+// embedded as a byte array (see portal_html.h). Served with Content-Encoding:
+// gzip from handleIndex(). Source project lives under tools/portal.
 
 // --- API handlers -----------------------------------------------------------
 
+// The compressed portal is ~120 kB, which over a weak AP link can take longer
+// than the task watchdog window to push out. A single blocking send therefore
+// risks a watchdog reboot mid-page-load (the page never arrives, and the reboot
+// drops the client). Stream it in small chunks and feed the watchdog between
+// each one, and give up early if the browser goes away.
 static void handleIndex() {
-    server.send_P(200, "text/html", INDEX_HTML);
+    // The blob only changes with the firmware, so let a browser that already has
+    // it skip the transfer entirely rather than re-fetching it on every load.
+    const String etag = String("\"") + FIRMWARE_VERSION + "-" +
+                        String((unsigned long)PORTAL_HTML_GZ_LEN) + "\"";
+    if (server.header("If-None-Match") == etag) {
+        server.sendHeader("ETag", etag);
+        server.send(304, "text/html", "");
+        return;
+    }
+
+    server.sendHeader("Content-Encoding", "gzip");
+    server.sendHeader("ETag", etag);
+    server.sendHeader("Cache-Control", "no-cache");
+    server.setContentLength(PORTAL_HTML_GZ_LEN);
+    server.send(200, "text/html", "");
+
+    WiFiClient client = server.client();
+    client.setNoDelay(true);
+    constexpr size_t CHUNK = 2048;
+    for (size_t sent = 0; sent < PORTAL_HTML_GZ_LEN; ) {
+        if (!client.connected()) break;
+        size_t n = PORTAL_HTML_GZ_LEN - sent;
+        if (n > CHUNK) n = CHUNK;
+        size_t wrote = client.write(PORTAL_HTML_GZ + sent, n);
+        esp_task_wdt_reset();
+        if (wrote == 0) break;
+        sent += wrote;
+    }
+}
+
+// Minimal, dependency-free recovery page. The main portal is a large compiled
+// app; if it ever fails to load, this stays reachable at /recovery so firmware
+// can still be re-flashed and the board rebooted without a USB cable.
+static const char RECOVERY_HTML[] PROGMEM = R"rawhtml(<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K6 Recovery</title>
+<style>body{font-family:sans-serif;margin:2em;max-width:34em}
+h1{font-size:1.3em}button{padding:.6em 1.2em;margin-top:.5em}
+fieldset{margin-bottom:1.5em}</style></head><body>
+<h1>K6 Exhibit &mdash; Recovery</h1>
+<p>Minimal page for when the main portal will not load.</p>
+<fieldset><legend>Firmware update</legend>
+<form method="POST" action="/api/ota" enctype="multipart/form-data">
+<input type="file" name="file" accept=".bin" required>
+<button type="submit">Upload &amp; install</button></form>
+<p><small>Takes a minute; the board reboots when finished.</small></p>
+</fieldset>
+<fieldset><legend>Other</legend>
+<button onclick="fetch('/api/reboot',{method:'POST'})">Reboot</button>
+<button onclick="location.href='/api/status'">View status JSON</button>
+<button onclick="location.href='/'">Try main portal</button>
+</fieldset></body></html>
+)rawhtml";
+
+static void handleRecovery() {
+    server.send_P(200, "text/html", RECOVERY_HTML);
+}
+
+// Phones and laptops probe well-known URLs to decide whether a joined network
+// has internet, repeatedly and in the background. Answer them as they expect so
+// the OS stops asking: otherwise they fall through to onNotFound, and a redirect
+// there makes each probe fetch the whole ~120 kB portal over the single
+// connection the real page load needs.
+static void handleCaptiveProbe() {
+    if (server.uri().endsWith("204")) {
+        server.send(204, "text/plain", "");
+    } else {
+        server.send(200, "text/html",
+                    "<HTML><HEAD><TITLE>Success</TITLE></HEAD>"
+                    "<BODY>Success</BODY></HTML>");
+    }
 }
 
 static void handleFileList() {
@@ -1148,7 +333,14 @@ static void handleFileList() {
     if (path.isEmpty()) path = "/";
     if (!path.endsWith("/")) path += "/";
 
-    File dir = SD.open(path);
+    // Some FS layers refuse a directory path with a trailing slash, so open the
+    // bare form ("/numbers" rather than "/numbers/"); root stays as "/".
+    String openPath = path;
+    while (openPath.length() > 1 && openPath.endsWith("/")) {
+        openPath.remove(openPath.length() - 1);
+    }
+
+    File dir = SD.open(openPath);
     if (!dir || !dir.isDirectory()) {
         server.send(200, "application/json", "[]");
         return;
@@ -1160,8 +352,14 @@ static void handleFileList() {
     while ((entry = dir.openNextFile())) {
         if (!first) json += ",";
         first = false;
+        // name() is the bare entry name on this core, but has returned a full
+        // path on others -- keep only the final segment either way.
+        String name = entry.name();
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+
         json += "{\"name\":\"";
-        json += entry.name();
+        json += jsonEscape(name);
         json += "\",\"size\":";
         json += String(entry.size());
         json += ",\"dir\":";
@@ -1292,6 +490,19 @@ static void handleStatus() {
     json += ",\"sd_used\":";  json += String((uint32_t)(SD.usedBytes() / (1024 * 1024)));
     json += ",\"uptime\":";  json += String(millis() / 1000);
     json += ",\"firmware\":\"" FIRMWARE_VERSION "\"";
+    json += ",\"loop_max\":"; json += String(s_loop_max_ms);
+    json += ",\"web_max\":";  json += String(s_web_max_ms);
+    json += ",\"conn\":";     json += String(s_conn_total);
+    json += ",\"conn_idle\":"; json += String(s_conn_idle);
+    json += ",\"channel\":"; json += String(WiFi.channel());
+    json += ",\"rssi\":";    json += String(s_ap_active ? apStationRssi() : WiFi.RSSI());
+    json += ",\"clients\":"; json += String(s_ap_active ? WiFi.softAPgetStationNum() : 0);
+    if (server.hasArg("reset")) {
+        s_loop_max_ms = 0;
+        s_web_max_ms  = 0;
+        s_conn_total  = 0;
+        s_conn_idle   = 0;
+    }
     json += ",\"volume\":";  json += String(s_phone->player().getVolume());
     json += ",\"bell_freq\":"; json += String(s_phone->bell().ringFreq());
     json += ",\"digit_gap\":"; json += String(s_phone->numberCompleteMs());
@@ -1318,7 +529,11 @@ static void handleStatus() {
     if (s_phone->player().isPlaying()) {
         json += s_phone->player().currentFile();
     }
-    json += "\",\"call_secs\":";
+    json += "\",\"play_pos\":";  json += String(s_phone->player().playPositionSecs());
+    json += ",\"play_dur\":";     json += String(s_phone->player().playDurationSecs());
+    json += ",\"off_hook\":";
+    json += s_phone->line().hookState() == HookState::OFF_HOOK ? "true" : "false";
+    json += ",\"call_secs\":";
     if (s_phone->state() != PhoneState::IDLE) {
         json += String((millis() - s_phone->stateEnterTime()) / 1000);
     } else {
@@ -1461,6 +676,10 @@ static void handleDigitGap() {
 // Configure Wi-Fi mode (host own AP vs join existing network). Persists the
 // choice and reboots so the new mode takes effect from a clean boot.
 static void handleWifi() {
+    if (server.hasArg("channel")) {
+        int ch = server.arg("channel").toInt();
+        if (ch >= 1 && ch <= 13) s_ap_channel = (uint8_t)ch;
+    }
     String mode = server.arg("mode");
     if (mode == "sta") {
         s_wifi_sta  = true;
@@ -1516,6 +735,39 @@ static void handleRingNow() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
     s_phone->ring();
     if (s_logger) s_logger->systemLog("Ring triggered via web");
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// Dial a number from the portal. Refused unless the handset is off the hook,
+// since the phone has no more business dialling on its own than a visitor has
+// dialling with the handset down — and the reason is reported so the portal can
+// say what to do rather than just failing.
+static void handleDial() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+
+    String number = server.arg("n");
+    number.trim();
+    if (!number.length()) {
+        server.send(200, "application/json",
+                    "{\"ok\":false,\"error\":\"No number given.\"}");
+        return;
+    }
+
+    if (s_phone->line().hookState() != HookState::OFF_HOOK) {
+        server.send(200, "application/json",
+                    "{\"ok\":false,\"error\":\"Lift the handset first.\"}");
+        return;
+    }
+
+    if (!s_phone->dialRemote(number.c_str())) {
+        String err = "{\"ok\":false,\"error\":\"The phone is busy (";
+        err += s_phone->stateName();
+        err += ") — replace the handset and lift it again.\"}";
+        server.send(200, "application/json", err);
+        return;
+    }
+
+    if (s_logger) s_logger->systemLog("Dialled %s via web", number.c_str());
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1603,6 +855,7 @@ static void handleTerminal() {
         out += "  status              show phone state\n";
         out += "  ring                trigger the bell\n";
         out += "  testring [secs]     ring for a fixed time (default 3s)\n";
+        out += "  dial <number>       dial as if on the rotary dial (handset must be lifted)\n";
         out += "  hangup              hang up / stop playback\n";
         out += "  cancel              cancel ringing\n";
         out += "  mode [auto|manual]  get/set ring mode\n";
@@ -1645,6 +898,16 @@ static void handleTerminal() {
         if (secs < 1) secs = 1; if (secs > 30) secs = 30;
         p.testRing(secs);
         out = "test ring for " + String(secs) + "s";
+    } else if (verb == "dial") {
+        if (!arg.length()) {
+            out = "usage: dial <number>";
+        } else if (p.line().hookState() != HookState::OFF_HOOK) {
+            out = "lift the handset first";
+        } else if (!p.dialRemote(arg.c_str())) {
+            out = "cannot dial now (state=" + String(p.stateName()) + ")";
+        } else {
+            out = "dialled " + arg;
+        }
     } else if (verb == "hangup" || verb == "h") {
         p.hangUp(); out = "hung up";
     } else if (verb == "cancel" || verb == "c") {
@@ -1932,6 +1195,71 @@ static void handleDiagnostics() {
     server.send(200, "application/json", json);
 }
 
+// Wi-Fi survey: every network in range with its channel and signal strength,
+// plus a congestion score per channel so a clear one can be chosen. 2.4 GHz
+// channels are 5 MHz apart but ~22 MHz wide, so a network four channels away
+// still interferes; the score weights neighbours by how much they overlap.
+static void handleWifiScan() {
+    // Scanning needs the station interface, which AP-only mode doesn't have.
+    // The AP keeps running throughout, though it stops responding for the
+    // second or so the radio spends off-channel.
+    wifi_mode_t restore = WiFi.getMode();
+    if (s_ap_active) WiFi.mode(WIFI_AP_STA);
+
+    int n = WiFi.scanNetworks(false, true);
+    esp_task_wdt_reset();
+
+    // Linear power, so a strong neighbour counts for far more than a faint one.
+    float score[14] = {0};
+    String json = "{\"nets\":[";
+    for (int i = 0; i < n; i++) {
+        int ch = WiFi.channel(i);
+        int rssi = WiFi.RSSI(i);
+        if (i > 0) json += ",";
+        json += "{\"ssid\":\""; json += jsonEscape(WiFi.SSID(i)); json += "\"";
+        json += ",\"ch\":";   json += String(ch);
+        json += ",\"rssi\":"; json += String(rssi);
+        json += "}";
+
+        if (ch < 1 || ch > 13) continue;
+        float power = pow(10.0f, rssi / 10.0f);
+        for (int c = 1; c <= 13; c++) {
+            int sep = abs(c - ch);
+            if (sep <= 4) score[c] += power * (1.0f - sep / 5.0f);
+        }
+    }
+    json += "]";
+
+    // Report every channel's congestion, and recommend from the three
+    // non-overlapping ones so the choice stays clear of its neighbours too.
+    json += ",\"busy\":[";
+    float scale = 0;
+    for (int c = 1; c <= 13; c++) if (score[c] > scale) scale = score[c];
+    for (int c = 1; c <= 13; c++) {
+        if (c > 1) json += ",";
+        int pct = scale > 0 ? (int)(100.0f * score[c] / scale) : 0;
+        json += "{\"ch\":"; json += String(c);
+        json += ",\"load\":"; json += String(pct);
+        json += "}";
+    }
+    json += "]";
+
+    const int preferred[3] = { 1, 6, 11 };
+    int best = preferred[0];
+    for (int i = 1; i < 3; i++) {
+        if (score[preferred[i]] < score[best]) best = preferred[i];
+    }
+    json += ",\"best\":"; json += String(best);
+    json += ",\"current\":"; json += String(WiFi.channel());
+    json += ",\"count\":"; json += String(n);
+    json += "}";
+
+    WiFi.scanDelete();
+    if (s_ap_active) WiFi.mode(restore);
+
+    server.send(200, "application/json", json);
+}
+
 // Persisted diagnostics: boot-time line-sense readings (drift) + last self-test.
 static void handleDiag() {
     if (!s_stats) { server.send(200, "application/json", "{}"); return; }
@@ -2044,6 +1372,10 @@ static void loadSettings() {
     s_wifi_sta = doc["wifi_sta"].as<bool>();
     if (!doc["wifi_ssid"].isNull()) s_sta_ssid = doc["wifi_ssid"].as<const char*>();
     if (!doc["wifi_pass"].isNull()) s_sta_pass = doc["wifi_pass"].as<const char*>();
+    if (!doc["ap_channel"].isNull()) {
+        uint8_t ch = doc["ap_channel"].as<uint8_t>();
+        if (ch >= 1 && ch <= 13) s_ap_channel = ch;
+    }
     if (!doc["ar_min"].isNull() && !doc["ar_max"].isNull()) {
         s_phone->setAutoRingInterval(
             doc["ar_min"].as<unsigned long>(),
@@ -2077,6 +1409,7 @@ static void saveSettings() {
     doc["wifi_sta"]  = s_wifi_sta;
     doc["wifi_ssid"] = s_sta_ssid;
     doc["wifi_pass"] = s_sta_pass;
+    doc["ap_channel"] = s_ap_channel;
     doc["ar_min"]   = s_phone->autoRingMinMs();
     doc["ar_max"]   = s_phone->autoRingMaxMs();
     doc["ring_max"] = s_phone->maxRingCadences();
@@ -2165,29 +1498,19 @@ static void handleManifest() {
     server.send_P(200, "application/json", MANIFEST_JSON);
 }
 
+// The portal is no longer a PWA. This self-unregistering worker exists only so
+// browsers that installed the old caching service worker purge their caches and
+// drop the registration on their next visit (otherwise they could keep serving
+// the stale cached portal).
 static const char SW_JS[] PROGMEM = R"rawjs(
-const CACHE='k6-v1';
-const URLS=['/'];
-self.addEventListener('install',e=>{
-  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(URLS)));
-  self.skipWaiting();
-});
-self.addEventListener('activate',e=>{
-  e.waitUntil(caches.keys().then(keys=>
-    Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
-  ));
-  self.clients.claim();
-});
-self.addEventListener('fetch',e=>{
-  if(e.request.url.includes('/api/'))return;
-  e.respondWith(
-    fetch(e.request).then(r=>{
-      let c=r.clone();
-      caches.open(CACHE).then(cache=>cache.put(e.request,c));
-      return r;
-    }).catch(()=>caches.match(e.request))
-  );
-});
+self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',e=>{e.waitUntil((async()=>{
+  const keys=await caches.keys();
+  await Promise.all(keys.map(k=>caches.delete(k)));
+  await self.registration.unregister();
+  const cs=await self.clients.matchAll();
+  cs.forEach(c=>c.navigate(c.url));
+})());});
 )rawjs";
 
 static void handleServiceWorker() {
@@ -2211,6 +1534,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     if (s_wifi_sta && s_sta_ssid.length()) {
         Serial.printf("[web] joining Wi-Fi \"%s\"...\n", s_sta_ssid.c_str());
         WiFi.mode(WIFI_STA);
+        WiFi.setSleep(false);
         WiFi.begin(s_sta_ssid.c_str(), s_sta_pass.c_str());
         unsigned long t0 = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(250);
@@ -2225,8 +1549,11 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
         if (s_wifi_sta) Serial.println("[web] Wi-Fi join failed — hosting own AP instead");
         s_ap_active = true;
         WiFi.mode(WIFI_AP);
-        WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS);
+        WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS, s_ap_channel);
         delay(100);
+        // Modem sleep adds latency to every packet; over a 120 kB page that is
+        // the difference between a second and a browser timeout.
+        WiFi.setSleep(false);
         Serial.printf("[web] AP \"%s\" started — http://%s/\n",
                       WIFI_AP_SSID, WiFi.softAPIP().toString().c_str());
     }
@@ -2237,6 +1564,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     }
 
     server.on("/",                HTTP_GET,  handleIndex);
+    server.on("/recovery",        HTTP_GET,  handleRecovery);
     server.on("/api/files",       HTTP_GET,  handleFileList);
     server.on("/api/upload",      HTTP_POST, handleUploadComplete, handleUpload);
     server.on("/api/delete",      HTTP_POST, handleDelete);
@@ -2255,6 +1583,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
     server.on("/api/ring",        HTTP_POST, handleRingNow);
     server.on("/api/testring",    HTTP_POST, handleTestRing);
+    server.on("/api/dial",        HTTP_POST, handleDial);
     server.on("/api/tone",        HTTP_POST, handleTone);
     server.on("/api/ringcount",  HTTP_POST, handleRingCount);
     server.on("/api/ringtone",   HTTP_POST, handleRingTone);
@@ -2266,6 +1595,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
     server.on("/api/diagnostics", HTTP_GET,  handleDiagnostics);
     server.on("/api/diag",        HTTP_GET,  handleDiag);
+    server.on("/api/wifiscan",    HTTP_GET,  handleWifiScan);
     server.on("/api/discovery",       HTTP_GET,  handleDiscovery);
     server.on("/api/discovery/clear",  HTTP_POST, handleDiscoveryClear);
     server.on("/api/discovery/remove", HTTP_POST, handleDiscoveryRemove);
@@ -2275,11 +1605,19 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/reboot",      HTTP_POST, handleReboot);
     server.on("/manifest.json",   HTTP_GET,  handleManifest);
     server.on("/sw.js",           HTTP_GET,  handleServiceWorker);
+    server.on("/favicon.ico",     HTTP_GET,  []() { server.send(204, "image/x-icon", ""); });
+    server.on("/generate_204",       HTTP_GET, handleCaptiveProbe);
+    server.on("/gen_204",            HTTP_GET, handleCaptiveProbe);
+    server.on("/hotspot-detect.html",HTTP_GET, handleCaptiveProbe);
+    server.on("/ncsi.txt",           HTTP_GET, handleCaptiveProbe);
+    server.on("/connecttest.txt",    HTTP_GET, handleCaptiveProbe);
 
-    // Silence the "request handler not found" spam from favicon/OS captive-
-    // portal probes: redirect stray GETs to the portal, 404 everything else.
+    // Stray GETs go to the portal, but only ones that look like a page: sending
+    // a browser fetching some asset to the 120 kB index wastes the link.
     server.onNotFound([]() {
-        if (server.method() == HTTP_GET && !server.uri().startsWith("/api/")) {
+        bool looksLikeAsset = server.uri().lastIndexOf('.') >= 0;
+        if (server.method() == HTTP_GET && !server.uri().startsWith("/api/") &&
+            !looksLikeAsset) {
             server.sendHeader("Location",
                               String("http://") + currentIP().toString() + "/");
             server.send(302, "text/plain", "redirecting");
@@ -2287,6 +1625,14 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
             server.send(404, "text/plain", "not found");
         }
     });
+
+    // Allow local diagnostic pages opened from a file:// URL to call the API;
+    // without this a browser refuses the cross-origin request.
+    server.enableCORS(true);
+
+    // WebServer discards request headers unless they are asked for by name.
+    const char* wanted[] = { "If-None-Match" };
+    server.collectHeaders(wanted, 1);
 
     server.begin();
     active_ = true;
@@ -2297,7 +1643,28 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
 }
 
 void WebManager::update() {
-    if (active_) server.handleClient();
+    // Gap since the previous call is how long everything else in loop() took, so
+    // a large value means the board is blocked elsewhere rather than in the
+    // network stack.
+    static unsigned long last_update_ms = 0;
+    unsigned long now = millis();
+    if (last_update_ms != 0 && now - last_update_ms > s_loop_max_ms) {
+        s_loop_max_ms = now - last_update_ms;
+    }
+    last_update_ms = now;
+
+    if (active_) {
+        server.handleClient();
+        unsigned long spent = millis() - now;
+        if (spent > s_web_max_ms) s_web_max_ms = spent;
+    }
+}
+
+void WebManager::resetTimingStats() {
+    s_loop_max_ms = 0;
+    s_web_max_ms  = 0;
+    s_conn_total  = 0;
+    s_conn_idle   = 0;
 }
 
 void WebManager::persistSettings() {
@@ -2310,4 +1677,93 @@ String WebManager::selfTest() {
 
 String WebManager::audioProbe() {
     return s_phone ? buildProbe(*s_phone) : String("phone not ready");
+}
+
+bool WebManager::setApChannel(uint8_t channel) {
+    if (channel < 1 || channel > 13) return false;
+    s_ap_channel = channel;
+    saveSettings();
+    return true;
+}
+
+bool WebManager::toggleWebTrace() {
+    s_web_trace = !s_web_trace;
+    return s_web_trace;
+}
+
+// Same survey as /api/wifiscan, laid out for a terminal: link state and the
+// timing counters first (so one command captures the whole picture), then every
+// network in range, then the per-channel congestion with a recommendation.
+String WebManager::wifiReport() {
+    char line[128];
+    String out = "--- Wi-Fi report ---\n";
+
+    snprintf(line, sizeof(line), "mode      : %s\n", s_ap_active ? "AP (hosting)" : "STA (joined)");
+    out += line;
+    snprintf(line, sizeof(line), "ssid      : %s\n",
+             s_ap_active ? WIFI_AP_SSID : s_sta_ssid.c_str());
+    out += line;
+    snprintf(line, sizeof(line), "channel   : %d\n", WiFi.channel());
+    out += line;
+    snprintf(line, sizeof(line), "rssi      : %d dBm%s\n",
+             s_ap_active ? apStationRssi() : WiFi.RSSI(),
+             s_ap_active && WiFi.softAPgetStationNum() == 0 ? "  (nothing connected)" : "");
+    out += line;
+    snprintf(line, sizeof(line), "clients   : %d\n",
+             s_ap_active ? WiFi.softAPgetStationNum() : 0);
+    out += line;
+    snprintf(line, sizeof(line), "worst loop: %lu ms   worst web call: %lu ms\n",
+             s_loop_max_ms, s_web_max_ms);
+    out += line;
+    snprintf(line, sizeof(line), "conns     : %u total, %u never sent a request\n",
+             s_conn_total, s_conn_idle);
+    out += line;
+
+    wifi_mode_t restore = WiFi.getMode();
+    if (s_ap_active) WiFi.mode(WIFI_AP_STA);
+
+    int n = WiFi.scanNetworks(false, true);
+    esp_task_wdt_reset();
+
+    float score[14] = {0};
+    out += "\nnetworks in range:\n";
+    if (n <= 0) out += "  (none found)\n";
+    for (int i = 0; i < n; i++) {
+        int ch = WiFi.channel(i);
+        int rssi = WiFi.RSSI(i);
+        snprintf(line, sizeof(line), "  ch %-2d  %4d dBm  %s\n", ch, rssi, WiFi.SSID(i).c_str());
+        out += line;
+
+        if (ch < 1 || ch > 13) continue;
+        float power = pow(10.0f, rssi / 10.0f);
+        for (int c = 1; c <= 13; c++) {
+            int sep = abs(c - ch);
+            if (sep <= 4) score[c] += power * (1.0f - sep / 5.0f);
+        }
+    }
+
+    float scale = 0;
+    for (int c = 1; c <= 13; c++) if (score[c] > scale) scale = score[c];
+    out += "\nchannel congestion (relative to the busiest):\n";
+    for (int c = 1; c <= 13; c++) {
+        int pct = scale > 0 ? (int)(100.0f * score[c] / scale) : 0;
+        String bar;
+        for (int b = 0; b < pct / 5; b++) bar += '#';
+        snprintf(line, sizeof(line), "  ch %-2d %3d%% %s%s\n", c, pct, bar.c_str(),
+                 c == WiFi.channel() ? "  <- in use" : "");
+        out += line;
+    }
+
+    const int preferred[3] = { 1, 6, 11 };
+    int best = preferred[0];
+    for (int i = 1; i < 3; i++) {
+        if (score[preferred[i]] < score[best]) best = preferred[i];
+    }
+    snprintf(line, sizeof(line), "\nclearest non-overlapping channel: %d\n", best);
+    out += line;
+
+    WiFi.scanDelete();
+    if (s_ap_active) WiFi.mode(restore);
+
+    return out;
 }

@@ -60,6 +60,11 @@ public:
     void stop();
     bool isPlaying();
 
+    // Playback position and length of the current file, in seconds. Both are 0
+    // for a looping tone (dial, busy, ringing), which has no end to count to.
+    uint32_t playPositionSecs();
+    uint32_t playDurationSecs();
+
     // Must be called every loop() to feed the I2S DMA buffers.
     void update();
 

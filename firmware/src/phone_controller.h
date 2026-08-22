@@ -62,6 +62,12 @@ public:
     void cancelRing();
     void hangUp();
 
+    // Dial a number on the visitor's behalf, as if it had been dialled on the
+    // rotary dial. The handset must be off the hook, just as it must be to dial
+    // by hand. Returns false if the phone is not in a state to accept dialling
+    // or the number contains no digits.
+    bool dialRemote(const char* number);
+
     void onDigit(DigitCallback cb)   { digit_cb_  = cb; }
     void onNumber(NumberCallback cb) { number_cb_ = cb; }
     void onHook(HookCallback cb)     { hook_cb_   = cb; }

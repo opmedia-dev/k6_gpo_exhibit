@@ -25,9 +25,24 @@ public:
     // serial calibration command so tuned thresholds survive a reboot.
     void persistSettings();
 
+    // Clear the loop/connection timing counters reported by /api/status so a
+    // measurement can be taken over a known window.
+    void resetTimingStats();
+
     // Diagnostics shared with the web terminal, for use from the serial console.
     String selfTest();
     String audioProbe();
+
+    // Link state, timing counters and a 2.4 GHz channel survey as plain text.
+    // Scanning takes the radio off our channel for a second or so.
+    String wifiReport();
+
+    // Log every request with the time spent handling it. Serial only.
+    bool toggleWebTrace();
+
+    // Persist a new AP channel. Takes effect on the next boot, so the caller
+    // restarts. Returns false for a channel outside 1-13.
+    bool setApChannel(uint8_t channel);
 
 private:
     bool active_ = false;
