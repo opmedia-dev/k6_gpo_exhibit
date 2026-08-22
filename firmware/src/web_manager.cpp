@@ -1135,6 +1135,71 @@ static void handleDiagnostics() {
     server.send(200, "application/json", json);
 }
 
+// Wi-Fi survey: every network in range with its channel and signal strength,
+// plus a congestion score per channel so a clear one can be chosen. 2.4 GHz
+// channels are 5 MHz apart but ~22 MHz wide, so a network four channels away
+// still interferes; the score weights neighbours by how much they overlap.
+static void handleWifiScan() {
+    // Scanning needs the station interface, which AP-only mode doesn't have.
+    // The AP keeps running throughout, though it stops responding for the
+    // second or so the radio spends off-channel.
+    wifi_mode_t restore = WiFi.getMode();
+    if (s_ap_active) WiFi.mode(WIFI_AP_STA);
+
+    int n = WiFi.scanNetworks(false, true);
+    esp_task_wdt_reset();
+
+    // Linear power, so a strong neighbour counts for far more than a faint one.
+    float score[14] = {0};
+    String json = "{\"nets\":[";
+    for (int i = 0; i < n; i++) {
+        int ch = WiFi.channel(i);
+        int rssi = WiFi.RSSI(i);
+        if (i > 0) json += ",";
+        json += "{\"ssid\":\""; json += jsonEscape(WiFi.SSID(i)); json += "\"";
+        json += ",\"ch\":";   json += String(ch);
+        json += ",\"rssi\":"; json += String(rssi);
+        json += "}";
+
+        if (ch < 1 || ch > 13) continue;
+        float power = pow(10.0f, rssi / 10.0f);
+        for (int c = 1; c <= 13; c++) {
+            int sep = abs(c - ch);
+            if (sep <= 4) score[c] += power * (1.0f - sep / 5.0f);
+        }
+    }
+    json += "]";
+
+    // Report every channel's congestion, and recommend from the three
+    // non-overlapping ones so the choice stays clear of its neighbours too.
+    json += ",\"busy\":[";
+    float scale = 0;
+    for (int c = 1; c <= 13; c++) if (score[c] > scale) scale = score[c];
+    for (int c = 1; c <= 13; c++) {
+        if (c > 1) json += ",";
+        int pct = scale > 0 ? (int)(100.0f * score[c] / scale) : 0;
+        json += "{\"ch\":"; json += String(c);
+        json += ",\"load\":"; json += String(pct);
+        json += "}";
+    }
+    json += "]";
+
+    const int preferred[3] = { 1, 6, 11 };
+    int best = preferred[0];
+    for (int i = 1; i < 3; i++) {
+        if (score[preferred[i]] < score[best]) best = preferred[i];
+    }
+    json += ",\"best\":"; json += String(best);
+    json += ",\"current\":"; json += String(WiFi.channel());
+    json += ",\"count\":"; json += String(n);
+    json += "}";
+
+    WiFi.scanDelete();
+    if (s_ap_active) WiFi.mode(restore);
+
+    server.send(200, "application/json", json);
+}
+
 // Persisted diagnostics: boot-time line-sense readings (drift) + last self-test.
 static void handleDiag() {
     if (!s_stats) { server.send(200, "application/json", "{}"); return; }
@@ -1469,6 +1534,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/stats/reset", HTTP_POST, handleStatsReset);
     server.on("/api/diagnostics", HTTP_GET,  handleDiagnostics);
     server.on("/api/diag",        HTTP_GET,  handleDiag);
+    server.on("/api/wifiscan",    HTTP_GET,  handleWifiScan);
     server.on("/api/discovery",       HTTP_GET,  handleDiscovery);
     server.on("/api/discovery/clear",  HTTP_POST, handleDiscoveryClear);
     server.on("/api/discovery/remove", HTTP_POST, handleDiscoveryRemove);

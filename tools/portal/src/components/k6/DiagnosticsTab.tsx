@@ -12,7 +12,11 @@ interface StatusData {
   heap?: number; sd?: boolean; sd_total?: number; sd_used?: number
   uptime?: number; firmware?: string; wifi_mode?: string; wifi_ssid?: string; wifi_ip?: string
   line_cal?: boolean
+  rssi?: number; channel?: number; loop_max?: number; web_max?: number; conn?: number; conn_idle?: number
 }
+interface ScanNet { ssid: string; ch: number; rssi: number }
+interface ChannelLoad { ch: number; load: number }
+interface ScanData { nets: ScanNet[]; busy: ChannelLoad[]; best: number; current: number; count: number }
 
 export function DiagnosticsTab() {
   const [errors, setErrors] = useState<ErrorEntry[]>([])
@@ -21,6 +25,9 @@ export function DiagnosticsTab() {
   const [curLog, setCurLog] = useState('system')
   const logRef = useRef<HTMLPreElement>(null)
   const [sysInfo, setSysInfo] = useState<StatusData>({})
+  const [scan, setScan] = useState<ScanData | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanErr, setScanErr] = useState('')
 
   useEffect(() => {
     fetch('/api/diagnostics').then(r => r.json()).then(d => setErrors(d || [])).catch(() => {})
@@ -43,6 +50,17 @@ export function DiagnosticsTab() {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [logText])
+
+  // The radio leaves our channel to survey the band, so the portal is
+  // unresponsive for a second or two while this runs.
+  const runScan = () => {
+    setScanning(true); setScanErr(''); setScan(null)
+    fetch('/api/wifiscan')
+      .then(r => r.json())
+      .then((d: ScanData) => setScan(d))
+      .catch(() => setScanErr('Scan failed — try again.'))
+      .finally(() => setScanning(false))
+  }
 
   const clearLog = () => {
     if (!confirm('Clear ' + curLog + ' log?')) return
@@ -189,6 +207,71 @@ export function DiagnosticsTab() {
       <Card>
         <CardHeader className="pb-3 border-b border-border/50">
           <CardTitle className="text-lg flex items-center gap-2">
+            <Wifi className="w-5 h-5 text-primary" />
+            Wi-Fi Channel Survey
+          </CardTitle>
+          <CardDescription>
+            Nearby networks and how busy each channel is. A congested channel makes the portal slow to load.
+            The telephone stops responding for a second or two while it scans.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6 space-y-4">
+          <Button variant="secondary" className="w-full" onClick={runScan} disabled={scanning}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${scanning ? 'animate-spin' : ''}`} />
+            {scanning ? 'Scanning…' : 'Scan Channels'}
+          </Button>
+          {scanErr && <p className="text-sm text-destructive">{scanErr}</p>}
+          {scan && (
+            <>
+              <p className="text-sm">
+                {scan.count} network{scan.count === 1 ? '' : 's'} in range. Currently on channel{' '}
+                <span className="font-mono">{scan.current}</span>.{' '}
+                {scan.best === scan.current
+                  ? 'This is already the clearest of 1, 6 and 11.'
+                  : <>Clearest is channel <span className="font-mono">{scan.best}</span> — change it in Settings → Wi-Fi.</>}
+              </p>
+              <div className="space-y-1">
+                {scan.busy.map(b => (
+                  <div key={b.ch} className="flex items-center gap-2 text-xs">
+                    <span className="w-14 text-muted-foreground font-mono">Ch {b.ch}</span>
+                    <div className="flex-1 h-2 bg-muted rounded overflow-hidden">
+                      <div
+                        className={b.ch === scan.best ? 'h-full bg-emerald-500' : 'h-full bg-primary'}
+                        style={{ width: `${b.load}%` }}
+                      />
+                    </div>
+                    <span className="w-10 text-right font-mono text-muted-foreground">{b.load}%</span>
+                  </div>
+                ))}
+              </div>
+              {scan.nets.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Network</TableHead>
+                      <TableHead>Channel</TableHead>
+                      <TableHead>Signal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[...scan.nets].sort((a, b) => b.rssi - a.rssi).map((nw, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-mono text-xs">{nw.ssid || '(hidden)'}</TableCell>
+                        <TableCell className="font-mono text-xs">{nw.ch}</TableCell>
+                        <TableCell className="font-mono text-xs">{nw.rssi} dBm</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3 border-b border-border/50">
+          <CardTitle className="text-lg flex items-center gap-2">
             <Cpu className="w-5 h-5 text-primary" />
             System Information
           </CardTitle>
@@ -224,6 +307,22 @@ export function DiagnosticsTab() {
                   <span className="font-mono">{sysInfo.wifi_ssid} · {sysInfo.wifi_ip}</span>
                 </div>
               </>
+            )}
+            {sysInfo.rssi !== undefined && (
+              <div>
+                <span className="text-muted-foreground block mb-1">Signal / Channel</span>
+                <span className="font-mono">
+                  {sysInfo.rssi ? `${sysInfo.rssi} dBm` : 'no client'} · ch {sysInfo.channel ?? '—'}
+                </span>
+              </div>
+            )}
+            {sysInfo.web_max !== undefined && (
+              <div>
+                <span className="text-muted-foreground block mb-1">Worst Delay (loop / web)</span>
+                <span className="font-mono">
+                  {sysInfo.loop_max}ms / {sysInfo.web_max}ms · {sysInfo.conn_idle}/{sysInfo.conn} idle
+                </span>
+              </div>
             )}
           </div>
           <Button variant="destructive" className="w-full" onClick={reboot}>
