@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Phone, Clock, PlayCircle, Hash, Power, ShieldCheck, Activity, MemoryStick, Cpu, PhoneOff, AlertTriangle } from "lucide-react"
 
 interface StatusData {
@@ -9,6 +10,9 @@ interface StatusData {
   state: string
   playing: string | null
   call_secs: number
+  play_pos?: number
+  play_dur?: number
+  off_hook?: boolean
   heap: number
   sd: boolean
   sd_total?: number
@@ -50,6 +54,9 @@ export function OverviewTab() {
   const [status, setStatus] = useState<StatusData | null>(null)
   const [session, setSession] = useState<SessionData>({})
   const [callSecs, setCallSecs] = useState(0)
+  const [playPos, setPlayPos] = useState(0)
+  const [dialNum, setDialNum] = useState("")
+  const [dialMsg, setDialMsg] = useState("")
 
   const loadStatus = () => {
     fetch('/api/status')
@@ -85,7 +92,36 @@ export function OverviewTab() {
     }
   }, [status?.state])
 
+  // Tones loop, so the board reports a duration of 0 for them and there is
+  // nothing to count down. Between polls the position is advanced locally and
+  // corrected by the next status read.
+  const playDur = status?.play_dur ?? 0
+  useEffect(() => {
+    if (!playDur) { setPlayPos(0); return }
+    setPlayPos(status?.play_pos ?? 0)
+    const t = setInterval(() => setPlayPos(p => Math.min(p + 1, playDur)), 1000)
+    return () => clearInterval(t)
+  }, [status?.playing, status?.play_pos, playDur])
+
   const ringNow = () => fetch('/api/ring', { method: 'POST' }).then(loadStatus).catch(() => {})
+
+  const dialNow = () => {
+    const n = dialNum.trim()
+    if (!n) return
+    setDialMsg('')
+    fetch('/api/dial?n=' + encodeURIComponent(n), { method: 'POST' })
+      .then(r => r.json())
+      .then((d: { ok: boolean; error?: string }) => {
+        if (d.ok) {
+          setDialMsg('Dialling ' + n + '…')
+          setDialNum('')
+        } else {
+          setDialMsg(d.error ?? 'Could not dial.')
+        }
+        loadStatus()
+      })
+      .catch(() => setDialMsg('Could not reach the telephone.'))
+  }
   const toggleMode = () => fetch('/api/mode', { method: 'POST' }).then(loadStatus).catch(() => {})
 
   const formatTime = (secs: number) => {
@@ -160,6 +196,17 @@ export function OverviewTab() {
                   <span className="text-muted-foreground italic">Nothing</span>
                 )}
               </p>
+              {playDur > 0 && (
+                <div className="space-y-1 pt-1">
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full bg-primary transition-all duration-1000"
+                         style={{ width: `${Math.min(100, (playPos / playDur) * 100)}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {formatTime(Math.max(0, playDur - playPos))} remaining of {formatTime(playDur)}
+                  </p>
+                </div>
+              )}
             </div>
             {isActive && callSecs >= 0 && (
               <div className="space-y-1 col-span-2">
@@ -167,6 +214,31 @@ export function OverviewTab() {
                 <p className="font-mono text-xl">{formatTime(callSecs)}</p>
               </div>
             )}
+          </div>
+
+          <div className="space-y-2 pt-4 border-t border-border/50">
+            <p className="text-sm text-muted-foreground">Dial a Number</p>
+            <div className="flex items-center gap-3">
+              <Input
+                value={dialNum}
+                onChange={e => setDialNum(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') dialNow() }}
+                placeholder="e.g. 999"
+                inputMode="numeric"
+                className="font-mono"
+              />
+              <Button onClick={dialNow} variant="secondary" disabled={!dialNum.trim()}>
+                <Hash className="w-4 h-4 mr-2" />
+                Dial
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {dialMsg
+                ? dialMsg
+                : status?.off_hook
+                  ? 'Dials as though the visitor had turned the dial.'
+                  : 'Lift the handset first — the phone only accepts dialling off the hook.'}
+            </p>
           </div>
 
           <div className="flex items-center gap-3 pt-4 border-t border-border/50">

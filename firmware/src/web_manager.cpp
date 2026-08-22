@@ -529,7 +529,11 @@ static void handleStatus() {
     if (s_phone->player().isPlaying()) {
         json += s_phone->player().currentFile();
     }
-    json += "\",\"call_secs\":";
+    json += "\",\"play_pos\":";  json += String(s_phone->player().playPositionSecs());
+    json += ",\"play_dur\":";     json += String(s_phone->player().playDurationSecs());
+    json += ",\"off_hook\":";
+    json += s_phone->line().hookState() == HookState::OFF_HOOK ? "true" : "false";
+    json += ",\"call_secs\":";
     if (s_phone->state() != PhoneState::IDLE) {
         json += String((millis() - s_phone->stateEnterTime()) / 1000);
     } else {
@@ -734,6 +738,39 @@ static void handleRingNow() {
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
+// Dial a number from the portal. Refused unless the handset is off the hook,
+// since the phone has no more business dialling on its own than a visitor has
+// dialling with the handset down — and the reason is reported so the portal can
+// say what to do rather than just failing.
+static void handleDial() {
+    if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
+
+    String number = server.arg("n");
+    number.trim();
+    if (!number.length()) {
+        server.send(200, "application/json",
+                    "{\"ok\":false,\"error\":\"No number given.\"}");
+        return;
+    }
+
+    if (s_phone->line().hookState() != HookState::OFF_HOOK) {
+        server.send(200, "application/json",
+                    "{\"ok\":false,\"error\":\"Lift the handset first.\"}");
+        return;
+    }
+
+    if (!s_phone->dialRemote(number.c_str())) {
+        String err = "{\"ok\":false,\"error\":\"The phone is busy (";
+        err += s_phone->stateName();
+        err += ") — replace the handset and lift it again.\"}";
+        server.send(200, "application/json", err);
+        return;
+    }
+
+    if (s_logger) s_logger->systemLog("Dialled %s via web", number.c_str());
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
 static void handleTone() {
     if (!s_phone) { server.send(200, "application/json", "{\"ok\":false}"); return; }
     int hz = server.arg("hz").toInt();
@@ -818,6 +855,7 @@ static void handleTerminal() {
         out += "  status              show phone state\n";
         out += "  ring                trigger the bell\n";
         out += "  testring [secs]     ring for a fixed time (default 3s)\n";
+        out += "  dial <number>       dial as if on the rotary dial (handset must be lifted)\n";
         out += "  hangup              hang up / stop playback\n";
         out += "  cancel              cancel ringing\n";
         out += "  mode [auto|manual]  get/set ring mode\n";
@@ -860,6 +898,16 @@ static void handleTerminal() {
         if (secs < 1) secs = 1; if (secs > 30) secs = 30;
         p.testRing(secs);
         out = "test ring for " + String(secs) + "s";
+    } else if (verb == "dial") {
+        if (!arg.length()) {
+            out = "usage: dial <number>";
+        } else if (p.line().hookState() != HookState::OFF_HOOK) {
+            out = "lift the handset first";
+        } else if (!p.dialRemote(arg.c_str())) {
+            out = "cannot dial now (state=" + String(p.stateName()) + ")";
+        } else {
+            out = "dialled " + arg;
+        }
     } else if (verb == "hangup" || verb == "h") {
         p.hangUp(); out = "hung up";
     } else if (verb == "cancel" || verb == "c") {
@@ -1535,6 +1583,7 @@ void WebManager::begin(Logger& logger, StatsTracker& stats, PhoneController& pho
     server.on("/api/autoring",    HTTP_POST, handleAutoRing);
     server.on("/api/ring",        HTTP_POST, handleRingNow);
     server.on("/api/testring",    HTTP_POST, handleTestRing);
+    server.on("/api/dial",        HTTP_POST, handleDial);
     server.on("/api/tone",        HTTP_POST, handleTone);
     server.on("/api/ringcount",  HTTP_POST, handleRingCount);
     server.on("/api/ringtone",   HTTP_POST, handleRingTone);

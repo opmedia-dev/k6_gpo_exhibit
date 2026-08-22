@@ -366,6 +366,16 @@ bool AudioPlayer::isPlaying() {
     return audio_.isRunning();
 }
 
+uint32_t AudioPlayer::playPositionSecs() {
+    if (!audio_.isRunning() || looping_) return 0;
+    return audio_.getAudioCurrentTime();
+}
+
+uint32_t AudioPlayer::playDurationSecs() {
+    if (!audio_.isRunning() || looping_) return 0;
+    return audio_.getAudioFileDuration();
+}
+
 void AudioPlayer::update() {
     audio_.loop();
 
