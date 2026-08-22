@@ -24,6 +24,11 @@ static unsigned long s_web_max_ms  = 0;
 static uint32_t      s_conn_total  = 0;
 static uint32_t      s_conn_idle   = 0;
 
+// Per-request serial trace, off by default. A summary counter says how bad the
+// worst case was but not which request it was, so with a cable attached this
+// prints every request as it completes: the slow ones stand out immediately.
+static bool s_web_trace = false;
+
 // WebServer serves one connection at a time and, when a client connects without
 // sending a request, holds the server for HTTP_MAX_DATA_WAIT (5 s) before giving
 // up on it. Browsers routinely open speculative connections they never use, and
@@ -56,7 +61,14 @@ public:
                 if (_parseRequest(_currentClient)) {
                     _currentClient.setTimeout(HTTP_MAX_SEND_WAIT / 1000);
                     _contentLength = CONTENT_LENGTH_NOT_SET;
+                    unsigned long t0 = millis();
+                    unsigned long queued = t0 - _statusChange;
                     _handleRequest();
+                    if (s_web_trace) {
+                        Serial.printf("[web] %s %s  handled=%lums waited=%lums\n",
+                                      _currentMethod == HTTP_POST ? "POST" : "GET",
+                                      _currentUri.c_str(), millis() - t0, queued);
+                    }
                 }
             } else if (millis() - _statusChange <= IDLE_CLIENT_WAIT_MS &&
                        !_server.hasClient()) {
@@ -1616,4 +1628,93 @@ String WebManager::selfTest() {
 
 String WebManager::audioProbe() {
     return s_phone ? buildProbe(*s_phone) : String("phone not ready");
+}
+
+bool WebManager::setApChannel(uint8_t channel) {
+    if (channel < 1 || channel > 13) return false;
+    s_ap_channel = channel;
+    saveSettings();
+    return true;
+}
+
+bool WebManager::toggleWebTrace() {
+    s_web_trace = !s_web_trace;
+    return s_web_trace;
+}
+
+// Same survey as /api/wifiscan, laid out for a terminal: link state and the
+// timing counters first (so one command captures the whole picture), then every
+// network in range, then the per-channel congestion with a recommendation.
+String WebManager::wifiReport() {
+    char line[128];
+    String out = "--- Wi-Fi report ---\n";
+
+    snprintf(line, sizeof(line), "mode      : %s\n", s_ap_active ? "AP (hosting)" : "STA (joined)");
+    out += line;
+    snprintf(line, sizeof(line), "ssid      : %s\n",
+             s_ap_active ? WIFI_AP_SSID : s_sta_ssid.c_str());
+    out += line;
+    snprintf(line, sizeof(line), "channel   : %d\n", WiFi.channel());
+    out += line;
+    snprintf(line, sizeof(line), "rssi      : %d dBm%s\n",
+             s_ap_active ? apStationRssi() : WiFi.RSSI(),
+             s_ap_active && WiFi.softAPgetStationNum() == 0 ? "  (nothing connected)" : "");
+    out += line;
+    snprintf(line, sizeof(line), "clients   : %d\n",
+             s_ap_active ? WiFi.softAPgetStationNum() : 0);
+    out += line;
+    snprintf(line, sizeof(line), "worst loop: %lu ms   worst web call: %lu ms\n",
+             s_loop_max_ms, s_web_max_ms);
+    out += line;
+    snprintf(line, sizeof(line), "conns     : %u total, %u never sent a request\n",
+             s_conn_total, s_conn_idle);
+    out += line;
+
+    wifi_mode_t restore = WiFi.getMode();
+    if (s_ap_active) WiFi.mode(WIFI_AP_STA);
+
+    int n = WiFi.scanNetworks(false, true);
+    esp_task_wdt_reset();
+
+    float score[14] = {0};
+    out += "\nnetworks in range:\n";
+    if (n <= 0) out += "  (none found)\n";
+    for (int i = 0; i < n; i++) {
+        int ch = WiFi.channel(i);
+        int rssi = WiFi.RSSI(i);
+        snprintf(line, sizeof(line), "  ch %-2d  %4d dBm  %s\n", ch, rssi, WiFi.SSID(i).c_str());
+        out += line;
+
+        if (ch < 1 || ch > 13) continue;
+        float power = pow(10.0f, rssi / 10.0f);
+        for (int c = 1; c <= 13; c++) {
+            int sep = abs(c - ch);
+            if (sep <= 4) score[c] += power * (1.0f - sep / 5.0f);
+        }
+    }
+
+    float scale = 0;
+    for (int c = 1; c <= 13; c++) if (score[c] > scale) scale = score[c];
+    out += "\nchannel congestion (relative to the busiest):\n";
+    for (int c = 1; c <= 13; c++) {
+        int pct = scale > 0 ? (int)(100.0f * score[c] / scale) : 0;
+        String bar;
+        for (int b = 0; b < pct / 5; b++) bar += '#';
+        snprintf(line, sizeof(line), "  ch %-2d %3d%% %s%s\n", c, pct, bar.c_str(),
+                 c == WiFi.channel() ? "  <- in use" : "");
+        out += line;
+    }
+
+    const int preferred[3] = { 1, 6, 11 };
+    int best = preferred[0];
+    for (int i = 1; i < 3; i++) {
+        if (score[preferred[i]] < score[best]) best = preferred[i];
+    }
+    snprintf(line, sizeof(line), "\nclearest non-overlapping channel: %d\n", best);
+    out += line;
+
+    WiFi.scanDelete();
+    if (s_ap_active) WiFi.mode(restore);
+
+    return out;
 }

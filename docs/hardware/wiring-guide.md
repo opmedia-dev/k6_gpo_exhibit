@@ -366,6 +366,10 @@ audio files.
 | Dial ticks | `I` | `ticks` | Toggle the earpiece click heard on each rotary pulse (on by default), reproducing the ticks a real GPO dial makes as it runs back. Saved to `/system/settings.json`. |
 | Audio probe | `Q` | `probe` | Play a 1 kHz tone and report the peak/RMS/crest of the samples fed to I2S (digital side only). |
 | Line debug | `N` | — (serial only) | Stream raw `line=` values and dial `BREAK`/`make` pulse timing. |
+| Wi-Fi report | `W` | — (serial only) | Link mode, channel, signal strength, connected clients, worst loop/web delay, then a survey of every network in range with per-channel congestion and the clearest of channels 1/6/11. Takes the radio off channel for a second or so. |
+| Set channel | `W <1-13>` | Settings → Wi-Fi | Move the hotspot to a channel and restart to apply. Saved to `/system/settings.json`. |
+| Request trace | `G` | — (serial only) | Log every HTTP request with the time spent handling it and the time it waited to be picked up — the fastest way to see which requests a slow page load is stuck on. |
+| Clear timers | `Z` | `/api/status?reset=1` | Zero the loop/web/connection counters so a measurement covers a known window. |
 
 ### Test 1: Power (no phone connected)
 
