@@ -57,6 +57,7 @@ export function SettingsTab() {
   const [otaStatus, setOtaStatus] = useState("")
   const [otaBusy, setOtaBusy] = useState(false)
   const otaRef = useRef<HTMLInputElement>(null)
+  const fwBeforeRef = useRef("")
   const upRef = useRef<HTMLInputElement>(null)
   // Init flag for wifi
   const wifiInitRef = useRef(false)
@@ -75,6 +76,7 @@ export function SettingsTab() {
       if (d.ar_min !== undefined) { setArMin(String(Math.round(d.ar_min / 60000))); setArMax(String(Math.round(d.ar_max / 60000))) }
       if (d.coin_override !== undefined) { setCoinModeVal(String(d.coin_override)); setCoinActive(!!d.coin_active) }
       if (d.rssi !== undefined) setRssi(d.rssi)
+      if (d.firmware) fwBeforeRef.current = d.firmware
       if (!wifiInitRef.current && d.wifi_cfg_mode !== undefined) {
         setWifiMode(d.wifi_cfg_mode)
         if (d.wifi_cfg_ssid) setSsid(d.wifi_cfg_ssid)
@@ -199,17 +201,48 @@ export function SettingsTab() {
   const fmtTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
 
   // OTA
+  // The board reboots as soon as it has the image, so its reply often never
+  // arrives — a dropped connection here means success just as often as failure.
+  // Only the version it reports once it is back can tell them apart, so wait
+  // for it to answer again rather than trusting the upload's own outcome.
+  const confirmOta = (attempt = 0) => {
+    if (attempt > 30) {
+      setOtaStatus("Couldn't reach the telephone to confirm. Reconnect to its network and reload this page.")
+      setOtaBusy(false)
+      return
+    }
+    fetch('/api/status', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => {
+        if (!d.firmware) throw new Error('no version')
+        if (fwBeforeRef.current && d.firmware === fwBeforeRef.current) {
+          setOtaStatus(`Update did not take — still running ${d.firmware}. The telephone kept the previous version.`)
+          setOtaBusy(false)
+        } else {
+          setOtaStatus(`Firmware updated — now running ${d.firmware}. Reloading…`)
+          setTimeout(() => location.reload(), 3000)
+        }
+      })
+      .catch(() => setTimeout(() => confirmOta(attempt + 1), 3000))
+  }
+
   const otaUpload = () => {
     const f = otaRef.current?.files?.[0]; if (!f) return
     setOtaBusy(true); setOtaProgress(0); setOtaStatus('Uploading firmware… do not disconnect.')
     const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/ota')
     xhr.upload.onprogress = e => { if (e.lengthComputable) setOtaProgress(Math.round(e.loaded / e.total * 100)) }
-    xhr.onload = () => {
-      const d = JSON.parse(xhr.responseText)
-      if (d.ok) { setOtaStatus('Firmware updated! Rebooting…'); setTimeout(() => location.reload(), 8000) }
-      else { setOtaStatus('Error: ' + d.error); setOtaBusy(false) }
+    const waitForReboot = () => {
+      setOtaStatus('Installed — waiting for the telephone to restart…')
+      setTimeout(() => confirmOta(), 6000)
     }
-    xhr.onerror = () => { setOtaStatus('Upload failed'); setOtaBusy(false) }
+    xhr.onload = () => {
+      try {
+        const d = JSON.parse(xhr.responseText)
+        if (!d.ok) { setOtaStatus('Error: ' + d.error); setOtaBusy(false); return }
+      } catch { /* reboot cut the reply short; the version check settles it */ }
+      waitForReboot()
+    }
+    xhr.onerror = waitForReboot
     const fd = new FormData(); fd.append('firmware', f); xhr.send(fd)
   }
 
